@@ -1,66 +1,92 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+
+import { 
+  Box, 
+  Container, 
+  Heading, 
+  Text, 
+  VStack, 
+  Icon,
+  SimpleGrid
+} from "@chakra-ui/react";
+import { useRouter } from "next/navigation";
+import { LayoutDashboard, Search, FlaskConical } from "lucide-react";
 
 export default function Home() {
+  const router = useRouter();
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <Box 
+      minH="100vh" 
+      bgGradient="linear(to-br, #1A1B23, #2D3748)" 
+      display="flex" 
+      alignItems="center" 
+      justifyContent="center"
+      p={6}
+    >
+      <Container maxW="3xl">
+        <VStack spacing={8} textAlign="center" bg="whiteAlpha.100" backdropFilter="blur(20px)" p={12} borderRadius="3xl" shadow="2xl" borderWidth="1px" borderColor="whiteAlpha.200">
+          <VStack spacing={4}>
+            <Box p={4} bg="purple.500" borderRadius="2xl" color="white" shadow="lg" transform="rotate(-10deg)">
+               <Icon as={LayoutDashboard} fontSize="32" />
+            </Box>
+            <Heading size="2xl" color="white" fontWeight="extrabold" letterSpacing="tight">
+              CONTROL TOWER
+            </Heading>
+            <Text fontSize="lg" color="gray.400" maxW="lg">
+              Enterprise Resource Planning & Inspection Infrastructure
+            </Text>
+          </VStack>
+
+          <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={6} w="full" pt={4}>
+            <RoleCard 
+              title="Operations" 
+              desc="Field Inspection & Sampling" 
+              onClick={() => router.push("/userinsp")} 
+              colorScheme="purple"
+              icon={Search}
             />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <RoleCard 
+              title="Laboratory" 
+              desc="R&D Assay & Analytics" 
+              onClick={() => router.push("/userrd")} 
+              colorScheme="blue"
+              icon={FlaskConical}
+            />
+          </SimpleGrid>
+        </VStack>
+      </Container>
+    </Box>
+  );
+}
+
+function RoleCard({ title, desc, onClick, colorScheme, icon }: any) {
+  return (
+    <Box 
+      as="button"
+      onClick={onClick}
+      p={8} 
+      bg="whiteAlpha.50" 
+      borderRadius="2xl" 
+      borderWidth="1px" 
+      borderColor="whiteAlpha.100"
+      shadow="sm"
+      transition="all 0.3s"
+      _hover={{ transform: "translateY(-8px)", shadow: "dark-lg", borderColor: `${colorScheme}.400`, bg: "whiteAlpha.100" }}
+      textAlign="left"
+      w="full"
+      display="flex"
+      flexDirection="column"
+      gap={4}
+      color="white"
+    >
+      <Box w={12} h={12} borderRadius="xl" bg={`${colorScheme}.500`} color="white" display="flex" alignItems="center" justifyContent="center" shadow="md">
+        <Icon as={icon} fontSize="24" />
+      </Box>
+      <Box>
+        <Heading size="md" mb={1}>{title}</Heading>
+        <Text fontSize="sm" color="gray.500">{desc}</Text>
+      </Box>
+    </Box>
   );
 }

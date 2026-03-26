@@ -1,0 +1,201 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model InspectionJob {
+  inspectionSerialNumber String @unique
+  id                 String   @id @default(cuid())
+  companyId          String
+  jobReferenceNumber String   @unique @default(uuid())
+
+  clientName         String
+  commodity          String
+  plantLocation      String?
+
+  status             String   @default("CREATED")
+
+  createdByUserId    String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  lots               InspectionLot[]
+  experiments        RDExperiment[]
+  mediaFiles         MediaFile[] @relation("JobMediaFiles")
+  homogeneousSamples HomogeneousSample[]
+  reportSnapshots    ReportSnapshot[]
+  auditLogs          AuditLog[]
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  jobId     String
+  userId    String
+  action    String   // e.g. "STATUS_CHANGE"
+  from      String?
+  to        String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model ReportSnapshot {
+
+  id        String   @id @default(cuid())
+  jobId     String
+  data      Json
+  createdAt DateTime @default(now())
+
+  job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model InspectionLot {
+  id           String   @id @default(cuid())
+  jobId        String
+  lotNumber    String
+
+  totalBags    Int      @default(1)
+
+  grossWeightKg Decimal?
+  netWeightKg   Decimal?
+
+  createdAt    DateTime @default(now())
+
+  job          InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  mediaFiles   MediaFile[] @relation("LotMediaFiles")
+  trials       RDTrial[] @relation("LotTrials")
+
+  @@unique([jobId, lotNumber])
+
+  bags        InspectionBag[]
+  sampling    Sampling[]
+}
+
+model MediaFile {
+  id          String   @id @default(cuid())
+  companyId   String
+
+  jobId       String?
+  lotId       String?
+
+  category    String
+  storageKey  String
+  fileName    String
+
+  createdAt   DateTime @default(now())
+
+  job         InspectionJob? @relation("JobMediaFiles", fields: [jobId], references: [id], onDelete: Cascade)
+  lot         InspectionLot? @relation("LotMediaFiles", fields: [lotId], references: [id], onDelete: Cascade)
+}
+
+model RDExperiment {
+  id          String   @id @default(cuid())
+  jobId       String
+
+  title       String
+  hypothesis  String?
+  status      String   @default("DRAFT")
+
+  createdAt   DateTime @default(now())
+
+  job         InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  trials      RDTrial[]
+}
+
+model RDTrial {
+  id            String   @id @default(cuid())
+  experimentId  String
+
+  lotId         String?
+
+  trialNumber   Int
+  notes         String?
+
+  grossWeightKg Decimal?
+  netWeightKg   Decimal?
+
+  createdAt     DateTime @default(now())
+
+  experiment    RDExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  lot           InspectionLot? @relation("LotTrials", fields: [lotId], references: [id], onDelete: Cascade)
+
+  measurements  RDMeasurement[]
+}
+
+model RDMeasurement {
+  id        String   @id @default(cuid())
+  trialId   String
+
+  element   String
+  value     Decimal
+
+  createdAt DateTime @default(now())
+
+  trial     RDTrial @relation(fields: [trialId], references: [id], onDelete: Cascade)
+
+  @@unique([trialId, element])
+}
+
+model InspectionBag {
+  id      String @id @default(cuid())
+  lotId   String
+
+  bagNumber Int
+  grossWeight Float?
+  netWeight   Float?
+
+  createdAt DateTime @default(now())
+
+  lot InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+
+  @@unique([lotId, bagNumber])
+}
+
+model SerialCounter {
+  id      String @id @default(cuid())
+  year    Int    @unique
+  counter Int
+}
+
+model Sampling {
+  id        String   @id @default(cuid())
+  lotId     String @unique
+
+  beforePhotoUrl String?
+  duringPhotoUrl String?
+  afterPhotoUrl  String?
+
+  createdAt DateTime @default(now())
+
+  lot InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+}
+
+model HomogeneousSample {
+  id        String   @id @default(cuid())
+  jobId     String
+
+  createdAt DateTime @default(now())
+  photoUrl  String?
+
+  job InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  packets SamplePacket[]
+
+  @@unique([jobId])
+}
+
+model SamplePacket {
+  id       String @id @default(cuid())
+  sampleId String
+
+  packetNumber Int
+
+  sample HomogeneousSample @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@unique([sampleId, packetNumber])
+}
