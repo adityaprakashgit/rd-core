@@ -1,477 +1,874 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Container, Heading, Text, HStack, VStack, Spinner, Center, Button,
-  Table, Thead, Tbody, Tr, Th, Td, TableContainer, Badge, Card, CardBody, useToast, Input, Image
+  Badge,
+  Box,
+  Button,
+  Card,
+  CardBody,
+  Center,
+  Divider,
+  FormControl,
+  Heading,
+  HStack,
+  Icon,
+  Image,
+  Input,
+  SimpleGrid,
+  Spinner,
+  Table,
+  TableContainer,
+  Tbody,
+  Td,
+  Text,
+  Thead,
+  Tr,
+  Th,
+  useToast,
+  VStack,
 } from "@chakra-ui/react";
+import {
+  ArrowLeft,
+  Camera,
+  CheckCircle2,
+  Plus,
+  Save,
+  ScanLine,
+} from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
 
-type Lot = {
-  id: string;
-  jobId: string;
-  lotNumber: string;
-  totalBags: number;
-  grossWeightKg?: number | null;
-  netWeightKg?: number | null;
-  createdAt: string;
-};
+import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import { InspectionBag, InspectionJob, InspectionLot, Sampling } from "@/types/inspection";
 
-type Sampling = {
-  id: string;
-  lotId: string;
-  beforePhotoUrl: string | null;
-  duringPhotoUrl: string | null;
-  afterPhotoUrl: string | null;
-  createdAt: string;
-};
+type SamplingStep = "before" | "during" | "after";
+type PhotoCategory = "BAG" | "SEAL";
 
-type BagRecord = {
-  id?: string;
-  bagNumber: number;
-  grossWeight: number | "";
-  netWeight: number | "";
-  isNew?: boolean;
-};
+const samplingSteps: Array<{ key: SamplingStep; title: string; note: string }> = [
+  { key: "before", title: "Before", note: "Initial condition capture" },
+  { key: "during", title: "During", note: "Mid-process traceability" },
+  { key: "after", title: "After", note: "Post-process evidence" },
+];
+
+function getSamplingStatus(sampling: Sampling | null) {
+  if (!sampling) {
+    return { label: "Not Started", color: "gray" };
+  }
+
+  const hasAll = Boolean(sampling.beforePhotoUrl && sampling.duringPhotoUrl && sampling.afterPhotoUrl);
+  return hasAll
+    ? { label: "Completed", color: "green" }
+    : { label: "In Progress", color: "orange" };
+}
+
+function formatWeight(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "";
+  }
+  return String(value);
+}
+
+function getTraceabilityPhotoCount(lot: InspectionLot | null, sampling: Sampling | null) {
+  const samplingReady = Boolean(sampling?.beforePhotoUrl || sampling?.duringPhotoUrl || sampling?.afterPhotoUrl);
+  const flags = [Boolean(lot?.bagPhotoUrl), samplingReady, Boolean(lot?.sealPhotoUrl)];
+  return flags.filter(Boolean).length;
+}
 
 export default function LotDetailPage() {
-  const params = useParams();
+  const { jobId, lotId } = useParams<{ jobId: string; lotId: string }>();
   const router = useRouter();
   const toast = useToast();
-  const jobId = params.jobId as string;
-  const lotId = params.lotId as string;
 
-  const [lot, setLot] = useState<Lot | null>(null);
-  const [sampling, setSampling] = useState<Sampling | null>(null);
-  const [bags, setBags] = useState<BagRecord[]>([]);
-  
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<{error: string, details?: string} | null>(null);
-  const [samplingLoading, setSamplingLoading] = useState(false);
-  const [savingBags, setSavingBags] = useState(false);
+  const [job, setJob] = useState<InspectionJob | null>(null);
+  const [lot, setLot] = useState<InspectionLot | null>(null);
+  const [bags, setBags] = useState<InspectionBag[]>([]);
+  const [sampling, setSampling] = useState<Sampling | null>(null);
+  const [bagDrafts, setBagDrafts] = useState<Record<string, { grossWeight: string; netWeight: string }>>({});
+  const [bagCount, setBagCount] = useState("1");
+  const [savingBags, setSavingBags] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
+  const [uploadingStep, setUploadingStep] = useState<SamplingStep | null>(null);
+  const [uploadingLotPhoto, setUploadingLotPhoto] = useState<PhotoCategory | null>(null);
+  const [savingSampling, setSavingSampling] = useState(false);
+  const [sealDraft, setSealDraft] = useState("");
+  const [generatingSeal, setGeneratingSeal] = useState(false);
+  const [assigningSeal, setAssigningSeal] = useState(false);
 
-  // Upload states
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingCategory, setUploadingCategory] = useState<string | null>(null);
+  const inputRefs = useRef<Record<SamplingStep | "bag" | "seal", HTMLInputElement | null>>({
+    before: null,
+    during: null,
+    after: null,
+    bag: null,
+    seal: null,
+  });
 
-  const fetchLotData = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const [lotsRes, samplingRes, bagsRes] = await Promise.all([
-        fetch(`/api/inspection/lots?jobId=${jobId}`),
+      const [jobsRes, bagsRes, samplingRes, lotsRes] = await Promise.all([
+        fetch("/api/inspection/jobs?view=all"),
+        fetch(`/api/inspection/bags?lotId=${lotId}`),
         fetch(`/api/inspection/sampling?lotId=${lotId}`),
-        fetch(`/api/inspection/bags?lotId=${lotId}`)
+        fetch(`/api/inspection/lots?jobId=${jobId}`),
       ]);
 
-      if (!lotsRes.ok) throw await lotsRes.json();
-      
-      const lotsData: Lot[] = await lotsRes.json();
-      const foundLot = lotsData.find((l) => l.id === lotId);
-      
-      if (!foundLot) {
-        throw { error: "Not Found", details: "Lot not found for this job ID." };
+      if (jobsRes.ok) {
+        const jobsData = await jobsRes.json();
+        const currentJob = Array.isArray(jobsData) ? jobsData.find((item: InspectionJob) => item.id === jobId) : null;
+        setJob(currentJob ?? null);
+        const currentLot = currentJob?.lots?.find((entry: InspectionLot) => entry.id === lotId) ?? null;
+        setLot(currentLot ?? null);
       }
-      
-      setLot(foundLot);
+
+      if (lotsRes.ok) {
+        const lotsData = await lotsRes.json();
+        if (Array.isArray(lotsData)) {
+          const hydratedLot = lotsData.find((entry: InspectionLot) => entry.id === lotId) ?? null;
+          if (hydratedLot) {
+            setLot(hydratedLot);
+          }
+        }
+      }
+
+      if (bagsRes.ok) {
+        const bagsData = await bagsRes.json();
+        const nextBags = Array.isArray(bagsData) ? bagsData : [];
+        setBags(nextBags);
+        setBagDrafts(
+          nextBags.reduce<Record<string, { grossWeight: string; netWeight: string }>>((acc, bag) => {
+            acc[bag.id] = {
+              grossWeight: formatWeight(bag.grossWeight as number | null | undefined),
+              netWeight: formatWeight(bag.netWeight as number | null | undefined),
+            };
+            return acc;
+          }, {})
+        );
+      }
 
       if (samplingRes.ok) {
-         setSampling(await samplingRes.json());
+        const samplingData = await samplingRes.json();
+        setSampling(samplingData ?? null);
       }
-      if (bagsRes.ok) {
-         const bagsData = await bagsRes.json();
-         setBags(bagsData.map((b: any) => ({
-           id: b.id,
-           bagNumber: b.bagNumber,
-           grossWeight: b.grossWeight === null ? "" : b.grossWeight,
-           netWeight: b.netWeight === null ? "" : b.netWeight,
-           isNew: false
-         })));
-      }
-
-    } catch (err: any) {
-      setError(err.error ? err : { error: "Failed to load lot data" });
+    } catch {
+      toast({ title: "Failed to load lot", status: "error" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [jobId, lotId, toast]);
 
   useEffect(() => {
-    fetchLotData();
-  }, [jobId, lotId]);
+    fetchData();
+  }, [fetchData]);
 
-  const handleTakeSample = async () => {
-    setSamplingLoading(true);
+  useEffect(() => {
+    setSealDraft(lot?.sealNumber ?? "");
+  }, [lot?.sealNumber]);
+
+  const samplingDraft = useMemo(() => ({
+    before: sampling?.beforePhotoUrl ?? null,
+    during: sampling?.duringPhotoUrl ?? null,
+    after: sampling?.afterPhotoUrl ?? null,
+  }), [sampling]);
+
+  const persistSampling = useCallback(async (draft: Record<SamplingStep, string | null>) => {
+    setSavingSampling(true);
     try {
-      const res = await fetch(`/api/inspection/sampling`, {
-        method: "POST",
+      const res = await fetch("/api/inspection/sampling", {
+        method: sampling ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           lotId,
-          // Removed dummy base parameters per strictly enforcing ERP media rules properly mapping physical files
-          beforePhotoUrl: null,
-          duringPhotoUrl: null,
-          afterPhotoUrl: null
-        })
+          beforePhotoUrl: draft.before ?? undefined,
+          duringPhotoUrl: draft.during ?? undefined,
+          afterPhotoUrl: draft.after ?? undefined,
+        }),
       });
-      if (!res.ok) throw await res.json();
-      
-      fetchLotData();
-      toast({ title: "Sample Process Started", status: "success", duration: 3000, position: "top" });
-    } catch(err: any) {
-       toast({
-         title: err.error || "System Error",
-         description: err.details || "Could not record sample.",
-         status: "error",
-         duration: 5000,
-         isClosable: true,
-         position: "top"
-       });
+
+      if (!res.ok) {
+        throw await res.json();
+      }
+
+      const nextSampling = await res.json();
+      setSampling(nextSampling);
+      toast({ title: "Sampling saved", status: "success" });
+    } catch (err: unknown) {
+      const details = err && typeof err === "object" && "details" in err
+        ? String((err as { details?: unknown }).details)
+        : "Unable to save sampling";
+      toast({ title: "Sampling save failed", description: details, status: "error" });
     } finally {
-       setSamplingLoading(false);
+      setSavingSampling(false);
     }
-  };
+  }, [lotId, sampling, toast]);
 
-  const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
-
-  const uploadFileTrigger = (category: string) => {
-    setUploadingCategory(category);
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !uploadingCategory) return;
-
+  const handleSamplingUpload = useCallback(async (step: SamplingStep, file: File) => {
+    setUploadingStep(step);
     try {
-      const base64 = await toBase64(file);
-      
-      const res = await fetch("/api/media/upload", {
-        method: "POST",
-        headers: { "Content-Type" : "application/json" },
-        body: JSON.stringify({
-           category: uploadingCategory,
-           base64,
-           fileName: file.name,
-           lotId,
-           jobId
-        })
-      });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("lotId", lotId);
+      formData.append("category", step.toUpperCase());
 
-      if (!res.ok) throw await res.json();
-      
-      toast({ title: "Photo Uploaded Successfully", status: "success", duration: 3000, position: "top" });
-      fetchLotData();
-    } catch(err: any) {
-      toast({
-        title: err.error || "System Error",
-        description: err.details || "Could not upload photo natively.",
-        status: "error",
-        duration: 5000,
-        isClosable: true,
-        position: "top"
-      });
+      const uploadRes = await fetch("/api/media/upload", { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        throw await uploadRes.json();
+      }
+
+      const uploadData = await uploadRes.json();
+      const nextDraft = {
+        ...samplingDraft,
+        [step]: uploadData.url,
+      } as Record<SamplingStep, string | null>;
+
+      await persistSampling(nextDraft);
+    } catch (err: unknown) {
+      const details = err && typeof err === "object" && "details" in err
+        ? String((err as { details?: unknown }).details)
+        : "Unable to upload image";
+      toast({ title: "Upload failed", description: details, status: "error" });
     } finally {
-      setUploadingCategory(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setUploadingStep(null);
     }
-  };
+  }, [lotId, persistSampling, samplingDraft, toast]);
 
-  const handleAddBagRow = () => {
-    const nextBagNumber = bags.length > 0 ? Math.max(...bags.map(b => b.bagNumber)) + 1 : 1;
-    setBags(prev => [...prev, { bagNumber: nextBagNumber, grossWeight: "", netWeight: "", isNew: true }]);
-  };
+  const handleLotPhotoUpload = useCallback(
+    async (category: PhotoCategory, file: File) => {
+      setUploadingLotPhoto(category);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("lotId", lotId);
+        formData.append("category", category);
 
-  const updateBagRow = (idx: number, field: "grossWeight" | "netWeight", value: string) => {
-    const updated = [...bags];
-    updated[idx][field] = value === "" ? "" : Number(value);
-    setBags(updated);
-  };
+        const uploadRes = await fetch("/api/media/upload", { method: "POST", body: formData });
+        if (!uploadRes.ok) {
+          throw await uploadRes.json();
+        }
 
-  const handleSaveBags = async () => {
-    const newBags = bags.filter(b => b.isNew);
-    if (newBags.length === 0) return;
-    
-    setSavingBags(true);
-    try {
-      const res = await fetch(`/api/inspection/bags`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lotId,
-          bags: newBags.map(b => ({
-            grossWeight: b.grossWeight === "" ? undefined : b.grossWeight,
-            netWeight: b.netWeight === "" ? undefined : b.netWeight,
-          }))
-        })
-      });
-      
-      if (!res.ok) throw await res.json();
-      
-      toast({ title: "Bags saved successfully!", status: "success", duration: 3000, position: "top" });
-      fetchLotData(); 
-    } catch(err: any) {
-      toast({
-        title: err.error || "Failed to save bags",
-        description: err.details || "A system error occurred.",
-        status: "error",
-        duration: 5000,
-        isClosable: true,
-        position: "top"
-      });
-    } finally {
-      setSavingBags(false);
-    }
-  };
-
-
-  if (loading) return <Center minH="100vh" bg="gray.50"><Spinner size="xl" color="blue.500" /></Center>;
-  if (error || !lot) return (
-    <Box p={8} bg="red.50" minH="100vh">
-      <Heading size="md" color="red.600">{error?.error || "Error"}</Heading>
-      <Text color="red.500" mt={2}>{error?.details || "Unknown error occurred"}</Text>
-    </Box>
+        const uploadData = await uploadRes.json();
+        setLot((prev) => {
+          if (!prev) return prev;
+          return category === "BAG"
+            ? { ...prev, bagPhotoUrl: uploadData.url }
+            : { ...prev, sealPhotoUrl: uploadData.url };
+        });
+        toast({ title: `${category === "BAG" ? "Bag" : "Seal"} photo uploaded`, status: "success" });
+      } catch (err: unknown) {
+        const details = err && typeof err === "object" && "details" in err
+          ? String((err as { details?: unknown }).details)
+          : "Unable to upload image";
+        toast({ title: "Upload failed", description: details, status: "error" });
+      } finally {
+        setUploadingLotPhoto(null);
+      }
+    },
+    [lotId, toast]
   );
 
-  const canSample = !sampling;
-  const unsavedBags = bags.filter(b => b.isNew);
+  const handleGenerateSeal = useCallback(async () => {
+    setGeneratingSeal(true);
+    try {
+      const res = await fetch("/api/seal/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      if (!res.ok) {
+        throw await res.json();
+      }
+
+      const data = await res.json() as { sealNumber?: string };
+      if (!data.sealNumber) {
+        throw new Error("Seal generation failed.");
+      }
+
+      setSealDraft(data.sealNumber);
+      toast({ title: "Seal number generated", status: "success" });
+    } catch (err: unknown) {
+      const details = err && typeof err === "object" && "details" in err
+        ? String((err as { details?: unknown }).details)
+        : "Unable to generate seal";
+      toast({ title: "Seal generation failed", description: details, status: "error" });
+    } finally {
+      setGeneratingSeal(false);
+    }
+  }, [jobId, toast]);
+
+  const handleAssignSeal = useCallback(async (auto: boolean) => {
+    setAssigningSeal(true);
+    try {
+      const res = await fetch(`/api/lots/${lotId}/seal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(auto ? { auto: true } : { sealNumber: sealDraft.trim() }),
+      });
+
+      if (!res.ok) {
+        throw await res.json();
+      }
+
+      const data = await res.json() as { sealNumber?: string; sealAuto?: boolean };
+      setLot((prev) => (prev ? { ...prev, sealNumber: data.sealNumber ?? prev.sealNumber, sealAuto: data.sealAuto ?? prev.sealAuto } : prev));
+      setSealDraft(data.sealNumber ?? sealDraft);
+      toast({ title: "Seal assigned", status: "success" });
+    } catch (err: unknown) {
+      const details = err && typeof err === "object" && "details" in err
+        ? String((err as { details?: unknown }).details)
+        : "Unable to assign seal";
+      toast({ title: "Seal assignment failed", description: details, status: "error" });
+    } finally {
+      setAssigningSeal(false);
+    }
+  }, [lotId, sealDraft, toast]);
+
+  const handleBagSave = useCallback(async (bag: InspectionBag) => {
+    const draft = bagDrafts[bag.id];
+    if (!draft) return;
+
+    setSavingBags(bag.id);
+    try {
+      const res = await fetch("/api/inspection/bags", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bagId: bag.id,
+          grossWeight: draft.grossWeight,
+          netWeight: draft.netWeight,
+        }),
+      });
+
+      if (!res.ok) {
+        throw await res.json();
+      }
+
+      const updated = await res.json();
+      setBags((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      toast({ title: "Bag saved", status: "success" });
+    } catch (err: unknown) {
+      const details = err && typeof err === "object" && "details" in err
+        ? String((err as { details?: unknown }).details)
+        : "Unable to save bag weights";
+      toast({ title: "Bag save failed", description: details, status: "error" });
+    } finally {
+      setSavingBags(null);
+    }
+  }, [bagDrafts, toast]);
+
+  const handleRegisterBags = useCallback(async () => {
+    if (!lotId) return;
+
+    const count = Number(bagCount);
+    if (!Number.isFinite(count) || count <= 0) {
+      toast({ title: "Invalid bag count", status: "warning" });
+      return;
+    }
+
+    setRegistering(true);
+    try {
+      const res = await fetch("/api/inspection/bags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lotId,
+          bags: Array.from({ length: count }, () => ({ grossWeight: null, netWeight: null })),
+        }),
+      });
+
+      if (!res.ok) {
+        throw await res.json();
+      }
+
+      toast({ title: "Bag rows created", status: "success" });
+      await fetchData();
+    } catch (err: unknown) {
+      const details = err && typeof err === "object" && "details" in err
+        ? String((err as { details?: unknown }).details)
+        : "Unable to register bags";
+      toast({ title: "Registry failed", description: details, status: "error" });
+    } finally {
+      setRegistering(false);
+    }
+  }, [bagCount, fetchData, lotId, toast]);
+
+  if (loading) {
+    return (
+      <ControlTowerLayout>
+        <Center minH="40vh">
+          <Spinner size="xl" color="teal.500" />
+        </Center>
+      </ControlTowerLayout>
+    );
+  }
+
+  if (!job || !lot) {
+    return (
+      <ControlTowerLayout>
+        <Center minH="40vh">
+          <Text color="gray.500">Lot record not found.</Text>
+        </Center>
+      </ControlTowerLayout>
+    );
+  }
 
   return (
-    <Box bg="gray.50" minH="100vh" py={8}>
-      <Container maxW="container.xl">
-        <VStack align="stretch" spacing={6}>
-          {/* File input uniquely isolated preventing dom layout shifts */}
-          <input 
-            type="file" 
-            accept="image/*" 
-            style={{ display: "none" }} 
-            ref={fileInputRef} 
-            onChange={handleFileChange} 
-          />
-
-          <HStack justify="space-between" bg="white" p={6} borderRadius="xl" shadow="sm">
+    <ControlTowerLayout>
+      <VStack align="stretch" spacing={6}>
+        <HStack justify="space-between" flexWrap="wrap" spacing={3}>
+          <HStack spacing={3}>
+            <Button
+              variant="ghost"
+              leftIcon={<ArrowLeft size={16} />}
+              onClick={() => router.push(`/operations/job/${jobId}`)}
+            >
+              Back to Job
+            </Button>
             <Box>
-              <Text fontSize="sm" color="blue.500" cursor="pointer" onClick={() => router.push(`/operations/job/${jobId}`)} mb={1}>
-                ← Back to Job Detail
-              </Text>
-              <HStack spacing={4}>
-                 <Heading size="lg" color="gray.800">Lot Detail</Heading>
-                 <Badge colorScheme="purple" fontSize="md" px={3} py={1} borderRadius="md">
-                   {lot.lotNumber}
-                 </Badge>
+              <HStack spacing={2} wrap="wrap">
+                <Badge colorScheme="teal" variant="solid" borderRadius="full" px={3} py={1}>
+                  {lot.lotNumber}
+                </Badge>
+                <Badge colorScheme="gray" variant="subtle" borderRadius="full" px={2.5} py={1}>
+                  {getSamplingStatus(sampling).label}
+                </Badge>
               </HStack>
+              <Heading size="lg" color="gray.900" mt={2}>
+                Lot Control Panel
+              </Heading>
+              <Text fontSize="sm" color="gray.600">
+                {job.clientName} - {job.commodity}
+              </Text>
             </Box>
-            
-            {canSample ? (
-               <Button colorScheme="orange" onClick={handleTakeSample} isLoading={samplingLoading}>
-                 Start Sampling
-               </Button>
-            ) : (
-               <Badge colorScheme="green" variant="outline" px={3} py={2} borderRadius="md" display="flex" alignItems="center" gap={2}>
-                  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                     <path d="M20 6L9 17l-5-5"/>
-                  </svg>
-                  Sampling Active
-               </Badge>
-            )}
           </HStack>
 
-          <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-            <CardBody p={0}>
-              <TableContainer>
-                <Table variant="simple" size="md">
-                  <Thead bg="gray.50">
-                    <Tr>
-                      <Th color="gray.500" py={4}>Specification</Th>
-                      <Th color="gray.500" py={4}>Value</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">Lot ID</Td>
-                      <Td fontFamily="mono" fontSize="sm">{lot.id}</Td>
-                    </Tr>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">Lot Number</Td>
-                      <Td fontWeight="bold" color="gray.800">{lot.lotNumber}</Td>
-                    </Tr>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">Total Bags</Td>
-                      <Td>{lot.totalBags}</Td>
-                    </Tr>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">Gross Weight</Td>
-                      <Td>{lot.grossWeightKg ? `${lot.grossWeightKg} kg` : "Pending"}</Td>
-                    </Tr>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">Net Weight</Td>
-                      <Td>{lot.netWeightKg ? `${lot.netWeightKg} kg` : "Pending"}</Td>
-                    </Tr>
-                  </Tbody>
-                </Table>
-              </TableContainer>
+          <HStack spacing={3} flexWrap="wrap">
+            <Button
+              leftIcon={<Plus size={16} />}
+              colorScheme="teal"
+              borderRadius="xl"
+              onClick={() => inputRefs.current.before?.click()}
+            >
+              Upload Before
+            </Button>
+            <Button
+              variant="outline"
+              borderRadius="xl"
+              onClick={() => inputRefs.current.during?.click()}
+            >
+              Upload During
+            </Button>
+            <Button
+              variant="outline"
+              borderRadius="xl"
+              onClick={() => inputRefs.current.after?.click()}
+            >
+              Upload After
+            </Button>
+          </HStack>
+        </HStack>
+
+        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
+          {[
+            { label: "Total Bags", value: lot.totalBags, color: "teal", desc: "Lot capacity under control" },
+            { label: "Captured Bags", value: bags.length, color: "blue", desc: "Rows currently registered" },
+            { label: "Sampling State", value: getSamplingStatus(sampling).label, color: getSamplingStatus(sampling).color, desc: "Visibility across the workflow" },
+            { label: "Traceability", value: `${getTraceabilityPhotoCount(lot, sampling)}/3`, color: "purple", desc: "Bag, sampling, and seal photo evidence" },
+          ].map((item) => (
+            <Card key={item.label} variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+              <CardBody p={5}>
+                <Text fontSize="sm" color="gray.500" fontWeight="medium">
+                  {item.label}
+                </Text>
+                <Text fontSize="2xl" fontWeight="bold" color={`${item.color}.600`} mt={2}>
+                  {item.value}
+                </Text>
+                <Text fontSize="sm" color="gray.600" mt={1}>
+                  {item.desc}
+                </Text>
+              </CardBody>
+            </Card>
+          ))}
+        </SimpleGrid>
+
+        <SimpleGrid columns={{ base: 1, xl: 4 }} spacing={6}>
+          <Box gridColumn={{ xl: "span 2" }}>
+            <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+              <CardBody p={6}>
+                <HStack justify="space-between" flexWrap="wrap" spacing={3} mb={4}>
+                  <Box>
+                    <Heading size="md" color="gray.900">
+                      Sampling Workflow
+                    </Heading>
+                    <Text color="gray.600" fontSize="sm">
+                      Before, during, and after evidence are tracked independently and saved immediately.
+                    </Text>
+                  </Box>
+                  <Badge colorScheme={getSamplingStatus(sampling).color} variant="subtle" borderRadius="full" px={3} py={1}>
+                    {getSamplingStatus(sampling).label}
+                  </Badge>
+                </HStack>
+
+                <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                  {samplingSteps.map((step) => {
+                    const url = samplingDraft[step.key];
+                    const active = Boolean(url);
+                    return (
+                      <Card key={step.key} variant="outline" borderRadius="xl" bg={active ? "teal.50" : "gray.50"} borderColor={active ? "teal.100" : "gray.200"}>
+                        <CardBody p={4}>
+                          <HStack justify="space-between" mb={3}>
+                            <Box>
+                              <Text fontWeight="bold" color="gray.900">
+                                {step.title.toUpperCase()}
+                              </Text>
+                              <Text fontSize="xs" color="gray.500">
+                                {step.note}
+                              </Text>
+                            </Box>
+                            <Badge colorScheme={active ? "green" : "gray"} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                              {active ? "CAPTURED" : "PENDING"}
+                            </Badge>
+                          </HStack>
+
+                          <Box
+                            h="180px"
+                            borderRadius="xl"
+                            borderWidth="1px"
+                            borderStyle="dashed"
+                            borderColor={active ? "teal.200" : "gray.200"}
+                            bg="white"
+                            overflow="hidden"
+                            display="flex"
+                            alignItems="center"
+                            justifyContent="center"
+                            mb={3}
+                          >
+                            {url ? (
+                              <Image src={url} alt={step.title} objectFit="cover" w="full" h="full" />
+                            ) : (
+                              <VStack spacing={2}>
+                                <Icon as={Camera} boxSize={8} color="gray.300" />
+                                <Text fontSize="sm" color="gray.500">
+                                  No image uploaded
+                                </Text>
+                              </VStack>
+                            )}
+                          </Box>
+
+                          <Button
+                            w="full"
+                            variant="outline"
+                            borderRadius="xl"
+                            leftIcon={<Camera size={16} />}
+                            onClick={() => inputRefs.current[step.key]?.click()}
+                            isLoading={uploadingStep === step.key}
+                          >
+                            Upload {step.title}
+                          </Button>
+
+                          <input
+                            ref={(node) => {
+                              inputRefs.current[step.key] = node;
+                            }}
+                            type="file"
+                            accept="image/*"
+                            hidden
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.currentTarget.value = "";
+                              if (file) {
+                                void handleSamplingUpload(step.key, file);
+                              }
+                            }}
+                          />
+                        </CardBody>
+                      </Card>
+                    );
+                  })}
+                </SimpleGrid>
+
+                <HStack justify="end" mt={4}>
+                  <Button
+                    leftIcon={<Save size={16} />}
+                    colorScheme="teal"
+                    borderRadius="xl"
+                    isLoading={savingSampling}
+                    onClick={() => persistSampling({
+                      before: samplingDraft.before,
+                      during: samplingDraft.during,
+                      after: samplingDraft.after,
+                    })}
+                  >
+                    Save Sampling Record
+                  </Button>
+                </HStack>
+              </CardBody>
+            </Card>
+          </Box>
+
+          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+            <CardBody p={5}>
+              <Heading size="sm" color="gray.900" mb={3}>
+                Lot Summary
+              </Heading>
+              <VStack align="stretch" spacing={3}>
+                <HStack justify="space-between">
+                  <Text fontSize="sm" color="gray.600">Status</Text>
+                  <Badge colorScheme={getSamplingStatus(sampling).color} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                    {getSamplingStatus(sampling).label}
+                  </Badge>
+                </HStack>
+                <HStack justify="space-between">
+                  <Text fontSize="sm" color="gray.600">Traceability photos</Text>
+                  <Text fontWeight="bold" color="gray.900">
+                    {getTraceabilityPhotoCount(lot, sampling)}/3
+                  </Text>
+                </HStack>
+                <HStack justify="space-between">
+                  <Text fontSize="sm" color="gray.600">Uploaded images</Text>
+                  <Text fontWeight="bold" color="gray.900">
+                    {[samplingDraft.before, samplingDraft.during, samplingDraft.after].filter(Boolean).length}/3
+                  </Text>
+                </HStack>
+                <Divider />
+                <Text fontSize="sm" color="gray.600">
+                  This panel keeps the workflow compact while maintaining full traceability for all evidence stages.
+                </Text>
+              </VStack>
             </CardBody>
           </Card>
 
-          {/* Sampling Table View */}
-          <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-            <CardBody p={0}>
-              <TableContainer>
-                <Table variant="simple" size="md">
-                  <Thead bg="gray.50">
-                    <Tr>
-                      <Th color="gray.500" py={4} w="30%">Sampling Workflow</Th>
-                      <Th color="gray.500" py={4}>Media</Th>
-                      <Th color="gray.500" py={4} w="20%">Action</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">Before Photo</Td>
-                      <Td>
-                        {sampling?.beforePhotoUrl ? (
-                          <Image src={sampling.beforePhotoUrl} alt="Before" maxH="60px" borderRadius="md" fallbackSrc="https://via.placeholder.com/60" />
-                        ) : (
-                          <Badge colorScheme="gray">Pending Media</Badge>
-                        )}
-                      </Td>
-                      <Td>
-                        <Button 
-                           size="sm" 
-                           colorScheme="blue" 
-                           variant="outline" 
-                           isDisabled={canSample || !!sampling?.beforePhotoUrl}
-                           isLoading={uploadingCategory === "BEFORE"}
-                           onClick={() => uploadFileTrigger("BEFORE")}
-                        >
-                           Upload Photo
-                        </Button>
-                      </Td>
-                    </Tr>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">During Photo</Td>
-                      <Td>
-                        {sampling?.duringPhotoUrl ? (
-                          <Image src={sampling.duringPhotoUrl} alt="During" maxH="60px" borderRadius="md" fallbackSrc="https://via.placeholder.com/60" />
-                        ) : (
-                          <Badge colorScheme="gray">Pending Media</Badge>
-                        )}
-                      </Td>
-                      <Td>
-                        <Button 
-                           size="sm" 
-                           colorScheme="blue" 
-                           variant="outline" 
-                           isDisabled={canSample || !!sampling?.duringPhotoUrl}
-                           isLoading={uploadingCategory === "DURING"}
-                           onClick={() => uploadFileTrigger("DURING")}
-                        >
-                           Upload Photo
-                        </Button>
-                      </Td>
-                    </Tr>
-                    <Tr>
-                      <Td fontWeight="medium" color="gray.600">After Photo</Td>
-                      <Td>
-                        {sampling?.afterPhotoUrl ? (
-                          <Image src={sampling.afterPhotoUrl} alt="After" maxH="60px" borderRadius="md" fallbackSrc="https://via.placeholder.com/60" />
-                        ) : (
-                          <Badge colorScheme="gray">Pending Media</Badge>
-                        )}
-                      </Td>
-                      <Td>
-                        <Button 
-                           size="sm" 
-                           colorScheme="blue" 
-                           variant="outline" 
-                           isDisabled={canSample || !!sampling?.afterPhotoUrl}
-                           isLoading={uploadingCategory === "AFTER"}
-                           onClick={() => uploadFileTrigger("AFTER")}
-                        >
-                           Upload Photo
-                        </Button>
-                      </Td>
-                    </Tr>
-                  </Tbody>
-                </Table>
-              </TableContainer>
+          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+            <CardBody p={5}>
+              <Heading size="sm" color="gray.900" mb={3}>
+                Seal Control
+              </Heading>
+              <VStack align="stretch" spacing={3}>
+                <FormControl>
+                  <Input
+                    value={sealDraft}
+                    onChange={(event) => setSealDraft(event.target.value)}
+                    placeholder="16-digit seal number"
+                    isDisabled={Boolean(lot.sealNumber)}
+                  />
+                </FormControl>
+                <HStack>
+                  <Button
+                    flex={1}
+                    variant="outline"
+                    leftIcon={<ScanLine size={16} />}
+                    onClick={() => {
+                      void handleGenerateSeal();
+                    }}
+                    isLoading={generatingSeal}
+                    isDisabled={Boolean(lot.sealNumber)}
+                  >
+                    Generate
+                  </Button>
+                  <Button
+                    flex={1}
+                    colorScheme="teal"
+                    onClick={() => {
+                      void handleAssignSeal(false);
+                    }}
+                    isLoading={assigningSeal}
+                    isDisabled={Boolean(lot.sealNumber)}
+                  >
+                    Assign
+                  </Button>
+                </HStack>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void handleAssignSeal(true);
+                  }}
+                  isLoading={assigningSeal}
+                  isDisabled={Boolean(lot.sealNumber)}
+                >
+                  Auto Assign Seal
+                </Button>
+                <Text fontSize="xs" color="gray.500">
+                  {lot.sealNumber ? `Assigned seal: ${lot.sealNumber}` : "Seal can be assigned only once."}
+                </Text>
+              </VStack>
             </CardBody>
           </Card>
 
-          {/* BAG CAPTURE TABLE */}
-          <Card variant="outline" bg="white" shadow="sm" borderRadius="xl" mt={4}>
-            <CardBody p={0}>
-              <Box p={5} borderBottomWidth="1px" borderColor="gray.100" display="flex" justifyContent="space-between" alignItems="center">
-                 <Heading size="md" color="gray.700">Bag & Weight Capture</Heading>
-                 <HStack spacing={3}>
-                   <Button variant="outline" colorScheme="blue" size="sm" onClick={handleAddBagRow}>
-                     + Add Bag
-                   </Button>
-                   <Button colorScheme="blue" size="sm" isDisabled={unsavedBags.length === 0} isLoading={savingBags} onClick={handleSaveBags}>
-                     Save Bags ({unsavedBags.length})
-                   </Button>
-                 </HStack>
+          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+            <CardBody p={5}>
+              <Heading size="sm" color="gray.900" mb={3}>
+                Photo Traceability
+              </Heading>
+              <VStack align="stretch" spacing={4}>
+                {[
+                  {
+                    key: "BAG" as const,
+                    title: "Bag Photo",
+                    url: lot.bagPhotoUrl,
+                  },
+                  {
+                    key: "SEAL" as const,
+                    title: "Seal Photo",
+                    url: lot.sealPhotoUrl,
+                  },
+                ].map((entry) => (
+                  <Box key={entry.key}>
+                    <HStack justify="space-between" mb={2}>
+                      <Text fontSize="sm" color="gray.700" fontWeight="medium">
+                        {entry.title}
+                      </Text>
+                      <Badge colorScheme={entry.url ? "green" : "gray"} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                        {entry.url ? "CAPTURED" : "PENDING"}
+                      </Badge>
+                    </HStack>
+                    <Box
+                      h="120px"
+                      borderRadius="xl"
+                      borderWidth="1px"
+                      borderStyle="dashed"
+                      borderColor={entry.url ? "teal.200" : "gray.200"}
+                      bg="white"
+                      overflow="hidden"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      mb={2}
+                    >
+                      {entry.url ? (
+                        <Image src={entry.url} alt={entry.title} objectFit="cover" w="full" h="full" />
+                      ) : (
+                        <VStack spacing={1}>
+                          <Icon as={Camera} boxSize={6} color="gray.300" />
+                          <Text fontSize="xs" color="gray.500">
+                            No image
+                          </Text>
+                        </VStack>
+                      )}
+                    </Box>
+                    <Button
+                      w="full"
+                      size="sm"
+                      variant="outline"
+                      leftIcon={<Camera size={14} />}
+                      onClick={() => inputRefs.current[entry.key === "BAG" ? "bag" : "seal"]?.click()}
+                      isLoading={uploadingLotPhoto === entry.key}
+                    >
+                      Upload {entry.title}
+                    </Button>
+                    <input
+                      ref={(node) => {
+                        inputRefs.current[entry.key === "BAG" ? "bag" : "seal"] = node;
+                      }}
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.currentTarget.value = "";
+                        if (file) {
+                          void handleLotPhotoUpload(entry.key, file);
+                        }
+                      }}
+                    />
+                  </Box>
+                ))}
+              </VStack>
+            </CardBody>
+          </Card>
+        </SimpleGrid>
+
+        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <CardBody p={0}>
+            <HStack justify="space-between" p={5} borderBottomWidth="1px" borderColor="gray.100" flexWrap="wrap" spacing={3}>
+              <Box>
+                <Heading size="md" color="gray.900">
+                  Bag Table
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Inline editing for gross and net weight capture.
+                </Text>
               </Box>
-              <TableContainer>
-                <Table variant="simple" size="md">
-                   <Thead bg="gray.50">
-                     <Tr>
-                       <Th w="20%">Bag Number</Th>
-                       <Th w="40%">Gross Weight (kg)</Th>
-                       <Th w="40%">Net Weight (kg)</Th>
-                     </Tr>
-                   </Thead>
-                   <Tbody>
-                     {bags.length === 0 ? (
-                       <Tr>
-                         <Td colSpan={3} textAlign="center" py={8}>
-                           <Text color="gray.400">No bags recorded for this lot yet.</Text>
-                         </Td>
-                       </Tr>
-                     ) : (
-                       bags.map((bag, index) => (
-                         <Tr key={bag.id || `new-${index}`} bg={bag.isNew ? "blue.50" : "transparent"}>
-                           <Td fontWeight="bold">#{bag.bagNumber}</Td>
-                           <Td>
-                             <Input 
-                               type="number" 
-                               value={bag.grossWeight} 
-                               onChange={(e) => updateBagRow(index, "grossWeight", e.target.value)} 
-                               isDisabled={!bag.isNew && savingBags}
-                               isReadOnly={!bag.isNew}
-                               bg={!bag.isNew ? "gray.50" : "white"}
-                               placeholder="e.g. 50.5"
-                               size="sm"
-                               borderRadius="md"
-                             />
-                           </Td>
-                           <Td>
-                             <Input 
-                               type="number" 
-                               value={bag.netWeight} 
-                               onChange={(e) => updateBagRow(index, "netWeight", e.target.value)} 
-                               isDisabled={!bag.isNew && savingBags}
-                               isReadOnly={!bag.isNew}
-                               bg={!bag.isNew ? "gray.50" : "white"}
-                               placeholder="e.g. 48.0"
-                               size="sm"
-                               borderRadius="md"
-                             />
-                           </Td>
-                         </Tr>
-                       ))
-                     )}
-                   </Tbody>
-                </Table>
-              </TableContainer>
-            </CardBody>
-          </Card>
+              <HStack>
+                <FormControl w="28">
+                  <Input type="number" min={1} value={bagCount} onChange={(e) => setBagCount(e.target.value)} size="sm" />
+                </FormControl>
+                <Button colorScheme="teal" leftIcon={<Plus size={16} />} onClick={handleRegisterBags} isLoading={registering}>
+                  Add Bags
+                </Button>
+              </HStack>
+            </HStack>
 
-        </VStack>
-      </Container>
-    </Box>
+            <TableContainer>
+              <Table size="sm" variant="simple">
+                <Thead bg="gray.50">
+                  <Tr>
+                    <Th>Bag Number</Th>
+                    <Th>Gross Weight</Th>
+                    <Th>Net Weight</Th>
+                    <Th textAlign="right">Actions</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {bags.map((bag) => (
+                    <Tr key={bag.id}>
+                      <Td fontWeight="semibold">#{bag.bagNumber}</Td>
+                      <Td>
+                        <Input
+                          size="sm"
+                          value={bagDrafts[bag.id]?.grossWeight ?? ""}
+                          onChange={(e) => setBagDrafts((prev) => ({
+                            ...prev,
+                            [bag.id]: {
+                              grossWeight: e.target.value,
+                              netWeight: prev[bag.id]?.netWeight ?? "",
+                            },
+                          }))}
+                        />
+                      </Td>
+                      <Td>
+                        <Input
+                          size="sm"
+                          value={bagDrafts[bag.id]?.netWeight ?? ""}
+                          onChange={(e) => setBagDrafts((prev) => ({
+                            ...prev,
+                            [bag.id]: {
+                              grossWeight: prev[bag.id]?.grossWeight ?? "",
+                              netWeight: e.target.value,
+                            },
+                          }))}
+                        />
+                      </Td>
+                      <Td>
+                        <HStack justify="end">
+                          <Button
+                            size="sm"
+                            colorScheme="teal"
+                            leftIcon={<Save size={14} />}
+                            onClick={() => handleBagSave(bag)}
+                            isLoading={savingBags === bag.id}
+                          >
+                            Save
+                          </Button>
+                        </HStack>
+                      </Td>
+                    </Tr>
+                  ))}
+                  {bags.length === 0 && (
+                    <Tr>
+                      <Td colSpan={4}>
+                        <Center py={12}>
+                          <VStack spacing={2}>
+                            <Icon as={CheckCircle2} boxSize={8} color="gray.300" />
+                            <Text color="gray.500">No bags registered for this lot.</Text>
+                          </VStack>
+                        </Center>
+                      </Td>
+                    </Tr>
+                  )}
+                </Tbody>
+              </Table>
+            </TableContainer>
+          </CardBody>
+        </Card>
+      </VStack>
+    </ControlTowerLayout>
   );
 }

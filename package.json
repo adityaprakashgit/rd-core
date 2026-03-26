@@ -14,6 +14,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@prisma/client": "^5.22.0",
+    "bwip-js": "^4.8.0",
     "date-fns": "^4.1.0",
     "exceljs": "^4.4.0",
     "framer-motion": "^12.38.0",
@@ -22,6 +23,7 @@
     "lucide-react": "^1.7.0",
     "next": "16.2.1",
     "prisma": "^5.22.0",
+    "puppeteer": "^24.40.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

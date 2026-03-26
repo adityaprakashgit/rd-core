@@ -1,315 +1,424 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { 
-  Box, 
-  Heading, 
-  Text, 
-  SimpleGrid, 
-  Card, 
-  CardBody, 
-  Badge, 
-  HStack, 
-  VStack, 
-  Spinner, 
-  Center,
-  Stat,
-  StatLabel,
-  StatNumber,
-  Icon,
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Badge,
+  Box,
   Button,
-  Progress,
+  Card,
+  CardBody,
+  Center,
   Divider,
+  Heading,
+  HStack,
+  Icon,
+  Progress,
+  SimpleGrid,
+  Spinner,
+  Text,
+  VStack,
+  useToast,
 } from "@chakra-ui/react";
-import { 
-  FlaskConical, 
-  ClipboardCheck, 
-  AlertCircle, 
-  CheckCircle2, 
-  ExternalLink, 
-  Package
+import {
+  AlertCircle,
+  ClipboardList,
+  FlaskConical,
+  FileDown,
+  Layers3,
+  Plus,
+  Puzzle,
+  Sparkles,
+  Workflow,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { InspectionJob } from "@/types/inspection";
 
-// --- UI Components ---
+type MetricCardProps = {
+  title: string;
+  value: string | number;
+  detail: string;
+  accent: string;
+};
 
-const KPICard = ({ title, value, icon, color, trend }: { title: string, value: string | number, icon: React.ElementType, color: string, trend?: string }) => (
-  <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-    <CardBody>
-      <HStack justify="space-between" mb={2}>
-        <Box p={2} bg={`${color}.50`} borderRadius="lg">
-          <Icon as={icon} color={`${color}.500`} fontSize="20" />
-        </Box>
-        {trend && (
-          <Badge colorScheme="green" variant="subtle" borderRadius="full">
-            {trend}
-          </Badge>
-        )}
-      </HStack>
-      <Stat>
-        <StatLabel color="gray.500" fontSize="xs" fontWeight="bold" textTransform="uppercase">
-          {title}
-        </StatLabel>
-        <StatNumber fontSize="2xl" fontWeight="bold">
-          {value}
-        </StatNumber>
-      </Stat>
-    </CardBody>
-  </Card>
-);
+const workflowStages = [
+  { key: "CREATED", label: "CREATED", accent: "gray" },
+  { key: "LOTS_READY", label: "LOTS_READY", accent: "cyan" },
+  { key: "SAMPLING", label: "SAMPLING", accent: "orange" },
+  { key: "LAB", label: "LAB", accent: "purple" },
+  { key: "QA", label: "QA", accent: "blue" },
+  { key: "LOCKED", label: "LOCKED", accent: "green" },
+  { key: "DISPATCHED", label: "DISPATCHED", accent: "teal" },
+];
 
-const WorkflowStrip = ({ counts }: { counts: Record<string, number> }) => {
-  const stages = [
-    { label: "CREATED", color: "gray" },
-    { label: "LOTS_READY", color: "blue" },
-    { label: "SAMPLING", color: "orange" },
-    { label: "LAB", color: "purple" },
-    { label: "QA", color: "yellow" },
-    { label: "LOCKED", color: "green" },
-  ];
-
+function MetricCard({ title, value, detail, accent }: MetricCardProps) {
   return (
-    <Card variant="outline" bg="white" shadow="sm" borderRadius="xl" mb={6}>
-      <CardBody>
-        <VStack align="stretch" spacing={4}>
-          <Text fontSize="xs" fontWeight="bold" color="gray.500" textTransform="uppercase">
-            Analytical Workflow Density
-          </Text>
-          <HStack spacing={0} w="full" bg="gray.100" borderRadius="lg" overflow="hidden" h="8px">
-            {stages.map((s) => {
-              const weight = counts[s.label] || 0;
-              const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-              return (
-                <Box 
-                  key={s.label} 
-                  h="full" 
-                  bg={`${s.color}.400`} 
-                  w={`${(weight / total) * 100}%`} 
-                  transition="width 0.5s"
-                />
-              );
-            })}
-          </HStack>
-          <SimpleGrid columns={{ base: 3, md: 6 }} spacing={4}>
-            {stages.map((s) => (
-              <VStack key={s.label} align="start" spacing={0}>
-                <Text fontSize="10px" color="gray.500" fontWeight="bold">
-                  {s.label}
-                </Text>
-                <HStack>
-                  <Box w="2" h="2" borderRadius="full" bg={`${s.color}.400`} />
-                  <Text fontSize="sm" fontWeight="bold">
-                    {counts[s.label] || 0}
-                  </Text>
-                </HStack>
-              </VStack>
-            ))}
-          </SimpleGrid>
-        </VStack>
+    <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+      <CardBody p={5}>
+        <HStack justify="space-between" align="start" mb={4}>
+          <Box w="2" h="10" borderRadius="full" bg={`${accent}.400`} />
+          <Badge variant="subtle" colorScheme={accent} borderRadius="full" px={2.5} py={1}>
+            KPI
+          </Badge>
+        </HStack>
+        <Text fontSize="sm" color="gray.500" fontWeight="medium">
+          {title}
+        </Text>
+        <Text fontSize="3xl" fontWeight="bold" color="gray.900" mt={1}>
+          {value}
+        </Text>
+        <Text fontSize="sm" color="gray.600" mt={1}>
+          {detail}
+        </Text>
       </CardBody>
     </Card>
   );
-};
+}
 
-const ReadinessItem = ({ title, description, badgeLabel, color }: { title: string, description: string, badgeLabel: string, color: string }) => (
-  <HStack spacing={4} align="start" p={3} _hover={{ bg: "gray.50" }} borderRadius="lg" transition="0.2s">
-    <VStack align="start" spacing={0} flex={1}>
-      <Text fontSize="sm" fontWeight="bold" color="gray.700">{title}</Text>
-      <Text fontSize="xs" color="gray.500">{description}</Text>
-    </VStack>
-    <Badge colorScheme={color} variant="subtle" fontSize="10px" px={2} borderRadius="md">
-      {badgeLabel}
-    </Badge>
-  </HStack>
-);
+function formatTime(value: string | Date) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
+}
 
-// --- Page Logic ---
+function getStatusColor(status: string) {
+  switch (status) {
+    case "LOCKED":
+      return "green";
+    case "QA":
+      return "blue";
+    case "DISPATCHED":
+      return "teal";
+    case "LAB":
+      return "purple";
+    case "SAMPLING":
+      return "orange";
+    default:
+      return "gray";
+  }
+}
 
 export default function UserRdDashboard() {
+  const router = useRouter();
+  const toast = useToast();
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
+
+  const fetchJobs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/inspection/jobs?view=all");
+      if (!res.ok) throw new Error("Failed to fetch jobs");
+      const data = await res.json();
+      setJobs(Array.isArray(data) ? data : []);
+    } catch {
+      toast({ title: "Failed to load R&D jobs", status: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    async function getJobs() {
-      try {
-        const res = await fetch("/api/inspection/jobs");
-        if (res.ok) {
-          const data = await res.json();
-          setJobs(data);
-        }
-      } catch {
-        console.error("Failed to load RD jobs");
-      } finally {
-        setLoading(false);
+    fetchJobs();
+  }, [fetchJobs]);
+
+  const metrics = useMemo(() => {
+    const total = jobs.length;
+    const sampled = jobs.filter((job) => (job.lots?.filter((lot) => Boolean(lot.sampling)).length ?? 0) > 0).length;
+    const pendingQA = jobs.filter((job) => job.status === "QA").length;
+    const locked = jobs.filter((job) => job.status === "LOCKED").length;
+    const reports = jobs.filter((job) => (job.reportSnapshots?.length ?? 0) > 0).length;
+    return { total, sampled, pendingQA, locked, reports };
+  }, [jobs]);
+
+  const workflowCounts = useMemo(() => {
+    const counts = workflowStages.reduce<Record<string, number>>((acc, stage) => {
+      acc[stage.key] = 0;
+      return acc;
+    }, {});
+
+    jobs.forEach((job) => {
+      const totalLots = job.lots?.length ?? 0;
+      const sampledLots = job.lots?.filter((lot) => Boolean(lot.sampling)).length ?? 0;
+
+      if (job.status in counts) {
+        counts[job.status] += 1;
+        return;
       }
-    }
-    getJobs();
-  }, []);
+      if (sampledLots > 0 && sampledLots < totalLots) {
+        counts.SAMPLING += 1;
+        return;
+      }
+      if (sampledLots > 0 && sampledLots === totalLots && totalLots > 0) {
+        counts.LAB += 1;
+        return;
+      }
+      counts.CREATED += 1;
+    });
 
-  if (loading) return (
-    <ControlTowerLayout>
-      <Center minH="400px">
-        <Spinner size="xl" color="purple.500" />
-      </Center>
-    </ControlTowerLayout>
-  );
+    return counts;
+  }, [jobs]);
 
-  const statusCounts = jobs.reduce((acc: Record<string, number>, job) => {
-    acc[job.status] = (acc[job.status] || 0) + 1;
-    return acc;
-  }, {});
-
-
-  const totalJobs = jobs.length;
-  const inLab = statusCounts["LAB"] || 0;
-  const pendingQA = statusCounts["QA"] || 0;
-  const finalized = statusCounts["LOCKED"] || 0;
+  if (loading) {
+    return (
+      <ControlTowerLayout>
+        <Center minH="40vh">
+          <Spinner size="xl" color="teal.500" />
+        </Center>
+      </ControlTowerLayout>
+    );
+  }
 
   return (
     <ControlTowerLayout>
       <VStack align="stretch" spacing={6}>
-        <Box mb={4}>
-          <Heading size="lg" color="gray.800">R&D Analytics Dashboard</Heading>
-          <Text color="gray.500">Monitor inspection results and execute laboratory assay trials.</Text>
-        </Box>
+        <HStack justify="space-between" align="start" flexWrap="wrap" spacing={4}>
+          <VStack align="start" spacing={1}>
+            <HStack spacing={2}>
+              <Badge colorScheme="purple" variant="subtle" borderRadius="full" px={2.5} py={1}>
+                R&D CONTROL
+              </Badge>
+              <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
+                LIVE
+              </Badge>
+            </HStack>
+            <Heading size="lg" color="gray.900">
+              Analytical Control Tower
+            </Heading>
+            <Text color="gray.600" maxW="4xl">
+              Analytical mapping, trial orchestration, QA control, and report generation from one operational surface.
+            </Text>
+          </VStack>
 
-        {/* KPI Row */}
-        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
-          <KPICard title="Assigned Jobs" value={totalJobs} icon={ClipboardCheck} color="purple" />
-          <KPICard title="In Laboratory" value={inLab} icon={FlaskConical} color="orange" />
-          <KPICard title="Pending Review" value={pendingQA} icon={AlertCircle} color="yellow" />
-          <KPICard title="Finalized" value={finalized} icon={CheckCircle2} color="green" />
+          <HStack spacing={3} wrap="wrap">
+            <Button leftIcon={<Plus size={16} />} colorScheme="teal" borderRadius="xl" onClick={() => router.push("/rd")}>
+              Create Job
+            </Button>
+            <Button
+              leftIcon={<Puzzle size={16} />}
+              variant="outline"
+              borderRadius="xl"
+              onClick={() => router.push("/playground")}
+            >
+              Open Playground
+            </Button>
+            <Badge colorScheme="purple" variant="subtle" borderRadius="full" px={3} py={1}>
+              ASSAY READY
+            </Badge>
+          </HStack>
+        </HStack>
+
+        <SimpleGrid columns={{ base: 1, sm: 2, xl: 5 }} spacing={4}>
+          <MetricCard title="Assigned Jobs" value={metrics.total} detail="Inspection jobs in R&D scope." accent="purple" />
+          <MetricCard title="Sampling Live" value={metrics.sampled} detail="Jobs with active sampling records." accent="orange" />
+          <MetricCard title="Pending QA" value={metrics.pendingQA} detail="Jobs queued for quality review." accent="blue" />
+          <MetricCard title="Locked" value={metrics.locked} detail="Jobs sealed for downstream use." accent="green" />
+          <MetricCard title="Reports Generated" value={metrics.reports} detail="Jobs with generated report snapshots." accent="teal" />
         </SimpleGrid>
 
-        <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={6}>
-          <Box gridColumn={{ lg: "span 2" }}>
-            {/* Workflow Strip */}
-            <WorkflowStrip counts={statusCounts} />
+        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <CardBody p={6}>
+            <HStack justify="space-between" align="start" mb={4} flexWrap="wrap" spacing={4}>
+              <VStack align="start" spacing={1}>
+                <HStack>
+                  <Icon as={Workflow} color="teal.600" />
+                  <Text fontWeight="bold" color="gray.900">
+                    Workflow Engine
+                  </Text>
+                </HStack>
+                <Text fontSize="sm" color="gray.600">
+                  CREATED to DISPATCHED visibility across assay operations.
+                </Text>
+              </VStack>
+              <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3} py={1}>
+                CONTROLLED COPY
+              </Badge>
+            </HStack>
 
-            {/* Job List */}
-            <VStack align="stretch" spacing={4}>
-              <HStack justify="space-between">
-                <Heading size="md" color="gray.700">R&D Execution Register</Heading>
-              </HStack>
-              
-              {jobs.map((job) => (
-                <Card 
-                  key={job.id} 
-                  variant="outline" 
-                  bg="white" 
-                  shadow="sm" 
-                  borderRadius="xl" 
-                  _hover={{ shadow: "md", transform: "translateY(-2px)", cursor: "pointer" }}
-                  transition="all 0.2s"
-                  onClick={() => router.push(`/userrd/job/${job.id}`)}
-                >
-                  <CardBody>
-                    <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4} alignItems="center">
-                      <VStack align="start" spacing={0}>
-                        <Text fontSize="xs" fontWeight="bold" color="purple.500" mb={1}>
-                          {job.jobReferenceNumber || job.id.slice(-8).toUpperCase()}
-                        </Text>
-                        <Heading size="sm" color="gray.800" noOfLines={1}>{job.clientName}</Heading>
-                        <Text fontSize="xs" color="gray.500">{job.commodity}</Text>
-                      </VStack>
-
-                      <VStack align="start" spacing={1}>
-                         <Badge colorScheme={job.status === "LOCKED" ? "green" : job.status === "QA" ? "yellow" : "purple"} variant="subtle" borderRadius="md">
-                           {job.status || "PENDING"}
-                         </Badge>
-                         <Text fontSize="10px" color="gray.400">Captured {new Date(job.createdAt).toLocaleDateString()}</Text>
-                      </VStack>
-
-                      <VStack align="stretch" spacing={1} flex={1}>
-                        <HStack justify="space-between">
-                           <Text fontSize="xs" color="gray.600">Assay Integrity</Text>
-                           <Text fontSize="xs" fontWeight="bold">{job.status === "LOCKED" ? "100%" : "0%"}</Text>
-                        </HStack>
-                        <Progress value={job.status === "LOCKED" ? 100 : 0} size="xs" borderRadius="full" colorScheme="purple" />
-                      </VStack>
-
-                      <HStack justify="end">
-                         <Button 
-                           size="sm" 
-                           colorScheme="purple" 
-                           variant="ghost"
-                           rightIcon={<ExternalLink size={14} />}
-                         >
-                           Analyze
-                         </Button>
-                      </HStack>
-                    </SimpleGrid>
-                  </CardBody>
-                </Card>
+            <SimpleGrid columns={{ base: 2, md: 4, lg: 7 }} spacing={3}>
+              {workflowStages.map((stage) => (
+                <Box key={stage.key} p={4} borderWidth="1px" borderRadius="xl" borderColor="gray.200" bg="gray.50">
+                  <Text fontSize="xs" color="gray.500" fontWeight="semibold" textTransform="uppercase">
+                    {stage.label.replace("_", " ")}
+                  </Text>
+                  <HStack justify="space-between" mt={2}>
+                    <Text fontSize="2xl" fontWeight="bold" color={`${stage.accent}.600`}>
+                      {workflowCounts[stage.key] ?? 0}
+                    </Text>
+                    <Box w="2.5" h="2.5" borderRadius="full" bg={`${stage.accent}.400`} />
+                  </HStack>
+                </Box>
               ))}
+            </SimpleGrid>
+          </CardBody>
+        </Card>
 
-              {jobs.length === 0 && (
-                <Center p={10} bg="white" borderRadius="xl" border="1px dashed" borderColor="gray.200">
-                  <VStack spacing={2}>
-                    <Icon as={Package} fontSize="32" color="gray.300" />
-                    <Text color="gray.500">Zero R&D jobs found in the registry.</Text>
-                  </VStack>
-                </Center>
-              )}
+        <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={6}>
+          <Box gridColumn={{ xl: "span 2" }}>
+            <VStack align="stretch" spacing={4}>
+              <Box>
+                <Heading size="md" color="gray.900">
+                  R&D Execution Register
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Structured job cards with assay state and reporting visibility.
+                </Text>
+              </Box>
+
+              <VStack align="stretch" spacing={4}>
+                {jobs.map((job) => {
+                  const totalLots = job.lots?.length ?? 0;
+                  const sampledLots = job.lots?.filter((lot) => Boolean(lot.sampling)).length ?? 0;
+                  const progress = totalLots > 0 ? (sampledLots / totalLots) * 100 : 0;
+
+                  return (
+                    <Card key={job.id} variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+                      <CardBody p={5}>
+                        <SimpleGrid columns={{ base: 1, lg: 4 }} spacing={4} alignItems="center">
+                          <VStack align="start" spacing={1}>
+                            <HStack spacing={2} wrap="wrap">
+                              <Badge colorScheme="purple" variant="solid" borderRadius="full" px={3} py={1}>
+                                {job.inspectionSerialNumber || job.jobReferenceNumber || "JOB"}
+                              </Badge>
+                              <Badge colorScheme={getStatusColor(job.status)} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                                {job.status}
+                              </Badge>
+                            </HStack>
+                            <Text fontSize="lg" fontWeight="bold" color="gray.900">
+                              {job.clientName}
+                            </Text>
+                            <Text fontSize="sm" color="gray.600">
+                              {job.commodity}
+                            </Text>
+                          </VStack>
+
+                          <VStack align="start" spacing={2}>
+                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
+                              Assay progress
+                            </Text>
+                            <Text fontSize="sm" fontWeight="semibold" color="gray.900">
+                              {sampledLots}/{totalLots || 0} lot(s) sampled
+                            </Text>
+                            <Progress value={progress} size="sm" borderRadius="full" colorScheme={sampledLots === totalLots && totalLots > 0 ? "green" : "purple"} w="full" />
+                          </VStack>
+
+                          <VStack align="start" spacing={2}>
+                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
+                              Reporting
+                            </Text>
+                            <HStack spacing={2}>
+                              <Icon as={ClipboardList} color="gray.400" boxSize={4} />
+                              <Text fontSize="sm" color="gray.700">
+                                {job.reportSnapshots?.length ?? 0} snapshot(s)
+                              </Text>
+                            </HStack>
+                            <HStack spacing={2}>
+                              <Icon as={Layers3} color="gray.400" boxSize={4} />
+                              <Text fontSize="sm" color="gray.700">
+                                {totalLots} lot(s) registered
+                              </Text>
+                            </HStack>
+                          </VStack>
+
+                          <VStack align="end" spacing={2}>
+                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
+                              Updated
+                            </Text>
+                            <Text fontSize="sm" color="gray.700">
+                              {formatTime(job.updatedAt || job.createdAt)}
+                            </Text>
+                            <HStack spacing={2} wrap="wrap" justify="end">
+                              <Button colorScheme="teal" borderRadius="xl" onClick={() => router.push(`/userrd/job/${job.id}`)}>
+                                Open Workflow
+                              </Button>
+                              <Button variant="outline" borderRadius="xl" leftIcon={<FileDown size={16} />} onClick={() => router.push(`/userrd/job/${job.id}`)}>
+                                Reports
+                              </Button>
+                            </HStack>
+                          </VStack>
+                        </SimpleGrid>
+                      </CardBody>
+                    </Card>
+                  );
+                })}
+
+                {jobs.length === 0 && (
+                  <Card variant="outline" borderRadius="2xl" bg="white">
+                    <CardBody>
+                      <Center py={14}>
+                        <VStack spacing={2}>
+                          <Icon as={FlaskConical} boxSize={8} color="gray.300" />
+                          <Text color="gray.500">No R&D jobs found in the registry.</Text>
+                        </VStack>
+                      </Center>
+                    </CardBody>
+                  </Card>
+                )}
+              </VStack>
             </VStack>
           </Box>
 
-          <Box>
-            <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-              <CardBody>
-                <Heading size="xs" textTransform="uppercase" color="gray.500" mb={4} letterSpacing="wider">
-                  R&D Readiness
-                </Heading>
-                <VStack align="stretch" spacing={2}>
-                  <ReadinessItem 
-                    title="Sample Capture" 
-                    description="Physical sample verification" 
-                    badgeLabel="ACTIVE" 
-                    color="green" 
-                  />
-                  <Divider />
-                  <ReadinessItem 
-                    title="Analytical Trials" 
-                    description="Laboratory orchestration" 
-                    badgeLabel="READY" 
-                    color="blue" 
-                  />
-                  <Divider />
-                  <ReadinessItem 
-                    title="Metrics Engine" 
-                    description="Real-time assay calculation" 
-                    badgeLabel="CONTROLLED" 
-                    color="green" 
-                  />
-                  <Divider />
-                  <ReadinessItem 
-                    title="Audit Snapshot" 
-                    description="Immutable state capture" 
-                    badgeLabel="READY" 
-                    color="purple" 
-                  />
+          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm" h="full">
+            <CardBody p={6}>
+              <HStack justify="space-between" align="start" mb={4}>
+                <VStack align="start" spacing={1}>
+                  <Heading size="md" color="gray.900">
+                    R&D Readiness
+                  </Heading>
+                  <Text fontSize="sm" color="gray.600">
+                    Analytical operating modules and control state.
+                  </Text>
                 </VStack>
+                <Icon as={Sparkles} color="teal.600" />
+              </HStack>
 
-                <Box mt={8} p={4} bg="orange.50" borderRadius="xl">
-                  <VStack align="start" spacing={2}>
-                    <HStack>
-                      <Icon as={AlertCircle} color="orange.500" />
-                      <Text fontWeight="bold" fontSize="sm" color="orange.800">RD Notice</Text>
-                    </HStack>
-                    <Text fontSize="xs" color="orange.700">
-                      Analytical results must meet the 0.05% variance threshold before QA submission is permitted.
-                    </Text>
-                  </VStack>
-                </Box>
-              </CardBody>
-            </Card>
-          </Box>
+              <VStack align="stretch" spacing={3}>
+                {[
+                  { title: "Sample Capture", desc: "Physical sample verification and media evidence.", status: "ACTIVE", color: "green" },
+                  { title: "Analytical Trials", desc: "Laboratory orchestration and component mapping.", status: "READY", color: "blue" },
+                  { title: "Metrics Engine", desc: "Real-time assay calculation and thresholds.", status: "CONTROLLED", color: "purple" },
+                  { title: "Audit Snapshot", desc: "Immutable state capture for governance.", status: "READY", color: "teal" },
+                ].map((item) => (
+                  <Card key={item.title} variant="outline" borderRadius="xl" bg={`${item.color}.50`} borderColor={`${item.color}.100`}>
+                    <CardBody p={4}>
+                      <HStack justify="space-between" align="start" spacing={3}>
+                        <Box>
+                          <Text fontWeight="bold" color="gray.900">
+                            {item.title}
+                          </Text>
+                          <Text fontSize="sm" color="gray.600" mt={1}>
+                            {item.desc}
+                          </Text>
+                        </Box>
+                        <Badge colorScheme={item.color} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                          {item.status}
+                        </Badge>
+                      </HStack>
+                    </CardBody>
+                  </Card>
+                ))}
+              </VStack>
+
+              <Divider my={6} />
+
+              <Card variant="outline" borderRadius="xl" bg="orange.50" borderColor="orange.100">
+                <CardBody p={4}>
+                  <HStack align="start" spacing={3}>
+                    <Icon as={AlertCircle} color="orange.500" mt={1} />
+                    <Box>
+                      <Text fontWeight="bold" color="orange.800">
+                        R&D Notice
+                      </Text>
+                      <Text fontSize="sm" color="orange.700" mt={1}>
+                        Analytical records should only be submitted for QA once the trial set is complete.
+                      </Text>
+                    </Box>
+                  </HStack>
+                </CardBody>
+              </Card>
+            </CardBody>
+          </Card>
         </SimpleGrid>
       </VStack>
     </ControlTowerLayout>
   );
 }
-

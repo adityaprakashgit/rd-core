@@ -6,13 +6,16 @@ import {
   Box,
   Badge,
   Circle,
-  Divider,
 } from "@chakra-ui/react";
 import { AuditLog } from "@/types/inspection";
 import { format } from "date-fns";
 
 interface AuditTrailProps {
   logs: AuditLog[];
+}
+
+function actorName(log: AuditLog): string {
+  return log.user?.profile?.displayName ?? "System";
 }
 
 export const AuditTrail: React.FC<AuditTrailProps> = ({ logs }) => {
@@ -46,7 +49,7 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ logs }) => {
           <VStack align="start" spacing={1} flex={1}>
             <HStack justify="space-between" w="full">
               <Text fontWeight="bold" fontSize="sm" color="gray.700">
-                {log.to ? `Transition to ${log.to}` : log.action}
+                {log.entity ? `${log.entity} · ${log.action}` : log.action}
               </Text>
               <Text fontSize="xs" color="gray.400">
                 {format(new Date(log.createdAt), "MMM d, HH:mm")}
@@ -70,9 +73,16 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ logs }) => {
             <Text fontSize="xs" color="gray.500 italic">
               {log.notes || "System trace entry"}
             </Text>
-            <Text fontSize="2xs" color="gray.400" mt={1}>
-              Executed by: {log.userId}
-            </Text>
+            <HStack spacing={2} mt={1} flexWrap="wrap">
+              <Badge variant="subtle" colorScheme="purple" fontSize="2xs">
+                {actorName(log)}
+              </Badge>
+              {log.metadata && (
+                <Badge variant="outline" colorScheme="gray" fontSize="2xs">
+                  Metadata recorded
+                </Badge>
+              )}
+            </HStack>
           </VStack>
         </HStack>
       ))}

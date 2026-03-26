@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserFromRequest } from "@/lib/session";
+import { authorize, AuthorizationError } from "@/lib/rbac";
 
 function serializeTrials<T extends { measurements: Array<{ value: unknown }> }>(trials: T[]) {
   return trials.map((trial) => ({
@@ -13,6 +15,13 @@ function serializeTrials<T extends { measurements: Array<{ value: unknown }> }>(
 
 export async function POST(req: NextRequest) {
   try {
+    const currentUser = await getCurrentUserFromRequest(req);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+    }
+
+    authorize(currentUser, "MUTATE_RND");
+
     const body = await req.json();
     const { jobId, trialNumber } = body;
 
@@ -41,8 +50,12 @@ export async function POST(req: NextRequest) {
       // --- STATUS GUARD ---
       const job = await tx.inspectionJob.findUnique({
         where: { id: jobId },
-        select: { status: true }
+        select: { status: true, companyId: true }
       });
+
+      if (!job || job.companyId !== currentUser.companyId) {
+        throw new Error("JOB_FORBIDDEN");
+      }
 
       if (job?.status === "LOCKED") {
         throw new Error("JOB_LOCKED");
@@ -70,10 +83,23 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(trial);
   } catch (error: unknown) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden", details: error.message }, { status: 403 });
+    }
+
     if (error instanceof Error && error.message === "TRIAL_EXISTS") {
       return NextResponse.json(
         { error: "Conflict Action", details: "This trial sequence is already instantiated on the workflow." },
         { status: 409 }
+      );
+    }
+    if (error instanceof Error && error.message === "JOB_FORBIDDEN") {
+      return NextResponse.json({ error: "Forbidden", details: "Cross-company access is not allowed." }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "JOB_LOCKED") {
+      return NextResponse.json(
+        { error: "Access Forbidden", details: "This job is LOCKED for audit integrity. No modifications allowed." },
+        { status: 403 }
       );
     }
     const message = error instanceof Error ? error.message : "Failed to orchestrate Trial bindings.";
@@ -86,6 +112,13 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    const currentUser = await getCurrentUserFromRequest(req);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+    }
+
+    authorize(currentUser, "READ_ONLY");
+
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get("jobId");
 
@@ -94,7 +127,7 @@ export async function GET(req: NextRequest) {
     }
 
     const experiment = await prisma.rDExperiment.findFirst({
-       where: { jobId },
+       where: { jobId, job: { companyId: currentUser.companyId } },
        include: {
           trials: {
              orderBy: { trialNumber: "asc" },
@@ -105,6 +138,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(experiment ? serializeTrials(experiment.trials) : []);
   } catch (err: unknown) {
+    if (err instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden", details: err.message }, { status: 403 });
+    }
+
     const error = err as Error;
     return NextResponse.json({ error: "System Error", details: error.message || "Failed resolving trials" }, { status: 500 });
   }

@@ -284,7 +284,7 @@ export default function UserRdJobDetail() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Report_${job?.id.slice(-8)}.${format === "excel" ? "xlsx" : "pdf"}`;
+      a.download = `Report_${job?.inspectionSerialNumber || job?.jobReferenceNumber || "job"}.${format === "excel" ? "xlsx" : "pdf"}`;
       a.click();
     } catch { toast({ title: "Export Failed", status: "error" }); }
   };
@@ -333,7 +333,7 @@ export default function UserRdJobDetail() {
               <VStack align="start" spacing={1}>
                 <HStack>
                   <Badge colorScheme="purple" p={1} borderRadius="md" variant="solid">
-                    {job.jobReferenceNumber || job.id.slice(-8).toUpperCase()}
+                    {job.inspectionSerialNumber || job.jobReferenceNumber || "JOB"}
                   </Badge>
                   <Badge colorScheme={isLocked ? "green" : isQA ? "yellow" : "blue"} borderRadius="md">
                     {job.status}

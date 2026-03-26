@@ -12,6 +12,14 @@ import {
 import { useRouter } from "next/navigation";
 import { LayoutDashboard, Search, FlaskConical } from "lucide-react";
 
+type RoleCardProps = {
+  title: string;
+  desc: string;
+  onClick: () => void;
+  colorScheme: string;
+  icon: React.ElementType;
+};
+
 export default function Home() {
   const router = useRouter();
 
@@ -22,18 +30,18 @@ export default function Home() {
       display="flex" 
       alignItems="center" 
       justifyContent="center"
-      p={6}
+      p={{ base: 4, md: 6 }}
     >
       <Container maxW="3xl">
-        <VStack spacing={8} textAlign="center" bg="whiteAlpha.100" backdropFilter="blur(20px)" p={12} borderRadius="3xl" shadow="2xl" borderWidth="1px" borderColor="whiteAlpha.200">
+        <VStack spacing={{ base: 6, md: 8 }} textAlign="center" bg="whiteAlpha.100" backdropFilter="blur(20px)" p={{ base: 6, md: 12 }} borderRadius="3xl" shadow="2xl" borderWidth="1px" borderColor="whiteAlpha.200">
           <VStack spacing={4}>
             <Box p={4} bg="purple.500" borderRadius="2xl" color="white" shadow="lg" transform="rotate(-10deg)">
                <Icon as={LayoutDashboard} fontSize="32" />
             </Box>
-            <Heading size="2xl" color="white" fontWeight="extrabold" letterSpacing="tight">
+            <Heading size={{ base: "xl", md: "2xl" }} color="white" fontWeight="extrabold" letterSpacing="tight">
               CONTROL TOWER
             </Heading>
-            <Text fontSize="lg" color="gray.400" maxW="lg">
+            <Text fontSize={{ base: "sm", md: "lg" }} color="gray.400" maxW="lg">
               Enterprise Resource Planning & Inspection Infrastructure
             </Text>
           </VStack>
@@ -60,12 +68,12 @@ export default function Home() {
   );
 }
 
-function RoleCard({ title, desc, onClick, colorScheme, icon }: any) {
+function RoleCard({ title, desc, onClick, colorScheme, icon }: RoleCardProps) {
   return (
     <Box 
       as="button"
       onClick={onClick}
-      p={8} 
+      p={{ base: 6, md: 8 }} 
       bg="whiteAlpha.50" 
       borderRadius="2xl" 
       borderWidth="1px" 

@@ -8,6 +8,93 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  ADMIN
+  OPERATIONS
+  RND
+  VIEWER
+}
+
+model User {
+  id         String    @id
+  companyId  String
+  email      String?   @unique
+  role       UserRole   @default(VIEWER)
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  profile    UserProfile?
+
+  createdJobs      InspectionJob[] @relation("InspectionJobCreatedBy")
+  assignedJobs      InspectionJob[] @relation("InspectionJobAssignedTo")
+  assignedJobsAuthored InspectionJob[] @relation("InspectionJobAssignedBy")
+  assignedLots      InspectionLot[] @relation("InspectionLotAssignedTo")
+  assignedLotsAuthored InspectionLot[] @relation("InspectionLotAssignedBy")
+  assignedSampling   Sampling[] @relation("SamplingAssignedTo")
+  assignedSamplingAuthored Sampling[] @relation("SamplingAssignedBy")
+  auditLogs          AuditLog[]
+}
+
+model UserProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  displayName String
+  companyName String?
+  jobTitle    String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ClientMaster {
+  id            String   @id @default(cuid())
+  companyId     String
+  clientName    String
+  billToAddress String
+  shipToAddress String
+  gstOrId       String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([companyId, clientName])
+  @@index([companyId])
+}
+
+model TransporterMaster {
+  id            String   @id @default(cuid())
+  companyId     String
+  transporterName String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  gstOrId       String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([companyId, transporterName])
+  @@index([companyId])
+}
+
+model ItemMaster {
+  id          String   @id @default(cuid())
+  companyId   String
+  itemName    String
+  description String?
+  uom         String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([companyId, itemName])
+  @@index([companyId])
+}
+
 model InspectionJob {
   inspectionSerialNumber String @unique
   id                 String   @id @default(cuid())
@@ -18,9 +105,12 @@ model InspectionJob {
   commodity          String
   plantLocation      String?
 
-  status             String   @default("CREATED")
+  status             String   @default("PENDING")
 
   createdByUserId    String
+  assignedToId       String?
+  assignedById       String?
+  assignedAt         DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -30,19 +120,30 @@ model InspectionJob {
   homogeneousSamples HomogeneousSample[]
   reportSnapshots    ReportSnapshot[]
   auditLogs          AuditLog[]
+
+  createdByUser      User @relation("InspectionJobCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo         User? @relation("InspectionJobAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy         User? @relation("InspectionJobAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([companyId, assignedToId])
+  @@index([createdByUserId])
 }
 
 model AuditLog {
   id        String   @id @default(cuid())
   jobId     String
   userId    String
+  entity    String   @default("JOB")
   action    String   // e.g. "STATUS_CHANGE"
   from      String?
   to        String?
   notes     String?
+  metadata  Json?
   createdAt DateTime @default(now())
 
   job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user      User @relation(fields: [userId], references: [id], onDelete: Restrict)
 }
 
 model ReportSnapshot {
@@ -58,20 +159,38 @@ model ReportSnapshot {
 model InspectionLot {
   id           String   @id @default(cuid())
   jobId        String
+  companyId    String
   lotNumber    String
 
   totalBags    Int      @default(1)
 
   grossWeightKg Decimal?
   netWeightKg   Decimal?
+  sealNumber    String?  @unique
+  sealAuto      Boolean  @default(false)
+  grossWeight   Float?
+  tareWeight    Float?
+  netWeight     Float?
+  bagPhotoUrl   String?
+  samplingPhotoUrl String?
+  sealPhotoUrl  String?
 
+  status       String   @default("PENDING")
+  assignedToId String?
+  assignedById String?
+  assignedAt   DateTime?
   createdAt    DateTime @default(now())
 
   job          InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   mediaFiles   MediaFile[] @relation("LotMediaFiles")
   trials       RDTrial[] @relation("LotTrials")
+  assignedTo   User? @relation("InspectionLotAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy   User? @relation("InspectionLotAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
 
   @@unique([jobId, lotNumber])
+  @@index([companyId])
+  @@index([companyId, assignedToId])
+  @@index([companyId, sealNumber])
 
   bags        InspectionBag[]
   sampling    Sampling[]
@@ -166,14 +285,24 @@ model SerialCounter {
 model Sampling {
   id        String   @id @default(cuid())
   lotId     String @unique
+  companyId String
 
   beforePhotoUrl String?
   duringPhotoUrl String?
   afterPhotoUrl  String?
 
+  status       String   @default("PENDING")
+  assignedToId String?
+  assignedById String?
+  assignedAt   DateTime?
   createdAt DateTime @default(now())
 
   lot InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  assignedTo User? @relation("SamplingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy User? @relation("SamplingAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([companyId, assignedToId])
 }
 
 model HomogeneousSample {
@@ -198,4 +327,87 @@ model SamplePacket {
   sample HomogeneousSample @relation(fields: [sampleId], references: [id], onDelete: Cascade)
 
   @@unique([sampleId, packetNumber])
+}
+
+model RDStepMaster {
+  id                     String   @id @default(cuid())
+  companyId              String
+  name                   String
+  category               String
+  defaultDurationSeconds Int      @default(600)
+  requiresTimer          Boolean  @default(true)
+  allowsChemicals        Boolean  @default(true)
+  allowsAssets           Boolean  @default(true)
+  requiresAsset          Boolean  @default(false)
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("rd_step_master")
+}
+
+model RDChemicalMaster {
+  id            String   @id @default(cuid())
+  companyId     String
+  name          String
+  code          String
+  category      String
+  baseUnit      String
+  allowedUnits  String[]
+  stockQuantity Float    @default(0)
+  reorderLevel  Float    @default(0)
+  location      String   @default("")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("rd_chemical_master")
+}
+
+model RDAssetMaster {
+  id              String   @id @default(cuid())
+  companyId       String
+  name            String
+  code            String
+  category        String
+  availability    String   @default("AVAILABLE")
+  location        String   @default("")
+  calibrationDate String   @default("")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("rd_asset_master")
+}
+
+model RDUnitMaster {
+  id               String   @id @default(cuid())
+  companyId        String
+  unitCode         String
+  category         String
+  conversionToBase Float    @default(1)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("rd_unit_master")
+}
+
+model RDTemplateMaster {
+  id                   String   @id @default(cuid())
+  companyId            String
+  name                 String
+  notes                String   @default("")
+  stepNames            String[]
+  expectedMeasurements String[]
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("rd_template_master")
 }

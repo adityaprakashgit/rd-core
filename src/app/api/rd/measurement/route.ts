@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserFromRequest } from "@/lib/session";
+import { authorize, AuthorizationError } from "@/lib/rbac";
 
 export async function POST(req: NextRequest) {
   try {
+    const currentUser = await getCurrentUserFromRequest(req);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+    }
+
+    authorize(currentUser, "MUTATE_RND");
+
     const body = await req.json();
     const { trialId, element, value } = body;
 
@@ -25,8 +34,15 @@ export async function POST(req: NextRequest) {
 
     const job = await prisma.inspectionJob.findUnique({
       where: { id: trial.experiment.jobId },
-      select: { status: true }
+      select: { status: true, companyId: true }
     });
+
+    if (!job || job.companyId !== currentUser.companyId) {
+      return NextResponse.json(
+        { error: "Forbidden", details: "Cross-company access is not allowed." },
+        { status: 403 }
+      );
+    }
 
     if (job?.status === "LOCKED") {
       return NextResponse.json(
@@ -53,16 +69,22 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, measurement });
-  } catch (error: any) {
-    if (error?.code === "P2002") {
+  } catch (error: unknown) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden", details: error.message }, { status: 403 });
+    }
+
+    if (error && typeof error === "object" && "code" in error && String((error as { code?: unknown }).code) === "P2002") {
       return NextResponse.json(
         { error: "Conflict Action", details: "Data Consistency blocked insertion: This Element uniquely exists within the target Trial constraints." },
         { status: 409 }
       );
     }
 
+    const message = error instanceof Error ? error.message : "Failed natively generating isolated metric measurements.";
+
     return NextResponse.json(
-      { error: "System Error", details: error?.message || "Failed natively generating isolated metric measurements." },
+      { error: "System Error", details: message },
       { status: 500 }
     );
   }

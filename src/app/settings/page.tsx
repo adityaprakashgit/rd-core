@@ -1,164 +1,483 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Badge,
   Box,
-  VStack,
-  Heading,
-  Text,
+  Button,
   Card,
   CardBody,
+  Divider,
   FormControl,
   FormLabel,
+  Heading,
+  HStack,
   Input,
-  SimpleGrid,
   Select,
   Switch,
-  HStack,
-  Button,
-  Divider,
-  Icon,
-  Badge,
+  Table,
+  TableContainer,
+  Tbody,
+  Td,
+  Text,
+  Th,
+  Thead,
+  Tr,
+  VStack,
+  useToast,
 } from "@chakra-ui/react";
-import {
-  Building2,
-  Cpu,
-  ShieldCheck,
-  Palette,
-  Save,
-} from "lucide-react";
+import { Building2, Save, ShieldCheck, UserCog, Workflow } from "lucide-react";
+
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 
-export default function SettingsPage() {
+type MasterTab = "CLIENT" | "ITEM" | "TRANSPORTER";
+
+type ClientMasterOption = {
+  clientName: string;
+  billToAddress: string;
+  shipToAddress: string;
+  gstOrId: string | null;
+};
+
+type TransporterMasterOption = {
+  transporterName: string;
+  contactPerson: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  gstOrId: string | null;
+};
+
+type ItemMasterOption = {
+  itemName: string;
+  description: string | null;
+  uom: string | null;
+};
+
+export default function SettingsPageRoute() {
+  const toast = useToast();
+  const [companyName, setCompanyName] = useState("Aditya Test");
+  const [location, setLocation] = useState("Industrial Park, Plot 24");
+  const [defaultView, setDefaultView] = useState("my");
+  const [samplingRequired, setSamplingRequired] = useState(true);
+  const [qaGateEnabled, setQaGateEnabled] = useState(true);
+  const [lockStrictMode, setLockStrictMode] = useState(true);
+  const [activeMasterTab, setActiveMasterTab] = useState<MasterTab>("CLIENT");
+  const [masterLoading, setMasterLoading] = useState(false);
+  const [masterSaving, setMasterSaving] = useState(false);
+  const [clients, setClients] = useState<ClientMasterOption[]>([]);
+  const [transporters, setTransporters] = useState<TransporterMasterOption[]>([]);
+  const [items, setItems] = useState<ItemMasterOption[]>([]);
+  const [clientForm, setClientForm] = useState({
+    clientName: "",
+    billToAddress: "",
+    shipToAddress: "",
+    gstOrId: "",
+  });
+  const [transporterForm, setTransporterForm] = useState({
+    transporterName: "",
+    contactPerson: "",
+    phone: "",
+    email: "",
+    address: "",
+    gstOrId: "",
+  });
+  const [itemForm, setItemForm] = useState({
+    itemName: "",
+    description: "",
+    uom: "",
+  });
+
+  const loadMasters = useCallback(async () => {
+    setMasterLoading(true);
+    try {
+      const response = await fetch("/api/masters/dispatch-options");
+      if (!response.ok) {
+        throw new Error("Failed to load master data.");
+      }
+      const data: {
+        clients?: ClientMasterOption[];
+        transporters?: TransporterMasterOption[];
+        items?: ItemMasterOption[];
+      } = await response.json();
+      setClients(Array.isArray(data.clients) ? data.clients : []);
+      setTransporters(Array.isArray(data.transporters) ? data.transporters : []);
+      setItems(Array.isArray(data.items) ? data.items : []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load master data.";
+      toast({ title: "Master load failed", description: message, status: "error" });
+    } finally {
+      setMasterLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void loadMasters();
+  }, [loadMasters]);
+
+  const activeRows = useMemo(() => {
+    if (activeMasterTab === "CLIENT") return clients.length;
+    if (activeMasterTab === "TRANSPORTER") return transporters.length;
+    return items.length;
+  }, [activeMasterTab, clients.length, items.length, transporters.length]);
+
+  const saveActiveMaster = async () => {
+    setMasterSaving(true);
+    try {
+      if (activeMasterTab === "CLIENT") {
+        if (!clientForm.clientName.trim() || !clientForm.billToAddress.trim() || !clientForm.shipToAddress.trim()) {
+          throw new Error("Client name, bill-to, and ship-to are required.");
+        }
+        const response = await fetch("/api/masters/clients", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientName: clientForm.clientName.trim(),
+            billToAddress: clientForm.billToAddress.trim(),
+            shipToAddress: clientForm.shipToAddress.trim(),
+            gstOrId: clientForm.gstOrId.trim() || undefined,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to save client.");
+        }
+        setClientForm({ clientName: "", billToAddress: "", shipToAddress: "", gstOrId: "" });
+      } else if (activeMasterTab === "TRANSPORTER") {
+        if (!transporterForm.transporterName.trim()) {
+          throw new Error("Transporter name is required.");
+        }
+        const response = await fetch("/api/masters/transporters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transporterName: transporterForm.transporterName.trim(),
+            contactPerson: transporterForm.contactPerson.trim() || undefined,
+            phone: transporterForm.phone.trim() || undefined,
+            email: transporterForm.email.trim() || undefined,
+            address: transporterForm.address.trim() || undefined,
+            gstOrId: transporterForm.gstOrId.trim() || undefined,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to save transporter.");
+        }
+        setTransporterForm({
+          transporterName: "",
+          contactPerson: "",
+          phone: "",
+          email: "",
+          address: "",
+          gstOrId: "",
+        });
+      } else {
+        if (!itemForm.itemName.trim()) {
+          throw new Error("Item name is required.");
+        }
+        const response = await fetch("/api/masters/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemName: itemForm.itemName.trim(),
+            description: itemForm.description.trim() || undefined,
+            uom: itemForm.uom.trim() || undefined,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to save item.");
+        }
+        setItemForm({ itemName: "", description: "", uom: "" });
+      }
+
+      toast({ title: "Master saved", status: "success" });
+      await loadMasters();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save master.";
+      toast({ title: "Save failed", description: message, status: "error" });
+    } finally {
+      setMasterSaving(false);
+    }
+  };
+
+  const saveBasics = () => {
+    toast({ title: "Settings saved", status: "success" });
+  };
+
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={8}>
+      <VStack align="stretch" spacing={6}>
         <Box>
-           <Heading size="lg" color="gray.800">System Configuration</Heading>
-           <Text color="gray.500">Configure global ERP parameters and organizational metadata.</Text>
+          <HStack spacing={2}>
+            <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              SETTINGS
+            </Badge>
+            <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              BASIC CONFIG
+            </Badge>
+          </HStack>
+          <Heading size="lg" color="gray.900" mt={2}>
+            Workspace Settings
+          </Heading>
+          <Text color="gray.600" mt={2}>
+            Company profile, user defaults, and workflow control toggles.
+          </Text>
         </Box>
 
-        <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={8}>
-           <Box gridColumn={{ lg: "span 2" }}>
-             <VStack align="stretch" spacing={6}>
-                {/* Company Info */}
-                <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-                   <CardBody>
-                      <HStack mb={6}>
-                         <Icon as={Building2} color="purple.500" fontSize="20" />
-                         <Heading size="sm">Organizational Identity</Heading>
-                      </HStack>
-                      <VStack spacing={4}>
-                         <SimpleGrid columns={2} spacing={4} w="full">
-                           <FormControl>
-                             <FormLabel fontSize="xs" fontWeight="bold">Company Legal Name</FormLabel>
-                             <Input defaultValue="Global Inspection Services Ltd." />
-                           </FormControl>
-                           <FormControl>
-                             <FormLabel fontSize="xs" fontWeight="bold">GSTIN / Tax ID</FormLabel>
-                             <Input defaultValue="27AABCU1234F1Z5" />
-                           </FormControl>
-                         </SimpleGrid>
-                         <FormControl>
-                           <FormLabel fontSize="xs" fontWeight="bold">Registered Office Address</FormLabel>
-                           <Input defaultValue="Tech Park West, Level 12, London, UK" />
-                         </FormControl>
-                      </VStack>
-                   </CardBody>
-                </Card>
+        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <CardBody p={6}>
+            <HStack mb={4}>
+              <Box p={2.5} bg="teal.50" color="teal.600" borderRadius="xl">
+                <Building2 size={18} />
+              </Box>
+              <Box>
+                <Heading size="sm" color="gray.900">
+                  Company Profile
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Basic organization information used across dashboards and reports.
+                </Text>
+              </Box>
+            </HStack>
 
-                {/* Workflow Config */}
-                <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-                   <CardBody>
-                      <HStack mb={6}>
-                         <Icon as={Cpu} color="purple.500" fontSize="20" />
-                         <Heading size="sm">Workflow Modules</Heading>
-                      </HStack>
-                      <VStack align="stretch" spacing={4}>
-                         <HStack justify="space-between">
-                            <Box>
-                               <Text fontWeight="bold" fontSize="sm">Sampling Discipline</Text>
-                               <Text fontSize="xs" color="gray.500">Enable physical sample audit trails and media capture</Text>
-                            </Box>
-                            <Switch colorScheme="purple" defaultChecked />
-                         </HStack>
-                         <Divider />
-                         <HStack justify="space-between">
-                            <Box>
-                               <Text fontWeight="bold" fontSize="sm">QA Governance</Text>
-                               <Text fontSize="xs" color="gray.500">Enable multi-stage approval and operational lockdown</Text>
-                            </Box>
-                            <Switch colorScheme="purple" defaultChecked />
-                         </HStack>
-                         <Divider />
-                         <HStack justify="space-between">
-                            <Box>
-                               <Text fontWeight="bold" fontSize="sm">Blockchain Audit</Text>
-                               <Text fontSize="xs" color="gray.500">Automated hashing for immutable record keeping</Text>
-                            </Box>
-                            <Switch colorScheme="purple" />
-                         </HStack>
-                      </VStack>
-                   </CardBody>
-                </Card>
+            <VStack align="stretch" spacing={3}>
+              <FormControl>
+                <FormLabel>Company Name</FormLabel>
+                <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Primary Location</FormLabel>
+                <Input value={location} onChange={(e) => setLocation(e.target.value)} />
+              </FormControl>
+            </VStack>
+          </CardBody>
+        </Card>
 
-                {/* Roles */}
-                <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-                   <CardBody>
-                      <HStack mb={6}>
-                         <Icon as={ShieldCheck} color="purple.500" fontSize="20" />
-                         <Heading size="sm">Access & Roles</Heading>
-                      </HStack>
-                      <SimpleGrid columns={3} spacing={4}>
-                         <VStack p={4} border="1px solid" borderColor="gray.100" borderRadius="xl" align="center">
-                            <Badge colorScheme="purple">INSPECTOR</Badge>
-                            <Text fontSize="10px" color="gray.500" textAlign="center">Field data entry & media sync</Text>
-                         </VStack>
-                         <VStack p={4} border="1px solid" borderColor="gray.100" borderRadius="xl" align="center">
-                            <Badge colorScheme="blue">R&D</Badge>
-                            <Text fontSize="10px" color="gray.500" textAlign="center">Lab assay management</Text>
-                         </VStack>
-                         <VStack p={4} border="1px solid" borderColor="gray.200" bg="gray.50" borderRadius="xl" align="center">
-                            <Badge colorScheme="green">ADMIN</Badge>
-                            <Text fontSize="10px" color="gray.500" textAlign="center">Full system orchestration</Text>
-                         </VStack>
-                      </SimpleGrid>
-                   </CardBody>
-                </Card>
-             </VStack>
-           </Box>
+        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <CardBody p={6}>
+            <HStack mb={4}>
+              <Box p={2.5} bg="purple.50" color="purple.600" borderRadius="xl">
+                <UserCog size={18} />
+              </Box>
+              <Box>
+                <Heading size="sm" color="gray.900">
+                  User Defaults
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Default view and basic preference configuration.
+                </Text>
+              </Box>
+            </HStack>
 
-           <Box>
-             <VStack align="stretch" spacing={6}>
-                <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
-                   <CardBody>
-                      <HStack mb={6}>
-                         <Icon as={Palette} color="purple.500" fontSize="20" />
-                         <Heading size="sm">System Branding</Heading>
-                      </HStack>
-                      <VStack spacing={4} align="stretch">
-                         <FormControl>
-                            <FormLabel fontSize="xs" fontWeight="bold">Primary Interface Color</FormLabel>
-                            <Select defaultValue="PURPLE">
-                               <option value="PURPLE">Enterprise Purple</option>
-                               <option value="BLUE">Trust Blue</option>
-                               <option value="GREEN">Eco Green</option>
-                            </Select>
-                         </FormControl>
-                         <Box p={8} border="1px dashed" borderColor="gray.300" borderRadius="xl" textAlign="center">
-                            <Text fontSize="xs" color="gray.400">Drag and drop company logo</Text>
-                            <Button size="xs" variant="outline" mt={2}>Upload</Button>
-                         </Box>
-                      </VStack>
-                   </CardBody>
-                </Card>
+            <VStack align="stretch" spacing={3}>
+              <FormControl>
+                <FormLabel>Default Inspection View</FormLabel>
+                <Select value={defaultView} onChange={(e) => setDefaultView(e.target.value)}>
+                  <option value="my">My Tasks</option>
+                  <option value="all">Company View</option>
+                </Select>
+              </FormControl>
+            </VStack>
+          </CardBody>
+        </Card>
 
-                <Button size="lg" colorScheme="purple" leftIcon={<Save size={18} />} w="full">
-                   Commit Changes
+        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <CardBody p={6}>
+            <HStack mb={4}>
+              <Box p={2.5} bg="orange.50" color="orange.600" borderRadius="xl">
+                <Workflow size={18} />
+              </Box>
+              <Box>
+                <Heading size="sm" color="gray.900">
+                  Workflow Basics
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Lightweight control toggles for inspection and R&D flow governance.
+                </Text>
+              </Box>
+            </HStack>
+
+            <VStack align="stretch" spacing={3}>
+              <HStack justify="space-between">
+                <Text color="gray.800">Sampling mandatory before homogeneous sample</Text>
+                <Switch colorScheme="teal" isChecked={samplingRequired} onChange={(e) => setSamplingRequired(e.target.checked)} />
+              </HStack>
+              <Divider />
+              <HStack justify="space-between">
+                <Text color="gray.800">QA gate required before lock</Text>
+                <Switch colorScheme="teal" isChecked={qaGateEnabled} onChange={(e) => setQaGateEnabled(e.target.checked)} />
+              </HStack>
+              <Divider />
+              <HStack justify="space-between">
+                <Text color="gray.800">Strict lock mode (no post-lock mutation)</Text>
+                <Switch colorScheme="teal" isChecked={lockStrictMode} onChange={(e) => setLockStrictMode(e.target.checked)} />
+              </HStack>
+            </VStack>
+          </CardBody>
+        </Card>
+
+        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <CardBody p={6}>
+            <HStack mb={3}>
+              <Box p={2.5} bg="green.50" color="green.600" borderRadius="xl">
+                <ShieldCheck size={18} />
+              </Box>
+              <Box>
+                <Heading size="sm" color="gray.900">
+                  Master Data Management
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Manage client, transporter, and item master data from Settings.
+                </Text>
+              </Box>
+            </HStack>
+
+            <HStack spacing={2} mb={4} flexWrap="wrap">
+              {(["CLIENT", "TRANSPORTER", "ITEM"] as MasterTab[]).map((tab) => (
+                <Button
+                  key={tab}
+                  size="sm"
+                  variant={activeMasterTab === tab ? "solid" : "outline"}
+                  colorScheme={activeMasterTab === tab ? "teal" : "gray"}
+                  onClick={() => setActiveMasterTab(tab)}
+                >
+                  {tab === "CLIENT" ? "Clients" : tab === "TRANSPORTER" ? "Transporters" : "Items"}
                 </Button>
-             </VStack>
-           </Box>
-        </SimpleGrid>
+              ))}
+              <Button size="sm" variant="outline" onClick={() => void loadMasters()} isLoading={masterLoading}>
+                Refresh
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => (window.location.href = "/masterplayground")}>
+                Open Master Playground
+              </Button>
+            </HStack>
+
+            <VStack align="stretch" spacing={3}>
+              {activeMasterTab === "CLIENT" ? (
+                <>
+                  <FormControl isRequired>
+                    <FormLabel>Client Name</FormLabel>
+                    <Input value={clientForm.clientName} onChange={(e) => setClientForm((prev) => ({ ...prev, clientName: e.target.value }))} />
+                  </FormControl>
+                  <FormControl isRequired>
+                    <FormLabel>Bill To</FormLabel>
+                    <Input value={clientForm.billToAddress} onChange={(e) => setClientForm((prev) => ({ ...prev, billToAddress: e.target.value }))} />
+                  </FormControl>
+                  <FormControl isRequired>
+                    <FormLabel>Ship To</FormLabel>
+                    <Input value={clientForm.shipToAddress} onChange={(e) => setClientForm((prev) => ({ ...prev, shipToAddress: e.target.value }))} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>GST / ID</FormLabel>
+                    <Input value={clientForm.gstOrId} onChange={(e) => setClientForm((prev) => ({ ...prev, gstOrId: e.target.value }))} />
+                  </FormControl>
+                </>
+              ) : null}
+
+              {activeMasterTab === "TRANSPORTER" ? (
+                <>
+                  <FormControl isRequired>
+                    <FormLabel>Transporter Name</FormLabel>
+                    <Input value={transporterForm.transporterName} onChange={(e) => setTransporterForm((prev) => ({ ...prev, transporterName: e.target.value }))} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Contact Person</FormLabel>
+                    <Input value={transporterForm.contactPerson} onChange={(e) => setTransporterForm((prev) => ({ ...prev, contactPerson: e.target.value }))} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Phone</FormLabel>
+                    <Input value={transporterForm.phone} onChange={(e) => setTransporterForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Email</FormLabel>
+                    <Input value={transporterForm.email} onChange={(e) => setTransporterForm((prev) => ({ ...prev, email: e.target.value }))} />
+                  </FormControl>
+                </>
+              ) : null}
+
+              {activeMasterTab === "ITEM" ? (
+                <>
+                  <FormControl isRequired>
+                    <FormLabel>Item Name</FormLabel>
+                    <Input value={itemForm.itemName} onChange={(e) => setItemForm((prev) => ({ ...prev, itemName: e.target.value }))} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Description</FormLabel>
+                    <Input value={itemForm.description} onChange={(e) => setItemForm((prev) => ({ ...prev, description: e.target.value }))} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>UOM</FormLabel>
+                    <Input value={itemForm.uom} onChange={(e) => setItemForm((prev) => ({ ...prev, uom: e.target.value }))} />
+                  </FormControl>
+                </>
+              ) : null}
+            </VStack>
+
+            <HStack justify="space-between" mt={4}>
+              <Text fontSize="sm" color="gray.600">
+                {masterLoading ? "Loading..." : `${activeRows} record(s)`}
+              </Text>
+              <Button size="sm" colorScheme="teal" onClick={() => void saveActiveMaster()} isLoading={masterSaving}>
+                Save {activeMasterTab === "CLIENT" ? "Client" : activeMasterTab === "TRANSPORTER" ? "Transporter" : "Item"}
+              </Button>
+            </HStack>
+
+            <TableContainer mt={4} borderWidth="1px" borderColor="gray.200" borderRadius="xl">
+              <Table size="sm">
+                <Thead bg="gray.50">
+                  {activeMasterTab === "CLIENT" ? (
+                    <Tr>
+                      <Th>Client</Th>
+                      <Th>GST / ID</Th>
+                    </Tr>
+                  ) : null}
+                  {activeMasterTab === "TRANSPORTER" ? (
+                    <Tr>
+                      <Th>Transporter</Th>
+                      <Th>Phone</Th>
+                    </Tr>
+                  ) : null}
+                  {activeMasterTab === "ITEM" ? (
+                    <Tr>
+                      <Th>Item</Th>
+                      <Th>UOM</Th>
+                    </Tr>
+                  ) : null}
+                </Thead>
+                <Tbody>
+                  {activeMasterTab === "CLIENT"
+                    ? clients.map((row) => (
+                        <Tr key={row.clientName}>
+                          <Td>{row.clientName}</Td>
+                          <Td>{row.gstOrId ?? "—"}</Td>
+                        </Tr>
+                      ))
+                    : null}
+                  {activeMasterTab === "TRANSPORTER"
+                    ? transporters.map((row) => (
+                        <Tr key={row.transporterName}>
+                          <Td>{row.transporterName}</Td>
+                          <Td>{row.phone ?? "—"}</Td>
+                        </Tr>
+                      ))
+                    : null}
+                  {activeMasterTab === "ITEM"
+                    ? items.map((row) => (
+                        <Tr key={row.itemName}>
+                          <Td>{row.itemName}</Td>
+                          <Td>{row.uom ?? "—"}</Td>
+                        </Tr>
+                      ))
+                    : null}
+                </Tbody>
+              </Table>
+            </TableContainer>
+          </CardBody>
+        </Card>
+
+        <HStack justify="end">
+          <Button leftIcon={<Save size={16} />} colorScheme="teal" onClick={saveBasics}>
+            Save Settings
+          </Button>
+        </HStack>
       </VStack>
     </ControlTowerLayout>
   );

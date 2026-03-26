@@ -1,18 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserFromRequest } from "@/lib/session";
+import { authorize, AuthorizationError } from "@/lib/rbac";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 
-// Declaration for jspdf-autotable to avoid TS errors on the 'autoTable' property
-declare module "jspdf" {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-  }
-}
+type JsPdfWithAutoTable = jsPDF & {
+  lastAutoTable?: {
+    finalY: number;
+  };
+};
 
 export async function POST(req: NextRequest) {
   try {
+    const currentUser = await getCurrentUserFromRequest(req);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+    }
+
+    authorize(currentUser, "READ_ONLY");
+
     const { jobId, format } = await req.json();
 
     if (!jobId || !format) {
@@ -20,6 +28,19 @@ export async function POST(req: NextRequest) {
         { error: "Validation Error", details: "jobId and format ('pdf' or 'excel') are required." },
         { status: 400 }
       );
+    }
+
+    const jobScope = await prisma.inspectionJob.findUnique({
+      where: { id: jobId },
+      select: { companyId: true },
+    });
+
+    if (!jobScope) {
+      return NextResponse.json({ error: "Not Found", details: "Job not found." }, { status: 404 });
+    }
+
+    if (jobScope.companyId !== currentUser.companyId) {
+      return NextResponse.json({ error: "Forbidden", details: "Cross-company access is not allowed." }, { status: 403 });
     }
 
     const job = await prisma.inspectionJob.findUnique({
@@ -125,7 +146,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (format === "pdf") {
-      const doc = new jsPDF();
+      const doc = new jsPDF() as JsPdfWithAutoTable;
       doc.setFontSize(18);
       doc.setTextColor(63, 81, 181); // Purple-ish
       doc.text("INSPECTION & ANALYSIS REPORT", 105, 20, { align: "center" });
@@ -149,7 +170,7 @@ export async function POST(req: NextRequest) {
       // ANALYSIS SUMMARY TABLE
       doc.setFontSize(13);
       doc.text("ANALYSIS SUMMARY", 20, 65);
-      doc.autoTable({
+      autoTable(doc, {
         startY: 70,
         head: [["Metric", "Value"]],
         body: [
@@ -162,9 +183,9 @@ export async function POST(req: NextRequest) {
       });
 
       // LOT REGISTRY
-      const lotY = (doc as any).lastAutoTable.finalY + 15;
+      const lotY = (doc.lastAutoTable?.finalY ?? 0) + 15;
       doc.text("LOT REGISTRY", 20, lotY);
-      doc.autoTable({
+      autoTable(doc, {
         startY: lotY + 5,
         head: [["Lot #", "Bags", "Net Weight (kg)"]],
         body: job.lots.map(lot => [
@@ -187,11 +208,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid Format", details: "Supported formats: pdf, excel" }, { status: 400 });
 
   } catch (err: unknown) {
-    const error = err as Error;
+    if (err instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden", details: err.message }, { status: 403 });
+    }
+
+    const error = err instanceof Error ? err : new Error("Unknown error");
     return NextResponse.json(
       { error: "System Error", details: error.message },
       { status: 500 }
     );
   }
 }
-

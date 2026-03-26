@@ -1,3 +1,13 @@
+export type PublicUser = {
+  role: "ADMIN" | "OPERATIONS" | "RND" | "VIEWER";
+  profile: {
+    displayName: string;
+    companyName?: string | null;
+    jobTitle?: string | null;
+    avatarUrl?: string | null;
+  } | null;
+};
+
 export type InspectionJob = {
   id: string;
   inspectionSerialNumber: string;
@@ -8,22 +18,44 @@ export type InspectionJob = {
   plantLocation?: string | null;
   status: string;
   createdByUserId: string;
+  assignedToId?: string | null;
+  assignedById?: string | null;
+  assignedAt?: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
+  assignedTo?: PublicUser | null;
+  assignedBy?: PublicUser | null;
+  createdByUser?: PublicUser | null;
   lots?: InspectionLot[];
   auditLogs?: AuditLog[];
+  reportSnapshots?: ReportSnapshot[];
 };
 
 
 export type InspectionLot = {
   id: string;
   jobId: string;
+  companyId?: string;
   lotNumber: string;
   totalBags: number;
   grossWeightKg?: number | null;
   netWeightKg?: number | null;
+  grossWeight?: number | null;
+  tareWeight?: number | null;
+  netWeight?: number | null;
+  sealNumber?: string | null;
+  sealAuto?: boolean;
+  bagPhotoUrl?: string | null;
+  samplingPhotoUrl?: string | null;
+  sealPhotoUrl?: string | null;
+  status?: string;
+  assignedToId?: string | null;
+  assignedById?: string | null;
+  assignedAt?: string | Date | null;
   createdAt: string | Date;
-  sampling?: Sampling | null;
+  assignedTo?: PublicUser | null;
+  assignedBy?: PublicUser | null;
+  sampling?: Sampling | Sampling[] | null;
   bags?: InspectionBag[];
 };
 
@@ -39,11 +71,17 @@ export type InspectionBag = {
 export type Sampling = {
   id: string;
   lotId: string;
+  companyId?: string;
   beforePhotoUrl?: string | null;
   duringPhotoUrl?: string | null;
   afterPhotoUrl?: string | null;
+  status?: string;
+  assignedToId?: string | null;
+  assignedById?: string | null;
+  assignedAt?: string | Date | null;
   createdAt: string | Date;
-  [key: string]: any; // To allow dynamic indexing
+  assignedTo?: PublicUser | null;
+  assignedBy?: PublicUser | null;
 };
 
 
@@ -76,7 +114,7 @@ export type RDMeasurement = {
 export type ReportSnapshot = {
   id: string;
   jobId: string;
-  data: Record<string, any>; // Complex JSON data
+  data: Record<string, unknown>; // Complex JSON data
   createdAt: string | Date;
 };
 
@@ -84,11 +122,12 @@ export type AuditLog = {
   id: string;
   jobId: string;
   userId: string;
+  entity?: string;
   action: string;
   from?: string | null;
   to?: string | null;
   notes?: string | null;
+  metadata?: Record<string, unknown> | null;
   createdAt: string | Date;
+  user?: PublicUser | null;
 };
-
-

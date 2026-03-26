@@ -1,0 +1,77 @@
+import { prisma } from "@/lib/prisma";
+import { Role, normalizeRole } from "@/lib/role";
+
+const DEFAULT_DEMO_USER_ID = process.env.DEV_USER_ID ?? "user1";
+const DEFAULT_DEMO_COMPANY_ID = process.env.DEV_COMPANY_ID ?? "test";
+const DEFAULT_DEMO_ROLE = normalizeRole(process.env.DEV_USER_ROLE) ?? "ADMIN";
+
+export type SessionProfile = {
+  displayName: string;
+  companyName: string | null;
+  jobTitle: string | null;
+  avatarUrl: string | null;
+};
+
+export type CurrentUser = {
+  id: string;
+  companyId: string;
+  role: Exclude<Role, null>;
+  email: string | null;
+  profile: SessionProfile | null;
+};
+
+function readHeader(headers: Headers, key: string): string | null {
+  const value = headers.get(key);
+  return value && value.trim().length > 0 ? value.trim() : null;
+}
+
+export async function getCurrentUserFromHeaders(headers: Headers): Promise<CurrentUser | null> {
+  const userId = readHeader(headers, "x-user-id") ?? DEFAULT_DEMO_USER_ID;
+  const companyId = readHeader(headers, "x-company-id") ?? DEFAULT_DEMO_COMPANY_ID;
+  const role = normalizeRole(readHeader(headers, "x-user-role")) ?? DEFAULT_DEMO_ROLE;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      companyId: true,
+      email: true,
+      role: true,
+      profile: {
+        select: {
+          displayName: true,
+          companyName: true,
+          jobTitle: true,
+          avatarUrl: true,
+        },
+      },
+    },
+  });
+
+  if (!user || user.companyId !== companyId || user.role !== role) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    companyId: user.companyId,
+    role: user.role,
+    email: user.email,
+    profile: user.profile
+      ? {
+          displayName: user.profile.displayName,
+          companyName: user.profile.companyName ?? null,
+          jobTitle: user.profile.jobTitle ?? null,
+          avatarUrl: user.profile.avatarUrl ?? null,
+        }
+      : null,
+  };
+}
+
+export async function getCurrentUserFromRequest(request: Request): Promise<CurrentUser | null> {
+  return getCurrentUserFromHeaders(request.headers);
+}
+
+export function requireSessionHeaders(request: Request): Headers {
+  return request.headers;
+}

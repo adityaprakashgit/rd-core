@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserFromRequest } from "@/lib/session";
+import { authorize, AuthorizationError } from "@/lib/rbac";
 
 export async function POST(req: NextRequest) {
   try {
+    const currentUser = await getCurrentUserFromRequest(req);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+    }
+
+    authorize(currentUser, "MUTATE_RND");
+
     const body = await req.json();
     const { sampleId, count = 1 } = body;
 
@@ -22,9 +31,22 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const sample = await tx.homogeneousSample.findUnique({ where: { id: sampleId } });
+      const sample = await tx.homogeneousSample.findUnique({
+        where: { id: sampleId },
+        select: {
+          id: true,
+          job: {
+            select: {
+              companyId: true,
+            },
+          },
+        },
+      });
       if (!sample) {
         throw new Error("SAMPLE_NOT_FOUND");
+      }
+      if (sample.job.companyId !== currentUser.companyId) {
+        throw new Error("FORBIDDEN");
       }
 
       // Calculate max packetNumber strictly natively via Prisma Ordering bounds
@@ -33,7 +55,7 @@ export async function POST(req: NextRequest) {
         orderBy: { packetNumber: "desc" }
       });
 
-      let nextPacketNumber = highestPacket ? highestPacket.packetNumber + 1 : 1;
+      const nextPacketNumber = highestPacket ? highestPacket.packetNumber + 1 : 1;
 
       // Construct mapped array limits efficiently without overlapping array allocations
       const packetsData = [];
@@ -53,16 +75,28 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, packetsCreated: result.count });
-  } catch (error: any) {
-    if (error.message === "SAMPLE_NOT_FOUND") {
+  } catch (error: unknown) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden", details: error.message }, { status: 403 });
+    }
+
+    const message = error instanceof Error ? error.message : "Failed to seamlessly generate packets.";
+
+    if (message === "SAMPLE_NOT_FOUND") {
       return NextResponse.json(
         { error: "Not Found", details: "The parent Homogeneous Sample explicitly does not exist." },
         { status: 404 }
       );
     }
+    if (message === "FORBIDDEN") {
+      return NextResponse.json(
+        { error: "Forbidden", details: "Cross-company access is not allowed." },
+        { status: 403 }
+      );
+    }
 
-    // Check if error has a 'code' property, which might not be on a generic Error
-    if ((error as any)?.code === "P2002") {
+    // Check if error has a Prisma code property.
+    if (error && typeof error === "object" && "code" in error && String((error as { code?: unknown }).code) === "P2002") {
       return NextResponse.json(
         { error: "Conflict Action", details: "A critical concurrency overlap forced a mapping failure. Please attempt Generation again." },
         { status: 409 }
@@ -70,7 +104,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "System Error", details: error?.message || "Failed to seamlessly generate packets." },
+      { error: "System Error", details: message },
       { status: 500 }
     );
   }
@@ -78,6 +112,13 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
+    const currentUser = await getCurrentUserFromRequest(req);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+    }
+
+    authorize(currentUser, "READ_ONLY");
+
     const { searchParams } = new URL(req.url);
     const sampleId = searchParams.get("sampleId");
 
@@ -88,6 +129,31 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const sample = await prisma.homogeneousSample.findUnique({
+      where: { id: sampleId },
+      select: {
+        job: {
+          select: {
+            companyId: true,
+          },
+        },
+      },
+    });
+
+    if (!sample) {
+      return NextResponse.json(
+        { error: "Not Found", details: "Homogeneous sample not found." },
+        { status: 404 }
+      );
+    }
+
+    if (sample.job.companyId !== currentUser.companyId) {
+      return NextResponse.json(
+        { error: "Forbidden", details: "Cross-company access is not allowed." },
+        { status: 403 }
+      );
+    }
+
     const packets = await prisma.samplePacket.findMany({
       where: { sampleId },
       orderBy: { packetNumber: "asc" }
@@ -95,6 +161,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(packets);
   } catch (err: unknown) {
+    if (err instanceof AuthorizationError) {
+      return NextResponse.json({ error: "Forbidden", details: err.message }, { status: 403 });
+    }
+
     const error = err as Error;
     return NextResponse.json(
       { error: "System Error", details: error.message || "Failed parsing packet queries." },
@@ -102,4 +172,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

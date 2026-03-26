@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Heading,
@@ -118,7 +118,7 @@ export default function InspectorView() {
 
   async function fetchJobs() {
     try {
-      const res = await fetch("/api/inspection/jobs");
+      const res = await fetch("/api/inspection/jobs?view=all");
       const data = await res.json();
       setJobs(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -138,8 +138,6 @@ export default function InspectorView() {
       await fetch("/api/inspection/jobs", {
         method: "POST",
         body: JSON.stringify({
-          companyId: "test",
-          userId: "user1",
           clientName,
           commodity,
         }),
