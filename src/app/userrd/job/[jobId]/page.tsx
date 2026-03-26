@@ -50,7 +50,6 @@ import {
   HomogeneousSample,
   SamplePacket, 
   RDTrial, 
-  ReportSnapshot,
   AuditLog
 } from "@/types/inspection";
 import { AuditTrail } from "@/components/inspection/AuditTrail";
@@ -77,12 +76,17 @@ export default function UserRdJobDetail() {
   const [elementInput, setElementInput] = useState<Record<string, string>>({});
   const [valueInput, setValueInput] = useState<Record<string, string>>({});
   const [buildingReport, setBuildingReport] = useState(false);
-  const [reportResult, setReportResult] = useState<any>(null); // reportResult structure is dynamic
+  const [reportResult, setReportResult] = useState<{ validation: { isValid: boolean } } | null>(null);
   const [performingQA, setPerformingQA] = useState(false);
   const [logs, setLogs] = useState<AuditLog[]>([]);
 
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const formatMeasurementValue = (value: number | string | null | undefined) => {
+    const numericValue = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(numericValue) ? numericValue.toFixed(4) : "—";
+  };
 
   const fetchPackets = async (sampleId: string) => {
     try {
@@ -187,8 +191,11 @@ export default function UserRdJobDetail() {
       if (!sampleRes.ok) throw await sampleRes.json();
       toast({ title: "Sample Finalized", status: "success" });
       fetchBaseData(); 
-    } catch(err: any) {
-      toast({ title: "Upload Failed", description: err.details, status: "error" });
+    } catch (err: unknown) {
+      const details = err && typeof err === "object" && "details" in err
+        ? String((err as { details?: unknown }).details)
+        : undefined;
+      toast({ title: "Upload Failed", description: details, status: "error" });
     } finally {
       setUploading(false);
     }
@@ -208,8 +215,11 @@ export default function UserRdJobDetail() {
        });
        if (!res.ok) throw await res.json();
        toast({ title: "Packets Generated", status: "success" });
-    } catch (err: any) {
-       toast({ title: "Error", description: err.details, status: "error" });
+    } catch (err: unknown) {
+       const details = err && typeof err === "object" && "details" in err
+         ? String((err as { details?: unknown }).details)
+         : undefined;
+       toast({ title: "Error", description: details, status: "error" });
     } finally {
        setGenerating(false);
     }
@@ -248,20 +258,6 @@ export default function UserRdJobDetail() {
     } catch { toast({ title: "Error", status: "error" }); }
     finally { setSavingMeasurement(null); }
   };
-
-  const handleReportGenerate = async () => {
-    try {
-      const res = await fetch("/api/report/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId })
-      });
-      if (!res.ok) throw await res.json();
-      fetchBaseData();
-      toast({ title: "Snapshot Captured", status: "success" });
-    } catch { toast({ title: "Error", status: "error" }); }
-  };
-
 
   const handleReportBuild = async () => {
     setBuildingReport(true);
@@ -451,7 +447,7 @@ export default function UserRdJobDetail() {
                           <Table variant="simple" size="sm" bg="white" borderRadius="lg" mb={4} shadow="sm">
                             <Thead bg="gray.100"><Tr><Th>Component Element</Th><Th isNumeric>Mapped Value</Th></Tr></Thead>
                             <Tbody>
-                              {trial.measurements.map(m => <Tr key={m.id}><Td fontWeight="bold" color="gray.700">{m.element}</Td><Td isNumeric fontWeight="bold" color="purple.600">{m.value.toFixed(4)}</Td></Tr>)}
+                              {trial.measurements.map(m => <Tr key={m.id}><Td fontWeight="bold" color="gray.700">{m.element}</Td><Td isNumeric fontWeight="bold" color="purple.600">{formatMeasurementValue(m.value)}</Td></Tr>)}
                               {trial.measurements.length === 0 && <Tr><Td colSpan={2} textAlign="center" py={2}><Text color="gray.400" fontSize="xs">No measurements.</Text></Td></Tr>}
                             </Tbody>
                           </Table>
@@ -523,4 +519,3 @@ export default function UserRdJobDetail() {
     </ControlTowerLayout>
   );
 }
-

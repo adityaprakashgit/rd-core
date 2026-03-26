@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function serializeTrials<T extends { measurements: Array<{ value: unknown }> }>(trials: T[]) {
+  return trials.map((trial) => ({
+    ...trial,
+    measurements: trial.measurements.map((measurement) => ({
+      ...measurement,
+      value: Number(measurement.value),
+    })),
+  }));
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -59,15 +69,16 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(trial);
-  } catch(error: any) {
-    if (error.message === "TRIAL_EXISTS") {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "TRIAL_EXISTS") {
       return NextResponse.json(
         { error: "Conflict Action", details: "This trial sequence is already instantiated on the workflow." },
         { status: 409 }
       );
     }
+    const message = error instanceof Error ? error.message : "Failed to orchestrate Trial bindings.";
     return NextResponse.json(
-      { error: "System Error", details: error?.message || "Failed to orchestrate Trial bindings." },
+      { error: "System Error", details: message },
       { status: 500 }
     );
   }
@@ -92,10 +103,9 @@ export async function GET(req: NextRequest) {
        }
     });
 
-    return NextResponse.json(experiment ? experiment.trials : []);
+    return NextResponse.json(experiment ? serializeTrials(experiment.trials) : []);
   } catch (err: unknown) {
     const error = err as Error;
     return NextResponse.json({ error: "System Error", details: error.message || "Failed resolving trials" }, { status: 500 });
   }
 }
-
