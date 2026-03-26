@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+function isMissingAuditTableError(err: unknown) {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2021";
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,8 +21,13 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json(logs);
-  } catch (err: any) {
-    return NextResponse.json({ error: "System Error", details: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    if (isMissingAuditTableError(err)) {
+      return NextResponse.json([]);
+    }
+
+    const error = err instanceof Error ? err : new Error("Unknown error");
+    return NextResponse.json({ error: "System Error", details: error.message }, { status: 500 });
   }
 }
 
@@ -42,8 +52,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(log);
   } catch (err: unknown) {
-    const error = err as Error;
+    if (isMissingAuditTableError(err)) {
+      return NextResponse.json({ skipped: true, reason: "Audit table missing" });
+    }
+
+    const error = err instanceof Error ? err : new Error("Unknown error");
     return NextResponse.json({ error: "System Error", details: error.message }, { status: 500 });
   }
 }
-

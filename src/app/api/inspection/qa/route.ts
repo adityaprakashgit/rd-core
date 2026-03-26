@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+function isMissingAuditTableError(err: unknown) {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2021";
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,13 +38,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid Action", details: "Action must be SUBMIT, APPROVE, or REJECT." }, { status: 400 });
     }
 
-    const updatedJob = await prisma.$transaction(async (tx) => {
-      const updated = await tx.inspectionJob.update({
-        where: { id: jobId },
-        data: { status: nextStatus }
-      });
+    const updatedJob = await prisma.inspectionJob.update({
+      where: { id: jobId },
+      data: { status: nextStatus }
+    });
 
-      await tx.auditLog.create({
+    try {
+      await prisma.auditLog.create({
         data: {
           jobId,
           userId: "SYSTEM", // In a real app, this would be the logged-in user ID
@@ -49,9 +54,11 @@ export async function POST(req: NextRequest) {
           notes: `Action: ${action}`
         }
       });
-
-      return updated;
-    });
+    } catch (auditErr: unknown) {
+      if (!isMissingAuditTableError(auditErr)) {
+        throw auditErr;
+      }
+    }
 
     return NextResponse.json(updatedJob);
   } catch (err: unknown) {
@@ -63,4 +70,3 @@ export async function POST(req: NextRequest) {
   }
 
 }
-
