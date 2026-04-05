@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Box,
@@ -310,7 +310,7 @@ function isTrialComplete(measurements: Measurement[]) {
   return measurements.every((m) => m.elementCode.trim() && m.value.trim() && m.unit.trim());
 }
 
-export default function PlaygroundPage() {
+function PlaygroundPageContent() {
   const toast = useToast();
   const searchParams = useSearchParams();
   const [nowTick, setNowTick] = useState(0);
@@ -522,8 +522,10 @@ export default function PlaygroundPage() {
       }
 
       chemicalResources.forEach((resource) => {
-        if (!resource.quantity || resource.quantity <= 0) {
+        const quantity = resource.quantity ?? 0;
+        if (quantity <= 0) {
           errors.push(`Step ${step.orderNo}: chemical quantity must be greater than 0.`);
+          return;
         }
 
         const chemical = chemicalsMaster.find((c) => c.id === resource.resourceId);
@@ -543,7 +545,7 @@ export default function PlaygroundPage() {
           return;
         }
 
-        const requestedBase = resource.quantity * factor;
+        const requestedBase = quantity * factor;
         if (requestedBase > chemical.stockQuantity) {
           errors.push(`Step ${step.orderNo}: insufficient stock for ${chemical.name}.`);
         }
@@ -784,7 +786,7 @@ export default function PlaygroundPage() {
         startedStepName = step.name;
         return {
           ...step,
-          status: "RUNNING",
+          status: "RUNNING" as StepStatus,
           timerStartedAt: step.requiresTimer ? Date.now() : null,
         };
       });
@@ -821,11 +823,11 @@ export default function PlaygroundPage() {
 
       const next = sorted.map((item) => {
         if (item.id === stepId) {
-          return { ...item, status: "DONE", timerStartedAt: null };
+          return { ...item, status: "DONE" as StepStatus, timerStartedAt: null };
         }
 
         if (item.orderNo === doneOrder + 1 && item.status === "DRAFT") {
-          return { ...item, status: "READY" };
+          return { ...item, status: "READY" as StepStatus };
         }
 
         return item;
@@ -1404,7 +1406,7 @@ export default function PlaygroundPage() {
                 <VStack align="stretch" spacing={3}>
                   {trials.length === 0 ? (
                     <Box p={4} borderWidth="1px" borderStyle="dashed" borderColor="gray.300" borderRadius="xl">
-                      <Text fontSize="sm" color="gray.500">No trials yet.</Text>
+                      <Text fontSize="sm" color="gray.500">No records.</Text>
                     </Box>
                   ) : (
                     trials.map((trial) => (
@@ -1460,7 +1462,7 @@ export default function PlaygroundPage() {
                     Blocking Validation Issues
                   </Text>
                   {validationErrors.length === 0 ? (
-                    <Text fontSize="sm" color="green.600">No blocking issues.</Text>
+                    <Text fontSize="sm" color="green.600">No issues.</Text>
                   ) : (
                     validationErrors.map((error) => (
                       <Box key={error} p={2.5} bg="red.50" borderWidth="1px" borderColor="red.200" borderRadius="lg">
@@ -1515,7 +1517,7 @@ export default function PlaygroundPage() {
                     </HStack>
                     <VStack align="stretch" spacing={2}>
                       {selectedStepChemicals.length === 0 ? (
-                        <Text fontSize="sm" color="gray.500">No chemicals attached.</Text>
+                        <Text fontSize="sm" color="gray.500">No records.</Text>
                       ) : (
                         selectedStepChemicals.map((resource) => {
                           const chemical = chemicalsMaster.find((item) => item.id === resource.resourceId);
@@ -1563,7 +1565,7 @@ export default function PlaygroundPage() {
                     </HStack>
                     <VStack align="stretch" spacing={2}>
                       {selectedStepAssets.length === 0 ? (
-                        <Text fontSize="sm" color="gray.500">No assets attached.</Text>
+                        <Text fontSize="sm" color="gray.500">No records.</Text>
                       ) : (
                         selectedStepAssets.map((resource) => {
                           const asset = assetsMaster.find((item) => item.id === resource.resourceId);
@@ -1599,7 +1601,7 @@ export default function PlaygroundPage() {
 
                   <VStack align="stretch" spacing={2}>
                     {selectedTrial.measurements.length === 0 ? (
-                      <Text fontSize="sm" color="gray.500">No measurements added.</Text>
+                      <Text fontSize="sm" color="gray.500">No records.</Text>
                     ) : (
                       selectedTrial.measurements.map((measurement) => (
                         <Box key={measurement.id} p={2.5} borderWidth="1px" borderColor="gray.200" borderRadius="lg">
@@ -1656,5 +1658,21 @@ export default function PlaygroundPage() {
         </Grid>
       </VStack>
     </ControlTowerLayout>
+  );
+}
+
+export default function PlaygroundPage() {
+  return (
+    <Suspense
+      fallback={
+        <ControlTowerLayout>
+          <VStack align="stretch" spacing={6}>
+            <Text color="gray.600">Loading playground...</Text>
+          </VStack>
+        </ControlTowerLayout>
+      }
+    >
+      <PlaygroundPageContent />
+    </Suspense>
   );
 }

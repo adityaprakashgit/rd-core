@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { buildPackingListHtml, renderHtmlToPdf } from "@/lib/traceability";
+import { sanitizeReportDocumentType, sanitizeReportPreferences } from "@/lib/report-preferences";
 
 export const runtime = "nodejs";
 
@@ -56,6 +57,8 @@ export async function POST(request: NextRequest) {
           transporterName?: unknown;
           termsOfDelivery?: unknown;
           itemName?: unknown;
+          documentType?: unknown;
+          reportPreferences?: unknown;
         })
       : {};
     const jobId = typeof payload.jobId === "string" && payload.jobId.trim().length > 0 ? payload.jobId.trim() : null;
@@ -146,8 +149,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const baseCompanyName = currentUser.profile?.companyName ?? "Inspection Control Tower";
+    const reportPreferences = sanitizeReportPreferences(payload.reportPreferences, baseCompanyName);
+    const documentType = sanitizeReportDocumentType(payload.documentType ?? reportPreferences.defaultDocumentType);
+
     const html = buildPackingListHtml({
-      companyName: currentUser.profile?.companyName ?? "Inspection Control Tower",
+      companyName: baseCompanyName,
+      documentType,
+      branding: reportPreferences.branding,
       clientName: job.clientName,
       commodity: job.commodity,
       itemName: typeof payload.itemName === "string" && payload.itemName.trim().length > 0
@@ -193,7 +202,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(pdf as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename=Packing_List_${job.jobReferenceNumber}.pdf`,
+        "Content-Disposition": `attachment; filename=${documentType}_Packing_List_${job.jobReferenceNumber}.pdf`,
       },
     });
   } catch (error: unknown) {

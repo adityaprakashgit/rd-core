@@ -31,6 +31,14 @@ import {
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
 import { normalizeRole } from "@/lib/role";
+import {
+  getDefaultReportPreferences,
+  getReportDocumentTypeLabel,
+  REPORT_DOCUMENT_TYPES,
+  REPORT_PREFERENCES_STORAGE_KEY,
+  sanitizeReportPreferences,
+  type ReportPreferences,
+} from "@/lib/report-preferences";
 
 type JobSummary = {
   id: string;
@@ -118,6 +126,10 @@ export default function ReportsPage() {
   const [billToAddress, setBillToAddress] = useState("");
   const [shipToAddress, setShipToAddress] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
+  const [reportPreferences, setReportPreferences] = useState<ReportPreferences>(() =>
+    getDefaultReportPreferences("Inspection Control Tower")
+  );
+  const [selectedDocumentType, setSelectedDocumentType] = useState<ReportPreferences["defaultDocumentType"]>("EXPORT");
 
   useEffect(() => {
     let active = true;
@@ -190,6 +202,22 @@ export default function ReportsPage() {
       active = false;
     };
   }, [sessionRole, toast, viewMode]);
+
+  useEffect(() => {
+    const baseCompanyName = "Inspection Control Tower";
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem(REPORT_PREFERENCES_STORAGE_KEY) : null;
+    const nextPreferences = stored
+      ? (() => {
+          try {
+            return sanitizeReportPreferences(JSON.parse(stored), baseCompanyName);
+          } catch {
+            return getDefaultReportPreferences(baseCompanyName);
+          }
+        })()
+      : getDefaultReportPreferences(baseCompanyName);
+    setReportPreferences(nextPreferences);
+    setSelectedDocumentType(nextPreferences.defaultDocumentType);
+  }, []);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
@@ -337,6 +365,8 @@ export default function ReportsPage() {
               kind === "packing"
                 ? {
                     jobId: selectedJobId,
+                    documentType: selectedDocumentType,
+                    reportPreferences,
                     billTo: billToAddress.trim() || selectedJob?.clientName,
                     shipTo: shipToAddress.trim() || selectedJob?.plantLocation || selectedJob?.clientName,
                     transporterName: selectedTransporter?.transporterName ?? undefined,
@@ -357,7 +387,7 @@ export default function ReportsPage() {
         const objectUrl = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = objectUrl;
-        anchor.download = `${kind === "packing" ? "Packing_List" : "Stickers"}_${selectedJob?.jobReferenceNumber ?? selectedJobId}.pdf`;
+        anchor.download = `${kind === "packing" ? `${selectedDocumentType}_Packing_List` : "Stickers"}_${selectedJob?.jobReferenceNumber ?? selectedJobId}.pdf`;
         anchor.click();
         URL.revokeObjectURL(objectUrl);
       } catch (error) {
@@ -369,6 +399,7 @@ export default function ReportsPage() {
     },
     [
       billToAddress,
+      selectedDocumentType,
       selectedItemName,
       selectedJob?.clientName,
       selectedJob?.commodity,
@@ -380,6 +411,7 @@ export default function ReportsPage() {
       toast,
       transporters,
       vehicleNo,
+      reportPreferences,
     ]
   );
 
@@ -471,10 +503,10 @@ export default function ReportsPage() {
             </Badge>
           </HStack>
           <Heading size="lg" color="gray.900">
-            Industrial Packing + Traceability
+            Reports
           </Heading>
           <Text color="gray.600" mt={2} maxW="3xl">
-            Each lot is traceable by seal number, weight totals, and dispatch photos. Packing list output is text-only; barcode output is isolated to sticker generation.
+            Generate packing and sticker reports.
           </Text>
         </Box>
 
@@ -517,6 +549,20 @@ export default function ReportsPage() {
 
               <HStack mt={5} spacing={3} flexWrap="wrap">
                 <Select
+                  maxW={{ base: "full", md: "56" }}
+                  borderRadius="xl"
+                  value={selectedDocumentType}
+                  onChange={(event) =>
+                    setSelectedDocumentType(event.target.value as ReportPreferences["defaultDocumentType"])
+                  }
+                >
+                  {REPORT_DOCUMENT_TYPES.map((documentType) => (
+                    <option key={documentType} value={documentType}>
+                      {getReportDocumentTypeLabel(documentType)} Format
+                    </option>
+                  ))}
+                </Select>
+                <Select
                   maxW={{ base: "full", md: "72" }}
                   value={selectedJobId}
                   onChange={(event) => setSelectedJobId(event.target.value)}
@@ -536,7 +582,7 @@ export default function ReportsPage() {
                   isLoading={generating === "packing"}
                   isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                 >
-                  Generate Packing List PDF
+                  Download Packing List
                 </Button>
                 <Button
                   variant="outline"
@@ -545,7 +591,7 @@ export default function ReportsPage() {
                   isLoading={generating === "stickers"}
                   isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                 >
-                  Generate Sticker PDF
+                  Download Stickers
                 </Button>
               </HStack>
 
@@ -617,7 +663,7 @@ export default function ReportsPage() {
                 </FormControl>
               </SimpleGrid>
               <Text mt={3} fontSize="sm" color="gray.500">
-                Manage client/transporter/item masters from Master.
+                Manage client, transporter, and item records from Master.
               </Text>
 
               <Box mt={5} borderWidth="1px" borderColor="gray.200" borderRadius="2xl" overflowX="auto">
@@ -658,7 +704,7 @@ export default function ReportsPage() {
                         <Tr>
                           <Td colSpan={5}>
                             <Text py={6} color="gray.500" textAlign="center">
-                              No packed lots available for the selected job.
+                              No records.
                             </Text>
                           </Td>
                         </Tr>
@@ -721,7 +767,7 @@ export default function ReportsPage() {
                     {selectedJob?.inspectionSerialNumber ?? "—"}
                   </Text>
                   <Text fontSize="sm" color="gray.600" mt={1}>
-                    {selectedJob?.clientName ?? "No job selected"}
+                    {selectedJob?.clientName ?? "No record selected"}
                   </Text>
                 </Box>
                 <Box p={4} borderWidth="1px" borderColor="gray.200" borderRadius="xl">
@@ -775,7 +821,7 @@ export default function ReportsPage() {
                       isLoading={sealBusy === "generate"}
                       isDisabled={loadingJobs || !selectedJobId}
                     >
-                      Generate Seal Number
+                      Generate Seal
                     </Button>
                     <Button
                       size="sm"
@@ -795,7 +841,7 @@ export default function ReportsPage() {
                       isLoading={sealBusy === "assign"}
                       isDisabled={loadingJobs || !sealLotId}
                     >
-                      Auto-assign Seal
+                      Auto Assign Seal
                     </Button>
                   </Stack>
                 </Box>

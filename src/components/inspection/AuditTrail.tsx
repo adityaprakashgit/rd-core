@@ -22,7 +22,7 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({ logs }) => {
   if (logs.length === 0) {
     return (
       <Box p={4} textAlign="center">
-        <Text color="gray.500" fontSize="sm">No historical records found for this lifecycle.</Text>
+        <Text color="gray.500" fontSize="sm">No records.</Text>
       </Box>
     );
   }

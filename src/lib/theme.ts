@@ -1,2 +1,1 @@
-import { extendTheme } from "@chakra-ui/react";
-export const system = extendTheme({});
+export { appTheme as system } from "@/theme";

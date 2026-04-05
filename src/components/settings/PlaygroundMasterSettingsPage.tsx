@@ -375,8 +375,8 @@ export default function SettingsPage() {
     }
   };
 
-  const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  const updateField = (key: string, value: string | boolean) => {
+    setForm((prev) => ({ ...prev, [key]: value } as FormState));
   };
 
   return (
@@ -556,7 +556,7 @@ export default function SettingsPage() {
 
                 {!loading && records.length === 0 ? (
                   <Box p={4} borderWidth="1px" borderStyle="dashed" borderColor="gray.300" borderRadius="xl">
-                    <Text fontSize="sm" color="gray.500">No records yet.</Text>
+                    <Text fontSize="sm" color="gray.500">No records.</Text>
                   </Box>
                 ) : null}
               </VStack>

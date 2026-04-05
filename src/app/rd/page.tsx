@@ -86,10 +86,10 @@ export default function RdPage() {
               </Badge>
             </HStack>
             <Heading size="lg" color="gray.900">
-              Create Inspection Job
+              Create Job
             </Heading>
             <Text color="gray.600" maxW="4xl">
-              Canonical entry point for inspection intake. Create the job here and continue directly into the control tower workflow.
+              Create a new job record.
             </Text>
           </VStack>
 
@@ -113,10 +113,10 @@ export default function RdPage() {
                   </Box>
                   <Box>
                     <Heading size="md" color="gray.900">
-                      New Inspection Reference
+                      New Job
                     </Heading>
                     <Text fontSize="sm" color="gray.600">
-                      Job creation is lightweight and immediately opens the inspection workflow after save.
+                      Required fields only.
                     </Text>
                   </Box>
                 </HStack>

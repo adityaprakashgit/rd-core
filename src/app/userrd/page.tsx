@@ -2,13 +2,17 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Accordion,
+  AccordionButton,
+  AccordionIcon,
+  AccordionItem,
+  AccordionPanel,
   Badge,
   Box,
   Button,
   Card,
   CardBody,
   Center,
-  Divider,
   Heading,
   HStack,
   Icon,
@@ -20,7 +24,6 @@ import {
   useToast,
 } from "@chakra-ui/react";
 import {
-  AlertCircle,
   ClipboardList,
   FlaskConical,
   FileDown,
@@ -34,6 +37,7 @@ import { useRouter } from "next/navigation";
 
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { InspectionJob } from "@/types/inspection";
+import { APP_TEXT } from "@/lib/ui-copy";
 
 type MetricCardProps = {
   title: string;
@@ -182,11 +186,9 @@ export default function UserRdDashboard() {
               </Badge>
             </HStack>
             <Heading size="lg" color="gray.900">
-              Analytical Control Tower
+              {APP_TEXT.dashboard}
             </Heading>
-            <Text color="gray.600" maxW="4xl">
-              Analytical mapping, trial orchestration, QA control, and report generation from one operational surface.
-            </Text>
+            <Text color="gray.600" maxW="4xl">Jobs and workflow overview.</Text>
           </VStack>
 
           <HStack spacing={3} wrap="wrap">
@@ -202,12 +204,16 @@ export default function UserRdDashboard() {
               Open Playground
             </Button>
             <Badge colorScheme="purple" variant="subtle" borderRadius="full" px={3} py={1}>
-              ASSAY READY
+              ACTIVE
             </Badge>
           </HStack>
         </HStack>
 
-        <SimpleGrid columns={{ base: 1, sm: 2, xl: 5 }} spacing={4}>
+        <SimpleGrid
+          columns={{ base: 1, sm: 2, xl: 5 }}
+          spacing={4}
+          display={{ base: "none", md: "grid" }}
+        >
           <MetricCard title="Assigned Jobs" value={metrics.total} detail="Inspection jobs in R&D scope." accent="purple" />
           <MetricCard title="Sampling Live" value={metrics.sampled} detail="Jobs with active sampling records." accent="orange" />
           <MetricCard title="Pending QA" value={metrics.pendingQA} detail="Jobs queued for quality review." accent="blue" />
@@ -226,11 +232,11 @@ export default function UserRdDashboard() {
                   </Text>
                 </HStack>
                 <Text fontSize="sm" color="gray.600">
-                  CREATED to DISPATCHED visibility across assay operations.
+                  Current pipeline status.
                 </Text>
               </VStack>
               <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3} py={1}>
-                CONTROLLED COPY
+                LIVE
               </Badge>
             </HStack>
 
@@ -257,11 +263,9 @@ export default function UserRdDashboard() {
             <VStack align="stretch" spacing={4}>
               <Box>
                 <Heading size="md" color="gray.900">
-                  R&D Execution Register
+                  {APP_TEXT.jobs}
                 </Heading>
-                <Text fontSize="sm" color="gray.600">
-                  Structured job cards with assay state and reporting visibility.
-                </Text>
+                <Text fontSize="sm" color="gray.600">Assigned jobs.</Text>
               </Box>
 
               <VStack align="stretch" spacing={4}>
@@ -328,10 +332,10 @@ export default function UserRdDashboard() {
                             </Text>
                             <HStack spacing={2} wrap="wrap" justify="end">
                               <Button colorScheme="teal" borderRadius="xl" onClick={() => router.push(`/userrd/job/${job.id}`)}>
-                                Open Workflow
+                                Open Job
                               </Button>
-                              <Button variant="outline" borderRadius="xl" leftIcon={<FileDown size={16} />} onClick={() => router.push(`/userrd/job/${job.id}`)}>
-                                Reports
+                              <Button variant="outline" borderRadius="xl" leftIcon={<FileDown size={16} />} onClick={() => router.push("/reports")}>
+                                Open Reports
                               </Button>
                             </HStack>
                           </VStack>
@@ -347,7 +351,7 @@ export default function UserRdDashboard() {
                       <Center py={14}>
                         <VStack spacing={2}>
                           <Icon as={FlaskConical} boxSize={8} color="gray.300" />
-                          <Text color="gray.500">No R&D jobs found in the registry.</Text>
+                          <Text color="gray.500">No records.</Text>
                         </VStack>
                       </Center>
                     </CardBody>
@@ -362,59 +366,40 @@ export default function UserRdDashboard() {
               <HStack justify="space-between" align="start" mb={4}>
                 <VStack align="start" spacing={1}>
                   <Heading size="md" color="gray.900">
-                    R&D Readiness
+                    {APP_TEXT.status}
                   </Heading>
-                  <Text fontSize="sm" color="gray.600">
-                    Analytical operating modules and control state.
-                  </Text>
+                  <Text fontSize="sm" color="gray.600">Secondary status.</Text>
                 </VStack>
                 <Icon as={Sparkles} color="teal.600" />
               </HStack>
 
-              <VStack align="stretch" spacing={3}>
+              <Accordion allowMultiple defaultIndex={[]}>
                 {[
-                  { title: "Sample Capture", desc: "Physical sample verification and media evidence.", status: "ACTIVE", color: "green" },
-                  { title: "Analytical Trials", desc: "Laboratory orchestration and component mapping.", status: "READY", color: "blue" },
-                  { title: "Metrics Engine", desc: "Real-time assay calculation and thresholds.", status: "CONTROLLED", color: "purple" },
-                  { title: "Audit Snapshot", desc: "Immutable state capture for governance.", status: "READY", color: "teal" },
+                  { title: "Capture", status: "ACTIVE", color: "green" },
+                  { title: "Trials", status: "READY", color: "blue" },
+                  { title: "Metrics", status: "CONTROLLED", color: "purple" },
+                  { title: "Audit", status: "READY", color: "teal" },
                 ].map((item) => (
-                  <Card key={item.title} variant="outline" borderRadius="xl" bg={`${item.color}.50`} borderColor={`${item.color}.100`}>
-                    <CardBody p={4}>
-                      <HStack justify="space-between" align="start" spacing={3}>
-                        <Box>
-                          <Text fontWeight="bold" color="gray.900">
-                            {item.title}
-                          </Text>
-                          <Text fontSize="sm" color="gray.600" mt={1}>
-                            {item.desc}
-                          </Text>
-                        </Box>
-                        <Badge colorScheme={item.color} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                          {item.status}
-                        </Badge>
-                      </HStack>
-                    </CardBody>
-                  </Card>
+                  <AccordionItem key={item.title} border="none" mb={2}>
+                    <Card variant="outline" borderRadius="xl" bg={`${item.color}.50`} borderColor={`${item.color}.100`}>
+                      <AccordionButton px={4} py={3}>
+                        <HStack justify="space-between" w="full">
+                          <Text fontWeight="bold" color="gray.900">{item.title}</Text>
+                          <HStack>
+                            <Badge colorScheme={item.color} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                              {item.status}
+                            </Badge>
+                            <AccordionIcon />
+                          </HStack>
+                        </HStack>
+                      </AccordionButton>
+                      <AccordionPanel pt={0} pb={3}>
+                        <Text fontSize="sm" color="gray.600">Status panel</Text>
+                      </AccordionPanel>
+                    </Card>
+                  </AccordionItem>
                 ))}
-              </VStack>
-
-              <Divider my={6} />
-
-              <Card variant="outline" borderRadius="xl" bg="orange.50" borderColor="orange.100">
-                <CardBody p={4}>
-                  <HStack align="start" spacing={3}>
-                    <Icon as={AlertCircle} color="orange.500" mt={1} />
-                    <Box>
-                      <Text fontWeight="bold" color="orange.800">
-                        R&D Notice
-                      </Text>
-                      <Text fontSize="sm" color="orange.700" mt={1}>
-                        Analytical records should only be submitted for QA once the trial set is complete.
-                      </Text>
-                    </Box>
-                  </HStack>
-                </CardBody>
-              </Card>
+              </Accordion>
             </CardBody>
           </Card>
         </SimpleGrid>

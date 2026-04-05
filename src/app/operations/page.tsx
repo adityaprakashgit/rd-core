@@ -2,6 +2,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Accordion,
+  AccordionButton,
+  AccordionIcon,
+  AccordionItem,
+  AccordionPanel,
   Badge,
   Box,
   Button,
@@ -31,6 +36,7 @@ import { useRouter } from "next/navigation";
 
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { InspectionJob, InspectionLot, Sampling } from "@/types/inspection";
+import { APP_TEXT } from "@/lib/ui-copy";
 
 type MetricCardProps = {
   title: string;
@@ -195,11 +201,9 @@ export default function OperationsPage() {
               </Badge>
             </HStack>
             <Heading size="lg" color="gray.900">
-              Operations Control Tower
+              {APP_TEXT.dashboard}
             </Heading>
-            <Text color="gray.600" maxW="4xl">
-              Structured inspection registry for intake, sampling, QA, and dispatch execution.
-            </Text>
+            <Text color="gray.600" maxW="4xl">Jobs and workflow overview.</Text>
           </VStack>
 
           <HStack spacing={3} wrap="wrap">
@@ -207,12 +211,12 @@ export default function OperationsPage() {
               Create Job
             </Button>
             <Badge colorScheme="green" variant="subtle" borderRadius="full" px={3} py={1}>
-              EXECUTION READY
+              ACTIVE
             </Badge>
           </HStack>
         </HStack>
 
-        <SimpleGrid columns={{ base: 1, sm: 2, xl: 5 }} spacing={4}>
+        <SimpleGrid columns={{ base: 1, sm: 2, xl: 5 }} spacing={4} display={{ base: "none", md: "grid" }}>
           <MetricCard title="Total Jobs" value={metrics.total} detail="Inspection jobs in the registry." accent="teal" />
           <MetricCard title="Lots Ready" value={metrics.lotsReady} detail="Jobs with at least one lot onboarded." accent="cyan" />
           <MetricCard title="Sampling Active" value={metrics.samplingActive} detail="Jobs with partial sampling progress." accent="orange" />
@@ -231,11 +235,11 @@ export default function OperationsPage() {
                   </Text>
                 </HStack>
                 <Text fontSize="sm" color="gray.600">
-                  CREATED to DISPATCHED visibility across the operations lane.
+                  Current pipeline status.
                 </Text>
               </VStack>
               <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3} py={1}>
-                CONTROLLED COPY
+                LIVE
               </Badge>
             </HStack>
 
@@ -262,11 +266,9 @@ export default function OperationsPage() {
             <VStack align="stretch" spacing={4}>
               <Box>
                 <Heading size="md" color="gray.900">
-                  Inspection Jobs
+                  {APP_TEXT.jobs}
                 </Heading>
-                <Text fontSize="sm" color="gray.600">
-                  Job cards with sampling progress and workflow entry points.
-                </Text>
+                <Text fontSize="sm" color="gray.600">Assigned jobs.</Text>
               </Box>
 
               <VStack align="stretch" spacing={4}>
@@ -330,13 +332,18 @@ export default function OperationsPage() {
                             </Text>
                             <HStack spacing={2} wrap="wrap" justify="end">
                               <Button colorScheme="teal" borderRadius="xl" onClick={() => router.push(`/operations/job/${job.id}`)}>
-                                Open Workflow
+                                Open Job
                               </Button>
                               <Button variant="outline" borderRadius="xl" leftIcon={<ScanFace size={16} />} onClick={() => router.push(`/operations/job/${job.id}`)}>
-                                Lots
+                                Open Lots
                               </Button>
-                              <Button variant="outline" borderRadius="xl" leftIcon={<FileDown size={16} />}>
-                                Summary
+                              <Button
+                                variant="outline"
+                                borderRadius="xl"
+                                leftIcon={<FileDown size={16} />}
+                                onClick={() => router.push("/reports")}
+                              >
+                                Open Reports
                               </Button>
                             </HStack>
                           </VStack>
@@ -352,7 +359,7 @@ export default function OperationsPage() {
                       <Center py={14}>
                         <VStack spacing={2}>
                           <Icon as={PackageSearch} boxSize={8} color="gray.300" />
-                          <Text color="gray.500">No operational jobs are registered.</Text>
+                          <Text color="gray.500">No records.</Text>
                         </VStack>
                       </Center>
                     </CardBody>
@@ -367,41 +374,40 @@ export default function OperationsPage() {
               <HStack justify="space-between" align="start" mb={4}>
                 <VStack align="start" spacing={1}>
                   <Heading size="md" color="gray.900">
-                    Module Readiness
+                    {APP_TEXT.status}
                   </Heading>
-                  <Text fontSize="sm" color="gray.600">
-                    Operational control modules and dispatch readiness.
-                  </Text>
+                  <Text fontSize="sm" color="gray.600">Secondary status.</Text>
                 </VStack>
                 <Icon as={Sparkles} color="teal.600" />
               </HStack>
 
-              <VStack align="stretch" spacing={3}>
+              <Accordion allowMultiple defaultIndex={[]}>
                 {[
-                  { title: "Job & Lot Intake", desc: "Job registration and lot onboarding.", status: "READY", color: "green" },
-                  { title: "Sampling Discipline", desc: "Photo traceability and unit capture.", status: "CONTROLLED", color: "blue" },
-                  { title: "QA Governance", desc: "Quality gates and lock transitions.", status: "READY", color: "green" },
-                  { title: "Dispatch Documentation", desc: "Release-ready documentation packets.", status: "READY", color: "teal" },
+                  { title: "Intake", status: "READY", color: "green" },
+                  { title: "Sampling", status: "CONTROLLED", color: "blue" },
+                  { title: "QA", status: "READY", color: "green" },
+                  { title: "Dispatch", status: "READY", color: "teal" },
                 ].map((item) => (
-                  <Card key={item.title} variant="outline" borderRadius="xl" bg={`${item.color}.50`} borderColor={`${item.color}.100`}>
-                    <CardBody p={4}>
-                      <HStack justify="space-between" align="start" spacing={3}>
-                        <Box>
-                          <Text fontWeight="bold" color="gray.900">
-                            {item.title}
-                          </Text>
-                          <Text fontSize="sm" color="gray.600" mt={1}>
-                            {item.desc}
-                          </Text>
-                        </Box>
-                        <Badge colorScheme={item.color} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                          {item.status}
-                        </Badge>
-                      </HStack>
-                    </CardBody>
-                  </Card>
+                  <AccordionItem key={item.title} border="none" mb={2}>
+                    <Card variant="outline" borderRadius="xl" bg={`${item.color}.50`} borderColor={`${item.color}.100`}>
+                      <AccordionButton px={4} py={3}>
+                        <HStack justify="space-between" w="full">
+                          <Text fontWeight="bold" color="gray.900">{item.title}</Text>
+                          <HStack>
+                            <Badge colorScheme={item.color} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                              {item.status}
+                            </Badge>
+                            <AccordionIcon />
+                          </HStack>
+                        </HStack>
+                      </AccordionButton>
+                      <AccordionPanel pt={0} pb={3}>
+                        <Text fontSize="sm" color="gray.600">Status panel</Text>
+                      </AccordionPanel>
+                    </Card>
+                  </AccordionItem>
                 ))}
-              </VStack>
+              </Accordion>
             </CardBody>
           </Card>
         </SimpleGrid>

@@ -16,6 +16,8 @@ export type ReportBranding = {
   taxId: string;
   logoUrl: string;
   footerNote: string;
+  authorizedSignatoryName: string;
+  authorizedSignatoryTitle: string;
 };
 
 export type ReportPreferences = {
@@ -56,6 +58,8 @@ export function getDefaultReportPreferences(baseCompanyName = "Inspection Contro
       taxId: "",
       logoUrl: "",
       footerNote: "",
+      authorizedSignatoryName: "",
+      authorizedSignatoryTitle: "",
     },
   };
 }
@@ -82,6 +86,8 @@ export function sanitizeReportPreferences(
       taxId: asTrimmedString(payload.branding?.taxId),
       logoUrl: asTrimmedString(payload.branding?.logoUrl),
       footerNote: asTrimmedString(payload.branding?.footerNote),
+      authorizedSignatoryName: asTrimmedString(payload.branding?.authorizedSignatoryName),
+      authorizedSignatoryTitle: asTrimmedString(payload.branding?.authorizedSignatoryTitle),
     },
   };
 }

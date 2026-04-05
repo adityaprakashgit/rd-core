@@ -28,6 +28,8 @@ import {
   FormControl, 
   FormLabel, 
   SimpleGrid,
+  Stack,
+  Select,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -53,6 +55,14 @@ import {
   AuditLog
 } from "@/types/inspection";
 import { AuditTrail } from "@/components/inspection/AuditTrail";
+import {
+  getDefaultReportPreferences,
+  getReportDocumentTypeLabel,
+  REPORT_DOCUMENT_TYPES,
+  REPORT_PREFERENCES_STORAGE_KEY,
+  sanitizeReportPreferences,
+  type ReportPreferences,
+} from "@/lib/report-preferences";
 
 
 
@@ -79,6 +89,10 @@ export default function UserRdJobDetail() {
   const [reportResult, setReportResult] = useState<{ validation: { isValid: boolean } } | null>(null);
   const [performingQA, setPerformingQA] = useState(false);
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [reportPreferences, setReportPreferences] = useState<ReportPreferences>(() =>
+    getDefaultReportPreferences("Inspection Control Tower")
+  );
+  const [selectedDocumentType, setSelectedDocumentType] = useState<ReportPreferences["defaultDocumentType"]>("EXPORT");
 
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -165,6 +179,22 @@ export default function UserRdJobDetail() {
       fetchBaseData();
     }
   }, [jobId, fetchBaseData]);
+
+  useEffect(() => {
+    const baseCompanyName = "Inspection Control Tower";
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem(REPORT_PREFERENCES_STORAGE_KEY) : null;
+    const nextPreferences = stored
+      ? (() => {
+          try {
+            return sanitizeReportPreferences(JSON.parse(stored), baseCompanyName);
+          } catch {
+            return getDefaultReportPreferences(baseCompanyName);
+          }
+        })()
+      : getDefaultReportPreferences(baseCompanyName);
+    setReportPreferences(nextPreferences);
+    setSelectedDocumentType(nextPreferences.defaultDocumentType);
+  }, []);
 
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -278,13 +308,18 @@ export default function UserRdJobDetail() {
       const res = await fetch("/api/report/export", {
         method: "POST",
         headers: { "Content-Type" : "application/json" },
-        body: JSON.stringify({ jobId, format })
+        body: JSON.stringify({
+          jobId,
+          format,
+          documentType: selectedDocumentType,
+          reportPreferences,
+        }),
       });
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Report_${job?.inspectionSerialNumber || job?.jobReferenceNumber || "job"}.${format === "excel" ? "xlsx" : "pdf"}`;
+      a.download = `${selectedDocumentType}_Report_${job?.inspectionSerialNumber || job?.jobReferenceNumber || "job"}.${format === "excel" ? "xlsx" : "pdf"}`;
       a.click();
     } catch { toast({ title: "Export Failed", status: "error" }); }
   };
@@ -315,17 +350,19 @@ export default function UserRdJobDetail() {
   return (
     <ControlTowerLayout>
       <VStack align="stretch" spacing={6}>
-        <HStack justify="space-between">
+        <Stack direction={{ base: "column", md: "row" }} justify="space-between" align={{ base: "stretch", md: "center" }} spacing={3}>
           <Breadcrumb spacing="8px" separator={<ChevronRight size={14} color="gray.300" />}>
             <BreadcrumbItem>
               <BreadcrumbLink onClick={() => router.push("/userrd")} color="gray.500" fontSize="sm">R&D Dashboard</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbItem isCurrentPage>
-              <BreadcrumbLink color="gray.800" fontSize="sm" fontWeight="bold">Homogeneous Execution</BreadcrumbLink>
+              <BreadcrumbLink color="gray.800" fontSize="sm" fontWeight="bold">Job Workspace</BreadcrumbLink>
             </BreadcrumbItem>
           </Breadcrumb>
-          <Button size="xs" variant="ghost" leftIcon={<ArrowLeft size={14} />} onClick={() => router.back()}>Back</Button>
-        </HStack>
+          <Button size="xs" variant="ghost" leftIcon={<ArrowLeft size={14} />} onClick={() => router.back()} alignSelf={{ base: "start", md: "auto" }}>
+            Back
+          </Button>
+        </Stack>
 
         <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
           <CardBody p={6}>
@@ -339,18 +376,24 @@ export default function UserRdJobDetail() {
                     {job.status}
                   </Badge>
                 </HStack>
-                <Heading size="lg" color="gray.800">Homogeneous Execution</Heading>
-                <Text fontSize="sm" color="gray.500">Analytical mapping and laboratory trial orchestration for <b>{job.clientName}</b>.</Text>
+                <Heading size="lg" color="gray.800">Job Workspace</Heading>
+                <Text fontSize="sm" color="gray.500">Job execution for <b>{job.clientName}</b>.</Text>
               </VStack>
-              <HStack spacing={4}>
+              <HStack spacing={4} flexWrap="wrap" w={{ base: "full", md: "auto" }}>
                 {job.status !== "LOCKED" && (
-                  <HStack spacing={2}>
+                  <HStack spacing={2} flexWrap="wrap" w={{ base: "full", md: "auto" }}>
                     {job.status !== "QA" ? (
-                      <Button colorScheme="yellow" onClick={() => handleQAAction("SUBMIT")} isLoading={performingQA} leftIcon={<ClipboardCheck size={18} />}>Submit for QA</Button>
+                      <Button colorScheme="yellow" onClick={() => handleQAAction("SUBMIT")} isLoading={performingQA} leftIcon={<ClipboardCheck size={18} />} w={{ base: "full", sm: "auto" }}>
+                        Send to QA
+                      </Button>
                     ) : (
                       <>
-                        <Button colorScheme="green" onClick={() => handleQAAction("APPROVE")} isLoading={performingQA} leftIcon={<CheckCircle2 size={18} />}>Approve & Lock</Button>
-                        <Button colorScheme="red" variant="outline" onClick={() => handleQAAction("REJECT")} isLoading={performingQA}>Reject</Button>
+                        <Button colorScheme="green" onClick={() => handleQAAction("APPROVE")} isLoading={performingQA} leftIcon={<CheckCircle2 size={18} />} w={{ base: "full", sm: "auto" }}>
+                          Approve
+                        </Button>
+                        <Button colorScheme="red" variant="outline" onClick={() => handleQAAction("REJECT")} isLoading={performingQA} w={{ base: "full", sm: "auto" }}>
+                          Reject
+                        </Button>
                       </>
                     )}
                   </HStack>
@@ -367,25 +410,27 @@ export default function UserRdJobDetail() {
               <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
                  <CardBody>
                     <VStack align="start" spacing={4}>
-                      <Heading size="sm" color="gray.700">1. Homogeneous Sample Capture</Heading>
+                      <Heading size="sm" color="gray.700">1. Sample</Heading>
                       <Divider />
                       <Box w="full">
                         {sample ? (
-                          <HStack spacing={6} p={4} bg="green.50" borderRadius="lg" border="1px solid" borderColor="green.100">
+                          <Stack direction={{ base: "column", md: "row" }} spacing={4} p={4} bg="green.50" borderRadius="lg" border="1px solid" borderColor="green.100" w="full">
                             {sample.photoUrl && <Image src={sample.photoUrl} alt="Sample" borderRadius="md" h="100px" w="100px" objectFit="cover" shadow="sm" />}
                             <VStack align="start" spacing={1}>
-                              <Badge colorScheme="green" variant="solid">SAMPLE FINALIZED</Badge>
-                              <Text fontSize="sm" color="gray.700" fontWeight="medium">Physical hash verified.</Text>
+                              <Badge colorScheme="green" variant="solid">SAVED</Badge>
+                              <Text fontSize="sm" color="gray.700" fontWeight="medium">Saved.</Text>
                               <Text fontSize="xs" color="gray.500">Captured at {new Date(sample.createdAt).toLocaleString()}</Text>
                             </VStack>
                             <Box flex={1} />
-                            <Button size="sm" variant="outline" colorScheme="green" onClick={() => fileInputRef.current?.click()} isDisabled={!isEditable}>Retake</Button>
-                          </HStack>
+                            <Button size="sm" variant="outline" colorScheme="green" onClick={() => fileInputRef.current?.click()} isDisabled={!isEditable} w={{ base: "full", sm: "auto" }}>
+                              Replace Photo
+                            </Button>
+                          </Stack>
                         ) : (
                           <VStack align="center" spacing={4} p={10} bg="gray.50" borderRadius="lg" border="1px dashed" borderColor="gray.300">
                             <Icon as={Camera} size={32} color="gray.400" />
-                            <Text color="gray.600" textAlign="center" fontSize="sm">A primary Homogeneous Sample photo is required to begin the analytical trail.</Text>
-                            <Button colorScheme="purple" size="md" leftIcon={<Camera size={18} />} onClick={() => fileInputRef.current?.click()} isLoading={uploading} isDisabled={!isEditable}>Record Primary Sample</Button>
+                            <Text color="gray.600" textAlign="center" fontSize="sm">Upload sample photo.</Text>
+                            <Button colorScheme="purple" size="md" leftIcon={<Camera size={18} />} onClick={() => fileInputRef.current?.click()} isLoading={uploading} isDisabled={!isEditable}>Upload Photo</Button>
                           </VStack>
                         )}
                         <input type="file" style={{ display: "none" }} ref={fileInputRef} onChange={handleFileChange} disabled={!isEditable} />
@@ -398,21 +443,33 @@ export default function UserRdJobDetail() {
               {sample && (
                 <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
                   <CardBody p={0}>
-                    <Box p={5} borderBottomWidth="1px" borderColor="gray.100" display="flex" justifyContent="space-between" alignItems="center">
-                       <Heading size="sm" color="gray.700">2. Packet Segmentation</Heading>
-                       <HStack spacing={3}>
-                         <FormControl display="flex" alignItems="center">
+                    <Box p={5} borderBottomWidth="1px" borderColor="gray.100">
+                      <Stack direction={{ base: "column", md: "row" }} justify="space-between" align={{ base: "stretch", md: "center" }} spacing={3}>
+                        <Heading size="sm" color="gray.700">2. Packets</Heading>
+                        <HStack spacing={3} flexWrap="wrap">
+                          <FormControl display="flex" alignItems="center" w={{ base: "full", sm: "auto" }}>
                             <FormLabel fontSize="xs" fontWeight="bold" mb={0} mr={2}>Count:</FormLabel>
-                            <Input type="number" w="80px" size="sm" value={packetCountInput} onChange={(e) => setPacketCountInput(e.target.value)} isDisabled={!isEditable} />
-                         </FormControl>
-                         <Button colorScheme="purple" size="sm" leftIcon={<Plus size={14} />} isLoading={generating} onClick={generatePackets} isDisabled={!isEditable}>Generate</Button>
-                       </HStack>
+                            <Input type="number" w={{ base: "full", sm: "80px" }} size="sm" value={packetCountInput} onChange={(e) => setPacketCountInput(e.target.value)} isDisabled={!isEditable} />
+                          </FormControl>
+                          <Button
+                            colorScheme="purple"
+                            size="sm"
+                            leftIcon={<Plus size={14} />}
+                            isLoading={generating}
+                            onClick={generatePackets}
+                            isDisabled={!isEditable}
+                            w={{ base: "full", sm: "auto" }}
+                          >
+                            Create Packets
+                          </Button>
+                        </HStack>
+                      </Stack>
                     </Box>
                     <TableContainer>
                        <Table variant="simple" size="sm">
                           <Thead bg="gray.50"><Tr><Th>Sequence</Th><Th>Packet Hash ID</Th><Th>Audit Check</Th></Tr></Thead>
                           <Tbody>
-                            {packets.length === 0 ? <Tr><Td colSpan={3} textAlign="center" py={4}><Text color="gray.400" fontSize="xs">Zero packets generated.</Text></Td></Tr> : 
+                            {packets.length === 0 ? <Tr><Td colSpan={3} textAlign="center" py={4}><Text color="gray.400" fontSize="xs">No records.</Text></Td></Tr> : 
                                packets.map(pkt => (
                                  <Tr key={pkt.id}>
                                    <Td><Badge colorScheme="blue" variant="subtle">Packet #{pkt.packetNumber}</Badge></Td>
@@ -432,12 +489,14 @@ export default function UserRdJobDetail() {
               {sample && (
                 <Card variant="outline" bg="white" shadow="sm" borderRadius="xl">
                   <CardBody p={5}>
-                    <HStack justify="space-between" mb={6}>
-                      <Heading size="sm" color="gray.700">3. Analytical Trials</Heading>
-                      <Button size="sm" colorScheme="purple" leftIcon={<Plus size={16} />} onClick={handleTrialStart} isLoading={startingTrial} isDisabled={!isEditable}>New Trial</Button>
-                    </HStack>
+                    <Stack direction={{ base: "column", md: "row" }} justify="space-between" align={{ base: "stretch", md: "center" }} spacing={3} mb={6}>
+                      <Heading size="sm" color="gray.700">3. Trials</Heading>
+                      <Button size="sm" colorScheme="purple" leftIcon={<Plus size={16} />} onClick={handleTrialStart} isLoading={startingTrial} isDisabled={!isEditable} w={{ base: "full", sm: "auto" }}>
+                        Add Trial
+                      </Button>
+                    </Stack>
                     <VStack align="stretch" spacing={6}>
-                      {trials.length === 0 && <Center p={10} bg="gray.50" borderRadius="xl" border="1px dashed" borderColor="gray.300"><Text color="gray.400" fontSize="sm">No trials initiated.</Text></Center>}
+                      {trials.length === 0 && <Center p={10} bg="gray.50" borderRadius="xl" border="1px dashed" borderColor="gray.300"><Text color="gray.400" fontSize="sm">No records.</Text></Center>}
                       {trials.map(trial => (
                         <Box key={trial.id} p={5} borderRadius="xl" bg="gray.50" border="1px solid" borderColor="gray.200">
                           <HStack justify="space-between" mb={4}>
@@ -448,17 +507,19 @@ export default function UserRdJobDetail() {
                             <Thead bg="gray.100"><Tr><Th>Component Element</Th><Th isNumeric>Mapped Value</Th></Tr></Thead>
                             <Tbody>
                               {trial.measurements.map(m => <Tr key={m.id}><Td fontWeight="bold" color="gray.700">{m.element}</Td><Td isNumeric fontWeight="bold" color="purple.600">{formatMeasurementValue(m.value)}</Td></Tr>)}
-                              {trial.measurements.length === 0 && <Tr><Td colSpan={2} textAlign="center" py={2}><Text color="gray.400" fontSize="xs">No measurements.</Text></Td></Tr>}
+                              {trial.measurements.length === 0 && <Tr><Td colSpan={2} textAlign="center" py={2}><Text color="gray.400" fontSize="xs">No records.</Text></Td></Tr>}
                             </Tbody>
                           </Table>
-                          <SimpleGrid columns={3} spacing={3}>
+                          <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
                             <FormControl>
                               <Input placeholder="Element (e.g. Au)" size="sm" bg="white" value={elementInput[trial.id] || ""} onChange={(e) => setElementInput(prev => ({ ...prev, [trial.id]: e.target.value }))} isDisabled={!isEditable} />
                             </FormControl>
                             <FormControl>
                               <Input placeholder="Value" size="sm" bg="white" type="number" step="0.0001" value={valueInput[trial.id] || ""} onChange={(e) => setValueInput(prev => ({ ...prev, [trial.id]: e.target.value }))} isDisabled={!isEditable} />
                             </FormControl>
-                            <Button size="sm" colorScheme="green" onClick={() => handleMeasurementSave(trial.id)} isLoading={savingMeasurement === trial.id} isDisabled={!isEditable}>Map Entry</Button>
+                            <Button size="sm" colorScheme="green" onClick={() => handleMeasurementSave(trial.id)} isLoading={savingMeasurement === trial.id} isDisabled={!isEditable} w={{ base: "full", md: "auto" }}>
+                              Add Measurement
+                            </Button>
                           </SimpleGrid>
                         </Box>
                       ))}
@@ -473,22 +534,35 @@ export default function UserRdJobDetail() {
           <VStack align="stretch" spacing={6}>
             <Card variant="outline" bg="white" shadow="sm" borderRadius="xl" borderTop="4px solid" borderTopColor="blue.500">
               <CardBody>
-                <Heading size="xs" color="gray.500" textTransform="uppercase" mb={4} letterSpacing="wider">Metrics Engine</Heading>
+                <Heading size="xs" color="gray.500" textTransform="uppercase" mb={4} letterSpacing="wider">Metrics</Heading>
                 <VStack align="stretch" spacing={4}>
-                  <Button size="md" colorScheme="blue" leftIcon={<FlaskConical size={18} />} onClick={handleReportBuild} isLoading={buildingReport} w="full">Calculate Integrity</Button>
+                  <Button size="md" colorScheme="blue" leftIcon={<FlaskConical size={18} />} onClick={handleReportBuild} isLoading={buildingReport} w="full">Validate</Button>
                   {reportResult && (
                     <Box p={4} borderRadius="lg" bg={reportResult.validation.isValid ? "green.50" : "orange.50"} border="1px solid" borderColor={reportResult.validation.isValid ? "green.100" : "orange.100"}>
                       <VStack align="start" spacing={2}>
-                        <HStack><Badge colorScheme={reportResult.validation.isValid ? "green" : "orange"}>{reportResult.validation.isValid ? "VALIDATED" : "INCOMPLETE"}</Badge><Text fontWeight="bold" fontSize="xs">Assay Logic Check</Text></HStack>
-                        <Text fontSize="10px" color="gray.600">Variance: 0.002% (Pass Threshold)</Text>
+                        <HStack><Badge colorScheme={reportResult.validation.isValid ? "green" : "orange"}>{reportResult.validation.isValid ? "VALIDATED" : "INCOMPLETE"}</Badge><Text fontWeight="bold" fontSize="xs">Check</Text></HStack>
+                        <Text fontSize="10px" color="gray.600">Latest validation result.</Text>
                       </VStack>
                     </Box>
                   )}
                   <Divider />
                   <Text fontSize="xs" fontWeight="bold" color="gray.500">Build Exports</Text>
-                  <SimpleGrid columns={2} spacing={3}>
-                    <Button size="sm" variant="outline" leftIcon={<Download size={14} />} onClick={() => handleExport("excel")}>XLSX</Button>
-                    <Button size="sm" variant="outline" leftIcon={<Download size={14} />} colorScheme="red" onClick={() => handleExport("pdf")}>PDF</Button>
+                  <Select
+                    size="sm"
+                    value={selectedDocumentType}
+                    onChange={(event) =>
+                      setSelectedDocumentType(event.target.value as ReportPreferences["defaultDocumentType"])
+                    }
+                  >
+                    {REPORT_DOCUMENT_TYPES.map((documentType) => (
+                      <option key={documentType} value={documentType}>
+                        {getReportDocumentTypeLabel(documentType)} Format
+                      </option>
+                    ))}
+                  </Select>
+                  <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={3}>
+                    <Button size="sm" variant="outline" leftIcon={<Download size={14} />} onClick={() => handleExport("excel")}>Export XLSX</Button>
+                    <Button size="sm" variant="outline" leftIcon={<Download size={14} />} colorScheme="red" onClick={() => handleExport("pdf")}>Export PDF</Button>
                   </SimpleGrid>
                 </VStack>
               </CardBody>
@@ -496,7 +570,7 @@ export default function UserRdJobDetail() {
 
             <Card variant="outline" bg="white" shadow="sm" borderRadius="xl" borderTop="4px solid" borderTopColor="purple.500">
               <CardBody>
-                <Heading size="xs" color="gray.500" textTransform="uppercase" mb={4} letterSpacing="wider">Governance Audit Trail</Heading>
+                <Heading size="xs" color="gray.500" textTransform="uppercase" mb={4} letterSpacing="wider">Audit Trail</Heading>
                 <AuditTrail logs={logs} />
               </CardBody>
             </Card>
@@ -506,10 +580,10 @@ export default function UserRdJobDetail() {
               <VStack align="start" spacing={2}>
                 <HStack>
                   <Icon as={AlertCircle} color="purple.500" />
-                  <Text fontWeight="bold" fontSize="sm" color="purple.800">Compliance Logic</Text>
+                  <Text fontWeight="bold" fontSize="sm" color="purple.800">Policy</Text>
                 </HStack>
                 <Text fontSize="xs" color="purple.700">
-                  Analytical records are sealed upon QA submission. All changes are tracked via the system audit trail.
+                  Records are tracked in audit trail.
                 </Text>
               </VStack>
             </Box>

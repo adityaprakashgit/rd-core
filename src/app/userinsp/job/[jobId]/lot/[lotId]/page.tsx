@@ -16,6 +16,7 @@ import {
   Image,
   Input,
   SimpleGrid,
+  Stack,
   Spinner,
   Table,
   TableContainer,
@@ -435,7 +436,7 @@ export default function LotDetailPage() {
                 </Badge>
               </HStack>
               <Heading size="lg" color="gray.900" mt={2}>
-                Lot Control Panel
+                Lot
               </Heading>
               <Text fontSize="sm" color="gray.600">
                 {job.clientName} - {job.commodity}
@@ -450,7 +451,7 @@ export default function LotDetailPage() {
               borderRadius="xl"
               onClick={() => inputRefs.current.before?.click()}
             >
-              Upload Before
+              Upload Before Photo
             </Button>
             <Button
               leftIcon={<Upload size={16} />}
@@ -458,7 +459,7 @@ export default function LotDetailPage() {
               borderRadius="xl"
               onClick={() => inputRefs.current.during?.click()}
             >
-              Upload During
+              Upload During Photo
             </Button>
             <Button
               leftIcon={<Upload size={16} />}
@@ -466,12 +467,12 @@ export default function LotDetailPage() {
               borderRadius="xl"
               onClick={() => inputRefs.current.after?.click()}
             >
-              Upload After
+              Upload After Photo
             </Button>
           </HStack>
         </HStack>
 
-        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} display={{ base: "none", md: "grid" }}>
           {[
             { label: "Total Bags", value: lot.totalBags, color: "teal", desc: "Lot capacity under control" },
             { label: "Captured Bags", value: bags.length, color: "blue", desc: "Rows currently registered" },
@@ -501,7 +502,7 @@ export default function LotDetailPage() {
                 <HStack justify="space-between" flexWrap="wrap" spacing={3} mb={4}>
                   <Box>
                     <Heading size="md" color="gray.900">
-                      Sampling Workflow
+                      Workflow
                     </Heading>
                     <Text color="gray.600" fontSize="sm">
                       Before, during, and after evidence are tracked independently and saved immediately.
@@ -512,7 +513,7 @@ export default function LotDetailPage() {
                   </Badge>
                 </HStack>
 
-                <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} display={{ base: "none", md: "grid" }}>
                   {samplingSteps.map((step) => {
                     const url = samplingDraft[step.key];
                     const active = Boolean(url);
@@ -552,7 +553,7 @@ export default function LotDetailPage() {
                               <VStack spacing={2}>
                                 <Icon as={Camera} boxSize={8} color="gray.300" />
                                 <Text fontSize="sm" color="gray.500">
-                                  No image uploaded
+                                  No image
                                 </Text>
                               </VStack>
                             )}
@@ -602,7 +603,7 @@ export default function LotDetailPage() {
                       after: samplingDraft.after,
                     })}
                   >
-                    Save Sampling Record
+                    Save Sampling
                   </Button>
                 </HStack>
               </CardBody>
@@ -612,7 +613,7 @@ export default function LotDetailPage() {
           <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
             <CardBody p={5}>
               <Heading size="sm" color="gray.900" mb={3}>
-                Lot Summary
+                Status
               </Heading>
               <VStack align="stretch" spacing={3}>
                 <HStack justify="space-between">
@@ -635,7 +636,7 @@ export default function LotDetailPage() {
                 </HStack>
                 <Divider />
                 <Text fontSize="sm" color="gray.600">
-                  This panel keeps the workflow compact while maintaining full traceability for all evidence stages.
+                  Workflow status.
                 </Text>
               </VStack>
             </CardBody>
@@ -665,8 +666,9 @@ export default function LotDetailPage() {
                     }}
                     isLoading={generatingSeal}
                     isDisabled={Boolean(lot.sealNumber)}
+                    w={{ base: "full", sm: "auto" }}
                   >
-                    Generate
+                    Generate Seal
                   </Button>
                   <Button
                     flex={1}
@@ -676,8 +678,9 @@ export default function LotDetailPage() {
                     }}
                     isLoading={assigningSeal}
                     isDisabled={Boolean(lot.sealNumber)}
+                    w={{ base: "full", sm: "auto" }}
                   >
-                    Assign
+                    Assign Seal
                   </Button>
                 </HStack>
                 <Button
@@ -687,6 +690,7 @@ export default function LotDetailPage() {
                   }}
                   isLoading={assigningSeal}
                   isDisabled={Boolean(lot.sealNumber)}
+                  w={{ base: "full", sm: "auto" }}
                 >
                   Auto Assign Seal
                 </Button>
@@ -700,7 +704,7 @@ export default function LotDetailPage() {
           <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
             <CardBody p={5}>
               <Heading size="sm" color="gray.900" mb={3}>
-                Photo Traceability
+                Photos
               </Heading>
               <VStack align="stretch" spacing={4}>
                 {[
@@ -788,17 +792,17 @@ export default function LotDetailPage() {
                   Bag Table
                 </Heading>
                 <Text fontSize="sm" color="gray.600">
-                  Inline editing for gross and net weight capture.
+                  Edit bag weights.
                 </Text>
               </Box>
-              <HStack>
+              <Stack direction={{ base: "column", sm: "row" }} w={{ base: "full", sm: "auto" }}>
                 <FormControl w="28">
                   <Input type="number" min={1} value={bagCount} onChange={(e) => setBagCount(e.target.value)} size="sm" />
                 </FormControl>
-                <Button colorScheme="teal" leftIcon={<Plus size={16} />} onClick={handleRegisterBags} isLoading={registering}>
-                  Add Bags
+                <Button colorScheme="teal" leftIcon={<Plus size={16} />} onClick={handleRegisterBags} isLoading={registering} w={{ base: "full", sm: "auto" }}>
+                  Register Bags
                 </Button>
-              </HStack>
+              </Stack>
             </HStack>
 
             <TableContainer>
@@ -862,7 +866,7 @@ export default function LotDetailPage() {
                         <Center py={12}>
                           <VStack spacing={2}>
                             <Icon as={CheckCircle2} boxSize={8} color="gray.300" />
-                            <Text color="gray.500">No bags registered for this lot.</Text>
+                            <Text color="gray.500">No records.</Text>
                           </VStack>
                         </Center>
                       </Td>

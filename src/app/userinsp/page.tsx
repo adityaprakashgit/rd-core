@@ -30,6 +30,7 @@ import { useRouter } from "next/navigation";
 
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
+import { APP_TEXT } from "@/lib/ui-copy";
 import type { InspectionJob, InspectionLot, Sampling } from "@/types/inspection";
 
 type WorkspaceStage = "PENDING" | "IN_PROGRESS" | "QA" | "LOCKED" | "DISPATCHED";
@@ -170,11 +171,9 @@ export default function UserInspDashboard() {
               </Badge>
             </HStack>
             <Heading size="lg" color="gray.900">
-              Assigned Workspace
+              {APP_TEXT.dashboard}
             </Heading>
-            <Text color="gray.600" maxW="4xl">
-              Company-scoped work allocation with assignee visibility, audit-safe task control, and direct workflow entry.
-            </Text>
+            <Text color="gray.600" maxW="4xl">Assigned jobs and workflow.</Text>
           </Box>
 
           <Button
@@ -188,7 +187,7 @@ export default function UserInspDashboard() {
           </Button>
         </Stack>
 
-        <SimpleGrid columns={{ base: 1, sm: 2, xl: 5 }} spacing={4}>
+        <SimpleGrid columns={{ base: 1, sm: 2, xl: 5 }} spacing={4} display={{ base: "none", md: "grid" }}>
           <Card variant="outline" borderRadius="2xl" shadow="sm">
             <CardBody>
               <Text fontSize="sm" color="gray.500">Total Jobs</Text>
@@ -230,11 +229,11 @@ export default function UserInspDashboard() {
                   <Text fontWeight="bold" color="gray.900">Workflow Engine</Text>
                 </HStack>
                 <Text fontSize="sm" color="gray.600">
-                  Task distribution from pending allocation through dispatch closure.
+                  Current pipeline status.
                 </Text>
               </Box>
               <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3} py={1}>
-                CONTROLLED COPY
+                LIVE
               </Badge>
             </HStack>
 
@@ -276,7 +275,7 @@ export default function UserInspDashboard() {
               <Center>
                 <VStack spacing={3}>
                   <Icon as={ClipboardList} boxSize={8} color="gray.300" />
-                  <Text color="gray.500">No jobs are assigned in this view.</Text>
+                  <Text color="gray.500">No records.</Text>
                 </VStack>
               </Center>
             </CardBody>
@@ -352,7 +351,7 @@ export default function UserInspDashboard() {
             onClick={() => router.push(`/userinsp/job/${job.id}?view=${viewMode}`)}
                           alignSelf={{ base: "stretch", xl: "end" }}
                         >
-                          Open Workflow
+                          Open Job
                         </Button>
                       </VStack>
                     </SimpleGrid>

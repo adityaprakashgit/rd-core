@@ -504,10 +504,10 @@ export default function MasterPage() {
             </Badge>
           </HStack>
           <Heading size="lg" color="gray.900" mt={2}>
-            Client, Transporter, and Item Masters
+            Masters
           </Heading>
           <Text color="gray.600" mt={2}>
-            Master route for packing-list controls. Vehicle number remains manual for every dispatch.
+            Client, transporter, and item records.
           </Text>
         </Box>
 
@@ -610,7 +610,7 @@ export default function MasterPage() {
                 </Text>
               </Box>
               <Button variant="outline" size="sm" onClick={() => void loadDispatchMasters()} isLoading={masterDataLoading}>
-                Refresh
+                Refresh Data
               </Button>
             </HStack>
             <Input
@@ -659,7 +659,7 @@ export default function MasterPage() {
                                 isLoading={masterDataSaving === "client-deactivate"}
                                 onClick={() => void deactivateClientMaster(row)}
                               >
-                                Deactivate
+                                Set Inactive
                               </Button>
                             </HStack>
                           </Td>
@@ -667,7 +667,7 @@ export default function MasterPage() {
                       ))}
                       {filteredClients.length === 0 ? (
                         <Tr>
-                          <Td colSpan={3} textAlign="center" color="gray.500">No clients</Td>
+                          <Td colSpan={3} textAlign="center" color="gray.500">No records</Td>
                         </Tr>
                       ) : null}
                     </Tbody>
@@ -714,7 +714,7 @@ export default function MasterPage() {
                                 isLoading={masterDataSaving === "transporter-deactivate"}
                                 onClick={() => void deactivateTransporterMaster(row)}
                               >
-                                Deactivate
+                                Set Inactive
                               </Button>
                             </HStack>
                           </Td>
@@ -722,7 +722,7 @@ export default function MasterPage() {
                       ))}
                       {filteredTransporters.length === 0 ? (
                         <Tr>
-                          <Td colSpan={3} textAlign="center" color="gray.500">No transporters</Td>
+                          <Td colSpan={3} textAlign="center" color="gray.500">No records</Td>
                         </Tr>
                       ) : null}
                     </Tbody>
@@ -766,7 +766,7 @@ export default function MasterPage() {
                                 isLoading={masterDataSaving === "item-deactivate"}
                                 onClick={() => void deactivateItemMaster(row)}
                               >
-                                Deactivate
+                                Set Inactive
                               </Button>
                             </HStack>
                           </Td>
@@ -774,7 +774,7 @@ export default function MasterPage() {
                       ))}
                       {filteredItems.length === 0 ? (
                         <Tr>
-                          <Td colSpan={3} textAlign="center" color="gray.500">No items</Td>
+                          <Td colSpan={3} textAlign="center" color="gray.500">No records</Td>
                         </Tr>
                       ) : null}
                     </Tbody>
@@ -813,14 +813,14 @@ export default function MasterPage() {
                               isLoading={masterDataSaving === "client-reactivate"}
                               onClick={() => void reactivateClientMaster(row)}
                             >
-                              Reactivate
+                              Set Active
                             </Button>
                           </Td>
                         </Tr>
                       ))}
                       {filteredInactiveClients.length === 0 ? (
                         <Tr>
-                          <Td colSpan={2} textAlign="center" color="gray.500">No inactive clients</Td>
+                          <Td colSpan={2} textAlign="center" color="gray.500">No records</Td>
                         </Tr>
                       ) : null}
                     </Tbody>
@@ -848,14 +848,14 @@ export default function MasterPage() {
                               isLoading={masterDataSaving === "transporter-reactivate"}
                               onClick={() => void reactivateTransporterMaster(row)}
                             >
-                              Reactivate
+                              Set Active
                             </Button>
                           </Td>
                         </Tr>
                       ))}
                       {filteredInactiveTransporters.length === 0 ? (
                         <Tr>
-                          <Td colSpan={2} textAlign="center" color="gray.500">No inactive transporters</Td>
+                          <Td colSpan={2} textAlign="center" color="gray.500">No records</Td>
                         </Tr>
                       ) : null}
                     </Tbody>
@@ -883,14 +883,14 @@ export default function MasterPage() {
                               isLoading={masterDataSaving === "item-reactivate"}
                               onClick={() => void reactivateItemMaster(row)}
                             >
-                              Reactivate
+                              Set Active
                             </Button>
                           </Td>
                         </Tr>
                       ))}
                       {filteredInactiveItems.length === 0 ? (
                         <Tr>
-                          <Td colSpan={2} textAlign="center" color="gray.500">No inactive items</Td>
+                          <Td colSpan={2} textAlign="center" color="gray.500">No records</Td>
                         </Tr>
                       ) : null}
                     </Tbody>

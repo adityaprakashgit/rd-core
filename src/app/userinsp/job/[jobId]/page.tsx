@@ -229,7 +229,7 @@ export default function JobDetailPage() {
               onClick={navigateToNextPendingLot}
               isDisabled={!job.lots?.length}
             >
-              Take Sample
+              Open Next Lot
             </Button>
             <Button
               leftIcon={<Eye size={16} />}
@@ -238,12 +238,12 @@ export default function JobDetailPage() {
               onClick={() => router.push(`/userinsp/job/${jobId}/lot/${job.lots?.[0]?.id}?view=${viewMode}`)}
               isDisabled={!job.lots?.length}
             >
-              View Sampling
+              Open First Lot
             </Button>
           </HStack>
         </HStack>
 
-        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
+        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4} display={{ base: "none", md: "grid" }}>
           {[
             { label: "Lots Registered", value: lotStats.total, accent: "teal", detail: "Inventory under control" },
             { label: "Not Started", value: lotStats.notStarted, accent: "gray", detail: "Awaiting sampling capture" },
@@ -275,7 +275,7 @@ export default function JobDetailPage() {
                     Lots Table
                   </Heading>
                   <Text fontSize="sm" color="gray.600" mt={1}>
-                    Structured lot registry with sampling state and actions.
+                    Lot status and actions.
                   </Text>
                 </Box>
 
@@ -311,14 +311,14 @@ export default function JobDetailPage() {
                                   leftIcon={<Camera size={14} />}
                                   onClick={() => router.push(`/userinsp/job/${jobId}/lot/${lot.id}?view=${viewMode}`)}
                                 >
-                                  Take Sample
+                                  Open Sampling
                                 </Button>
                                 <Button
                                   size="sm"
                                   colorScheme="teal"
                                   onClick={() => router.push(`/userinsp/job/${jobId}/lot/${lot.id}?view=${viewMode}`)}
                                 >
-                                  View Sampling
+                                  Open Lot
                                 </Button>
                               </HStack>
                             </Td>
@@ -332,7 +332,7 @@ export default function JobDetailPage() {
                             <Center py={12}>
                               <VStack spacing={2}>
                                 <Icon as={Layers3} boxSize={8} color="gray.300" />
-                                <Text color="gray.500">No lots have been registered for this job.</Text>
+                                <Text color="gray.500">No records.</Text>
                               </VStack>
                             </Center>
                           </Td>
@@ -350,7 +350,7 @@ export default function JobDetailPage() {
               <CardBody p={5}>
                 <HStack justify="space-between" mb={4}>
                   <Heading size="sm" color="gray.900">
-                    Sampling Summary
+                    Status Summary
                   </Heading>
                   <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={2.5} py={1}>
                     CONTROLLED
@@ -383,7 +383,7 @@ export default function JobDetailPage() {
                   </HStack>
                   <Divider />
                   <Text fontSize="sm" color="gray.600">
-                    The workflow remains visible end-to-end. Sampling state is derived from each lot record.
+                    Status from lot records.
                   </Text>
                 </VStack>
               </CardBody>
@@ -392,7 +392,7 @@ export default function JobDetailPage() {
             <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
               <CardBody p={5}>
                 <Heading size="sm" color="gray.900" mb={3}>
-                  Governance Audit Trail
+                  Audit Trail
                 </Heading>
                 <AuditTrail logs={logs} />
               </CardBody>

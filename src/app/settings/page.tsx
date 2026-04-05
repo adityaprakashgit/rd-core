@@ -29,6 +29,14 @@ import {
 import { Building2, Save, ShieldCheck, UserCog, Workflow } from "lucide-react";
 
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import {
+  getDefaultReportPreferences,
+  getReportDocumentTypeLabel,
+  REPORT_DOCUMENT_TYPES,
+  REPORT_PREFERENCES_STORAGE_KEY,
+  sanitizeReportPreferences,
+  type ReportPreferences,
+} from "@/lib/report-preferences";
 
 type MasterTab = "CLIENT" | "ITEM" | "TRANSPORTER";
 
@@ -65,6 +73,9 @@ export default function SettingsPageRoute() {
   const [activeMasterTab, setActiveMasterTab] = useState<MasterTab>("CLIENT");
   const [masterLoading, setMasterLoading] = useState(false);
   const [masterSaving, setMasterSaving] = useState(false);
+  const [reportPreferences, setReportPreferences] = useState<ReportPreferences>(() =>
+    getDefaultReportPreferences(companyName)
+  );
   const [clients, setClients] = useState<ClientMasterOption[]>([]);
   const [transporters, setTransporters] = useState<TransporterMasterOption[]>([]);
   const [items, setItems] = useState<ItemMasterOption[]>([]);
@@ -114,6 +125,21 @@ export default function SettingsPageRoute() {
   useEffect(() => {
     void loadMasters();
   }, [loadMasters]);
+
+  useEffect(() => {
+    const defaults = getDefaultReportPreferences(companyName);
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem(REPORT_PREFERENCES_STORAGE_KEY) : null;
+    if (!stored) {
+      setReportPreferences(defaults);
+      return;
+    }
+
+    try {
+      setReportPreferences(sanitizeReportPreferences(JSON.parse(stored), companyName));
+    } catch {
+      setReportPreferences(defaults);
+    }
+  }, [companyName]);
 
   const activeRows = useMemo(() => {
     if (activeMasterTab === "CLIENT") return clients.length;
@@ -199,6 +225,12 @@ export default function SettingsPageRoute() {
   };
 
   const saveBasics = () => {
+    try {
+      const normalized = sanitizeReportPreferences(reportPreferences, companyName);
+      window.localStorage.setItem(REPORT_PREFERENCES_STORAGE_KEY, JSON.stringify(normalized));
+    } catch {
+      toast({ title: "Report preferences could not be saved", status: "warning" });
+    }
     toast({ title: "Settings saved", status: "success" });
   };
 
@@ -215,10 +247,10 @@ export default function SettingsPageRoute() {
             </Badge>
           </HStack>
           <Heading size="lg" color="gray.900" mt={2}>
-            Workspace Settings
+            Settings
           </Heading>
           <Text color="gray.600" mt={2}>
-            Company profile, user defaults, and workflow control toggles.
+            Workspace configuration.
           </Text>
         </Box>
 
@@ -246,6 +278,141 @@ export default function SettingsPageRoute() {
               <FormControl>
                 <FormLabel>Primary Location</FormLabel>
                 <Input value={location} onChange={(e) => setLocation(e.target.value)} />
+              </FormControl>
+            </VStack>
+          </CardBody>
+        </Card>
+
+        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <CardBody p={6}>
+            <HStack mb={4}>
+              <Box p={2.5} bg="blue.50" color="blue.600" borderRadius="xl">
+                <ShieldCheck size={18} />
+              </Box>
+              <Box>
+                <Heading size="sm" color="gray.900">
+                  Report & Print Preferences
+                </Heading>
+                <Text fontSize="sm" color="gray.600">
+                  Set default print type and branding for PDF/XLSX generation.
+                </Text>
+              </Box>
+            </HStack>
+
+            <VStack align="stretch" spacing={3}>
+              <FormControl>
+                <FormLabel>Default Report Type</FormLabel>
+                <Select
+                  value={reportPreferences.defaultDocumentType}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      defaultDocumentType: event.target.value as ReportPreferences["defaultDocumentType"],
+                    }))
+                  }
+                >
+                  {REPORT_DOCUMENT_TYPES.map((documentType) => (
+                    <option key={documentType} value={documentType}>
+                      {getReportDocumentTypeLabel(documentType)}
+                    </option>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl>
+                <FormLabel>Brand Display Name</FormLabel>
+                <Input
+                  value={reportPreferences.branding.companyName}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, companyName: event.target.value },
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Brand Address</FormLabel>
+                <Input
+                  value={reportPreferences.branding.companyAddress}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, companyAddress: event.target.value },
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Contact Line</FormLabel>
+                <Input
+                  value={reportPreferences.branding.companyContact}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, companyContact: event.target.value },
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel>GST / Tax ID</FormLabel>
+                <Input
+                  value={reportPreferences.branding.taxId}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, taxId: event.target.value },
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Logo URL (optional)</FormLabel>
+                <Input
+                  value={reportPreferences.branding.logoUrl}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, logoUrl: event.target.value },
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Footer Note (optional)</FormLabel>
+                <Input
+                  value={reportPreferences.branding.footerNote}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, footerNote: event.target.value },
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Authorized Signatory Name</FormLabel>
+                <Input
+                  value={reportPreferences.branding.authorizedSignatoryName}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, authorizedSignatoryName: event.target.value },
+                    }))
+                  }
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Authorized Signatory Title</FormLabel>
+                <Input
+                  value={reportPreferences.branding.authorizedSignatoryTitle}
+                  onChange={(event) =>
+                    setReportPreferences((prev) => ({
+                      ...prev,
+                      branding: { ...prev.branding, authorizedSignatoryTitle: event.target.value },
+                    }))
+                  }
+                />
               </FormControl>
             </VStack>
           </CardBody>
@@ -325,7 +492,7 @@ export default function SettingsPageRoute() {
                   Master Data Management
                 </Heading>
                 <Text fontSize="sm" color="gray.600">
-                  Manage client, transporter, and item master data from Settings.
+                  Client, transporter, and item records.
                 </Text>
               </Box>
             </HStack>
@@ -343,10 +510,10 @@ export default function SettingsPageRoute() {
                 </Button>
               ))}
               <Button size="sm" variant="outline" onClick={() => void loadMasters()} isLoading={masterLoading}>
-                Refresh
+                Refresh Data
               </Button>
               <Button size="sm" variant="outline" onClick={() => (window.location.href = "/masterplayground")}>
-                Open Master Playground
+                Open Playground
               </Button>
             </HStack>
 

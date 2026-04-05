@@ -1,100 +1,39 @@
 "use client";
 
-import { 
-  Box, 
-  Container, 
-  Heading, 
-  Text, 
-  VStack, 
-  Icon,
-  SimpleGrid
-} from "@chakra-ui/react";
+import { Center, Spinner } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Search, FlaskConical } from "lucide-react";
+import { useEffect } from "react";
 
-type RoleCardProps = {
-  title: string;
-  desc: string;
-  onClick: () => void;
-  colorScheme: string;
-  icon: React.ElementType;
-};
+import { getStoredAuth } from "@/lib/auth-client";
+import { normalizeRole } from "@/lib/role";
 
-export default function Home() {
+export default function HomePage() {
   const router = useRouter();
 
-  return (
-    <Box 
-      minH="100vh" 
-      bgGradient="linear(to-br, #1A1B23, #2D3748)" 
-      display="flex" 
-      alignItems="center" 
-      justifyContent="center"
-      p={{ base: 4, md: 6 }}
-    >
-      <Container maxW="3xl">
-        <VStack spacing={{ base: 6, md: 8 }} textAlign="center" bg="whiteAlpha.100" backdropFilter="blur(20px)" p={{ base: 6, md: 12 }} borderRadius="3xl" shadow="2xl" borderWidth="1px" borderColor="whiteAlpha.200">
-          <VStack spacing={4}>
-            <Box p={4} bg="purple.500" borderRadius="2xl" color="white" shadow="lg" transform="rotate(-10deg)">
-               <Icon as={LayoutDashboard} fontSize="32" />
-            </Box>
-            <Heading size={{ base: "xl", md: "2xl" }} color="white" fontWeight="extrabold" letterSpacing="tight">
-              CONTROL TOWER
-            </Heading>
-            <Text fontSize={{ base: "sm", md: "lg" }} color="gray.400" maxW="lg">
-              Enterprise Resource Planning & Inspection Infrastructure
-            </Text>
-          </VStack>
+  useEffect(() => {
+    const auth = getStoredAuth();
+    if (!auth) {
+      router.replace("/login");
+      return;
+    }
 
-          <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={6} w="full" pt={4}>
-            <RoleCard 
-              title="Operations" 
-              desc="Field Inspection & Sampling" 
-              onClick={() => router.push("/userinsp")} 
-              colorScheme="purple"
-              icon={Search}
-            />
-            <RoleCard 
-              title="Laboratory" 
-              desc="R&D Assay & Analytics" 
-              onClick={() => router.push("/userrd")} 
-              colorScheme="blue"
-              icon={FlaskConical}
-            />
-          </SimpleGrid>
-        </VStack>
-      </Container>
-    </Box>
-  );
-}
+    const role = normalizeRole(auth.role);
+    if (role === "ADMIN") {
+      router.replace("/admin");
+      return;
+    }
 
-function RoleCard({ title, desc, onClick, colorScheme, icon }: RoleCardProps) {
+    if (role === "RND") {
+      router.replace("/userrd");
+      return;
+    }
+
+    router.replace("/userinsp");
+  }, [router]);
+
   return (
-    <Box 
-      as="button"
-      onClick={onClick}
-      p={{ base: 6, md: 8 }} 
-      bg="whiteAlpha.50" 
-      borderRadius="2xl" 
-      borderWidth="1px" 
-      borderColor="whiteAlpha.100"
-      shadow="sm"
-      transition="all 0.3s"
-      _hover={{ transform: "translateY(-8px)", shadow: "dark-lg", borderColor: `${colorScheme}.400`, bg: "whiteAlpha.100" }}
-      textAlign="left"
-      w="full"
-      display="flex"
-      flexDirection="column"
-      gap={4}
-      color="white"
-    >
-      <Box w={12} h={12} borderRadius="xl" bg={`${colorScheme}.500`} color="white" display="flex" alignItems="center" justifyContent="center" shadow="md">
-        <Icon as={icon} fontSize="24" />
-      </Box>
-      <Box>
-        <Heading size="md" mb={1}>{title}</Heading>
-        <Text fontSize="sm" color="gray.500">{desc}</Text>
-      </Box>
-    </Box>
+    <Center minH="100vh">
+      <Spinner size="xl" color="brand.500" />
+    </Center>
   );
 }

@@ -199,12 +199,12 @@ export default function JobDetailPage() {
               Add Lot
             </Button>
             <Button leftIcon={<ScanFace size={16} />} variant="outline" borderRadius="xl" onClick={openNextLot} isDisabled={!job.lots?.length}>
-              Take Sample
+              Open Next Lot
             </Button>
           </HStack>
         </HStack>
 
-        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
+        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4} display={{ base: "none", md: "grid" }}>
           {[
             { label: "Lots Registered", value: lotStats.total, accent: "teal" },
             { label: "Not Started", value: lotStats.notStarted, accent: "gray" },
@@ -233,7 +233,7 @@ export default function JobDetailPage() {
                     Lots Table
                   </Heading>
                   <Text fontSize="sm" color="gray.600" mt={1}>
-                    Sampling state and lot actions.
+                    Lot status and actions.
                   </Text>
                 </Box>
                 <TableContainer>
@@ -264,7 +264,7 @@ export default function JobDetailPage() {
                                   Open Lot
                                 </Button>
                                 <Button size="sm" variant="outline" leftIcon={<Camera size={14} />} onClick={() => router.push(`/operations/job/${jobId}/lot/${lot.id}`)}>
-                                  Sampling
+                                  Open Sampling
                                 </Button>
                               </HStack>
                             </Td>
@@ -277,7 +277,7 @@ export default function JobDetailPage() {
                             <Center py={12}>
                               <VStack spacing={2}>
                                 <Icon as={ClipboardList} boxSize={8} color="gray.300" />
-                                <Text color="gray.500">No lots created for this job.</Text>
+                                <Text color="gray.500">No records.</Text>
                               </VStack>
                             </Center>
                           </Td>
@@ -293,7 +293,7 @@ export default function JobDetailPage() {
           <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
             <CardBody p={5}>
               <Heading size="sm" color="gray.900" mb={3}>
-                Workflow Snapshot
+                Status
               </Heading>
               <VStack align="stretch" spacing={3}>
                 <HStack justify="space-between">
@@ -314,7 +314,7 @@ export default function JobDetailPage() {
                 />
                 <Divider />
                 <Text fontSize="sm" color="gray.600">
-                  Operations maintains the primary execution line for lot intake and physical sampling.
+                  Operational status.
                 </Text>
               </VStack>
             </CardBody>

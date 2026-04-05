@@ -1,6 +1,7 @@
 import { randomInt } from "crypto";
 
 import { prisma } from "@/lib/prisma";
+import { getReportDocumentTypeLabel, type ReportBranding, type ReportDocumentType } from "@/lib/report-preferences";
 
 export const SEAL_LENGTH = 16;
 const WEIGHT_TOLERANCE = 0.01;
@@ -92,6 +93,8 @@ export function assertSealIsValid(lot: Pick<TraceabilityLotSelect, "lotNumber" |
 }
 
 export function buildPackingListHtml(input: {
+  documentType?: ReportDocumentType;
+  branding?: ReportBranding;
   companyName: string;
   clientName: string;
   invoiceNumber: string;
@@ -148,6 +151,18 @@ export function buildPackingListHtml(input: {
   const vehicleNo = input.vehicleNo ?? "-";
   const transporterName = input.transporterName ?? "-";
   const termsOfDelivery = input.termsOfDelivery ?? "-";
+  const documentType = input.documentType ?? "EXPORT";
+  const documentTypeLabel = getReportDocumentTypeLabel(documentType);
+  const branding = input.branding;
+  const brandName = branding?.companyName || input.companyName;
+  const brandAddress = branding?.companyAddress || "";
+  const brandContact = branding?.companyContact || "";
+  const brandTaxId = branding?.taxId || "";
+  const brandLogoUrl = branding?.logoUrl || "";
+  const footerNote = branding?.footerNote || "";
+  const companyMetaLine = [brandAddress, brandContact, brandTaxId ? `Tax ID: ${brandTaxId}` : ""]
+    .filter(Boolean)
+    .join(" | ");
 
   return `
     <!doctype html>
@@ -174,6 +189,43 @@ export function buildPackingListHtml(input: {
             font-weight: 700;
             letter-spacing: 0.02em;
             margin: 2px 0 6px;
+          }
+          .brand-header {
+            border: 1px solid #111827;
+            margin-bottom: 5px;
+          }
+          .brand-header td {
+            border: 1px solid #111827;
+            padding: 5px;
+            vertical-align: top;
+          }
+          .brand-logo {
+            width: 68px;
+            height: 68px;
+            object-fit: contain;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            display: block;
+          }
+          .brand-name {
+            font-weight: 800;
+            font-size: 14px;
+            letter-spacing: 0.01em;
+          }
+          .brand-meta {
+            font-size: 8.5px;
+            margin-top: 3px;
+            color: #374151;
+            white-space: pre-wrap;
+          }
+          .doc-chip {
+            display: inline-block;
+            border: 1px solid #111827;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 8.5px;
+            font-weight: 700;
+            margin-top: 3px;
           }
           table {
             width: 100%;
@@ -217,6 +269,23 @@ export function buildPackingListHtml(input: {
       </head>
       <body>
         <div class="page">
+          <table class="brand-header">
+            <tr>
+              <td style="width:18%; text-align:center;">
+                ${brandLogoUrl ? `<img class="brand-logo" src="${escapeHtml(brandLogoUrl)}" alt="Company logo" />` : ""}
+              </td>
+              <td style="width:56%;">
+                <div class="brand-name">${escapeHtml(brandName)}</div>
+                ${companyMetaLine ? `<div class="brand-meta">${escapeHtml(companyMetaLine)}</div>` : ""}
+              </td>
+              <td style="width:26%;">
+                <div><strong>Document</strong>: ${escapeHtml(documentTypeLabel)} Packing List</div>
+                <div><strong>Invoice No</strong>: ${escapeHtml(input.invoiceNumber)}</div>
+                <div><strong>Date</strong>: ${escapeHtml(input.dateLabel)}</div>
+                <div class="doc-chip">${escapeHtml(documentType)}</div>
+              </td>
+            </tr>
+          </table>
           <div class="title">PACKING LIST</div>
           <table class="info">
             <tr>
@@ -294,6 +363,7 @@ export function buildPackingListHtml(input: {
             <div>TOTAL GROSS WEIGHT (IN MT) : ${(totalGross / 1000).toFixed(3)} MT</div>
             <div>TOTAL NET WEIGHT (IN MT) : ${(totalNet / 1000).toFixed(4)} MT</div>
             <div style="font-weight:500;">(Tare total: ${(totalTare / 1000).toFixed(4)} MT)</div>
+            ${footerNote ? `<div style="font-weight:500; margin-top:5px;">${escapeHtml(footerNote)}</div>` : ""}
           </div>
         </div>
       </body>
