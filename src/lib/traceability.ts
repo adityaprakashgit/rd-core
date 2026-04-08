@@ -105,8 +105,9 @@ export function buildPackingListHtml(input: {
   billFrom?: string;
   billTo?: string;
   shipTo?: string;
-  buyersOrder?: string;
-  otherReference?: string;
+  lrNumber?: string;
+  transporterId?: string;
+  ewayBillDetails?: string;
   vehicleNo?: string;
   transporterName?: string;
   termsOfDelivery?: string;
@@ -146,8 +147,9 @@ export function buildPackingListHtml(input: {
   const billFrom = input.billFrom ?? input.companyName;
   const billTo = input.billTo ?? input.clientName;
   const shipTo = input.shipTo ?? input.clientName;
-  const buyersOrder = input.buyersOrder ?? "-";
-  const otherReference = input.otherReference ?? "-";
+  const lrNumber = input.lrNumber ?? "-";
+  const transporterId = input.transporterId ?? "-";
+  const ewayBillDetails = input.ewayBillDetails ?? "-";
   const vehicleNo = input.vehicleNo ?? "-";
   const transporterName = input.transporterName ?? "-";
   const termsOfDelivery = input.termsOfDelivery ?? "-";
@@ -320,12 +322,16 @@ export function buildPackingListHtml(input: {
                     <td>${escapeHtml(input.dateLabel)}</td>
                   </tr>
                   <tr>
-                    <td class="label">Buyers Order No. &amp; Date</td>
-                    <td>${escapeHtml(buyersOrder)}</td>
+                    <td class="label">LR No.</td>
+                    <td>${escapeHtml(lrNumber)}</td>
                   </tr>
                   <tr>
-                    <td class="label">Other Reference(s)</td>
-                    <td>${escapeHtml(otherReference)}</td>
+                    <td class="label">Transporter ID</td>
+                    <td>${escapeHtml(transporterId)}</td>
+                  </tr>
+                  <tr>
+                    <td class="label">E-way Bill Details</td>
+                    <td>${escapeHtml(ewayBillDetails)}</td>
                   </tr>
                   <tr>
                     <td class="label">Vehicle No</td>

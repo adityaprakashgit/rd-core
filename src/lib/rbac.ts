@@ -13,6 +13,8 @@ export type RbacAction =
   | "CREATE_LOT"
   | "MUTATE_SAMPLING"
   | "MUTATE_RND"
+  | "MANAGE_PACKET_WORKFLOW"
+  | "MANAGE_MODULE_SETTINGS"
   | "READ_ONLY";
 
 export class AuthorizationError extends Error {
@@ -38,6 +40,8 @@ const ACTION_MATRIX: Record<RbacAction, CurrentUser["role"][]> = {
   CREATE_LOT: ["ADMIN", "OPERATIONS"],
   MUTATE_SAMPLING: ["ADMIN", "OPERATIONS"],
   MUTATE_RND: ["ADMIN", "RND"],
+  MANAGE_PACKET_WORKFLOW: ["ADMIN", "OPERATIONS", "RND"],
+  MANAGE_MODULE_SETTINGS: ["ADMIN"],
   READ_ONLY: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
 };
 

@@ -68,9 +68,7 @@ export function hasHomogenizedSample(sample: SampleRecord | null | undefined) {
 export function hasSealAndLabel(sample: SampleRecord | null | undefined) {
   return Boolean(
     sample?.sealLabel?.sealNo &&
-      sample.sealLabel.labelText &&
-      sample.sealLabel.sealedAt &&
-      sample.sealLabel.labeledAt,
+      sample.sealLabel.sealedAt,
   );
 }
 
@@ -104,7 +102,7 @@ export function getSampleReadiness(sample: SampleRecord | null | undefined) {
   }
 
   if (!hasSealAndLabel(sample)) {
-    missing.push("Complete seal and label traceability");
+    missing.push("Complete seal traceability");
   }
 
   return {

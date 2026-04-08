@@ -16,9 +16,11 @@ import {
   Select,
   Stack,
   Text,
+  VStack,
 } from "@chakra-ui/react";
 import { ChevronRight, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { normalizeRole } from "@/lib/role";
 import type { BreadcrumbDefinition, PageDefinition } from "@/lib/ui-navigation";
@@ -49,6 +51,96 @@ export function Header({
   const router = useRouter();
   const normalizedRole = normalizeRole(role);
   const isAdmin = normalizedRole === "ADMIN";
+  const [searchText, setSearchText] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [searchPayload, setSearchPayload] = useState<{
+    groups: {
+      lots: Array<{ id: string; label: string; subLabel: string; href: string }>;
+      jobs: Array<{ id: string; label: string; subLabel: string; href: string }>;
+      samples: Array<{ id: string; label: string; subLabel: string; href: string }>;
+      packets: Array<{ id: string; label: string; subLabel: string; href: string }>;
+      dispatches: Array<{ id: string; label: string; subLabel: string; href: string }>;
+      certificates: Array<{ id: string; label: string; subLabel: string; href: string }>;
+    };
+  } | null>(null);
+  const searchRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const listener = (event: MouseEvent) => {
+      if (!searchRef.current) {
+        return;
+      }
+      if (!searchRef.current.contains(event.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", listener);
+    return () => document.removeEventListener("mousedown", listener);
+  }, []);
+
+  useEffect(() => {
+    const query = searchText.trim();
+    if (query.length < 2) {
+      setSearchPayload(null);
+      setLoadingSearch(false);
+      return;
+    }
+
+    let active = true;
+    setLoadingSearch(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/search/global?q=${encodeURIComponent(query)}`);
+        if (!response.ok) {
+          throw new Error("Search request failed.");
+        }
+        const payload = (await response.json()) as {
+          groups: {
+            lots: Array<{ id: string; label: string; subLabel: string; href: string }>;
+            jobs: Array<{ id: string; label: string; subLabel: string; href: string }>;
+            samples: Array<{ id: string; label: string; subLabel: string; href: string }>;
+            packets: Array<{ id: string; label: string; subLabel: string; href: string }>;
+            dispatches: Array<{ id: string; label: string; subLabel: string; href: string }>;
+            certificates: Array<{ id: string; label: string; subLabel: string; href: string }>;
+          };
+        };
+        if (active) {
+          setSearchPayload(payload);
+        }
+      } catch {
+        if (active) {
+          setSearchPayload(null);
+        }
+      } finally {
+        if (active) {
+          setLoadingSearch(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [searchText]);
+
+  const groupedResults = useMemo(
+    () =>
+      searchPayload
+        ? [
+            { title: "Lots", items: searchPayload.groups.lots },
+            { title: "Jobs", items: searchPayload.groups.jobs },
+            { title: "Samples", items: searchPayload.groups.samples },
+            { title: "Packets", items: searchPayload.groups.packets },
+            { title: "Dispatches", items: searchPayload.groups.dispatches },
+            { title: "Certificates", items: searchPayload.groups.certificates },
+          ].filter((group) => group.items.length > 0)
+        : [],
+    [searchPayload]
+  );
+
+  const firstResultHref = groupedResults[0]?.items?.[0]?.href ?? null;
 
   return (
     <Stack
@@ -99,15 +191,85 @@ export function Header({
       </HStack>
 
       <HStack spacing={1.5} flexWrap="nowrap" justify="flex-end" align="center">
-        <Input
-          size="md"
-          placeholder={searchPlaceholder ?? `Search in ${companyName}`}
-          minW={{ base: "full", lg: "320px" }}
-          maxW={{ base: "full", xl: "420px" }}
-          aria-label="Global search"
-          bg="bg.surface"
-          display={{ base: "none", xl: "block" }}
-        />
+        <Box position="relative" ref={searchRef} display={{ base: "none", xl: "block" }}>
+          <Input
+            size="md"
+            placeholder={searchPlaceholder ?? `Search in ${companyName}`}
+            minW={{ base: "full", lg: "320px" }}
+            maxW={{ base: "full", xl: "420px" }}
+            aria-label="Global search"
+            bg="bg.surface"
+            value={searchText}
+            onFocus={() => setSearchOpen(true)}
+            onChange={(event) => {
+              setSearchText(event.target.value);
+              setSearchOpen(true);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && firstResultHref) {
+                event.preventDefault();
+                router.push(firstResultHref);
+                setSearchOpen(false);
+              }
+              if (event.key === "Escape") {
+                setSearchOpen(false);
+              }
+            }}
+          />
+          {searchOpen ? (
+            <Box
+              position="absolute"
+              top="calc(100% + 8px)"
+              left={0}
+              right={0}
+              bg="bg.surface"
+              borderWidth="1px"
+              borderColor="border.default"
+              borderRadius="xl"
+              shadow="lg"
+              maxH="420px"
+              overflowY="auto"
+              zIndex={50}
+              p={3}
+            >
+              {loadingSearch ? (
+                <Text fontSize="sm" color="text.secondary">Searching...</Text>
+              ) : groupedResults.length === 0 ? (
+                <Text fontSize="sm" color="text.secondary">No matching records.</Text>
+              ) : (
+                <VStack align="stretch" spacing={3}>
+                  {groupedResults.map((group) => (
+                    <Box key={group.title}>
+                      <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold" mb={1}>
+                        {group.title}
+                      </Text>
+                      <VStack align="stretch" spacing={1}>
+                        {group.items.map((item) => (
+                          <Button
+                            key={item.id}
+                            size="sm"
+                            variant="ghost"
+                            justifyContent="space-between"
+                            onClick={() => {
+                              router.push(item.href);
+                              setSearchOpen(false);
+                            }}
+                            aria-label={`${group.title}: ${item.label}`}
+                          >
+                            <Text noOfLines={1}>{item.label}</Text>
+                            <Text noOfLines={1} fontSize="xs" color="text.secondary">
+                              {item.subLabel}
+                            </Text>
+                          </Button>
+                        ))}
+                      </VStack>
+                    </Box>
+                  ))}
+                </VStack>
+              )}
+            </Box>
+          ) : null}
+        </Box>
 
         {isAdmin ? (
           <Select

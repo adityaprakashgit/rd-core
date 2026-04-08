@@ -3,6 +3,7 @@
 import {
   Avatar,
   Box,
+  Button,
   Divider,
   HStack,
   Icon,
@@ -47,10 +48,10 @@ export function Sidebar({
       bg="bg.surface"
       borderRightWidth="1px"
       borderColor="border.default"
-      w={{ base: "full", md: collapsed ? 24 : 80 }}
+      w={{ base: "full", lg: collapsed ? 20 : 64 }}
       transition="width 180ms ease"
       h="full"
-      px={collapsed ? 2.5 : 4}
+      px={collapsed ? 2 : 3}
       py={4}
     >
       <VStack align="stretch" spacing={6} h="full">
@@ -93,25 +94,22 @@ export function Sidebar({
               </HStack>
             );
             return (
-              <Box
+              <Button
                 key={item.label}
-                role="button"
-                tabIndex={0}
                 onClick={() => router.push(item.href)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    router.push(item.href);
-                  }
-                }}
                 px={3}
-                py={2.5}
+                py={2}
                 borderRadius="lg"
+                w="full"
+                h="auto"
+                justifyContent={collapsed ? "center" : "flex-start"}
                 bg={active ? "brand.50" : "transparent"}
                 borderWidth="1px"
                 borderColor={active ? "brand.200" : "transparent"}
                 color={active ? "brand.700" : "text.primary"}
                 _hover={{ bg: active ? "brand.50" : "neutral.100" }}
+                variant="ghost"
+                aria-current={active ? "page" : undefined}
               >
                 {collapsed ? (
                   <Tooltip label={item.label} placement="right">
@@ -120,7 +118,7 @@ export function Sidebar({
                 ) : (
                   content
                 )}
-              </Box>
+              </Button>
             );
           })}
         </VStack>

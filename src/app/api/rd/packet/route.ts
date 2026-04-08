@@ -13,6 +13,7 @@ import {
   sumAllocatedPacketQuantity,
   type PacketStatus,
 } from "@/lib/packet-management";
+import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationError, authorize } from "@/lib/rbac";
 import { getCurrentUserFromRequest } from "@/lib/session";
@@ -110,6 +111,33 @@ async function createPacketEvent(
       metadata: input.metadata,
     },
   });
+}
+
+async function buildUniquePacketCode(
+  tx: Prisma.TransactionClient,
+  input: {
+    inspectionSerialNumber: string | null | undefined;
+    lotNumber: string | null | undefined;
+    packetNo: number;
+  },
+) {
+  const baseCode = buildPacketCode(input.inspectionSerialNumber, input.lotNumber, input.packetNo);
+  let nextCode = baseCode;
+  let suffix = 1;
+
+  while (true) {
+    const existing = await tx.packet.findUnique({
+      where: { packetCode: nextCode },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return nextCode;
+    }
+
+    suffix += 1;
+    nextCode = `${baseCode}-${suffix}`;
+  }
 }
 
 async function getSampleScope(tx: PrismaLike, sampleId: string, companyId: string) {
@@ -212,6 +240,15 @@ async function fetchPacketsByJob(tx: PrismaLike, jobId: string) {
   });
 }
 
+async function getWorkflowPolicy(tx: PrismaLike, companyId: string) {
+  const settings = await tx.moduleWorkflowSettings.upsert({
+    where: { companyId },
+    update: {},
+    create: buildModuleWorkflowSettingsCreate(companyId),
+  });
+  return toModuleWorkflowPolicy(settings);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
@@ -261,7 +298,7 @@ export async function POST(request: NextRequest) {
       return jsonError("Unauthorized", "Current user could not be resolved.", 401);
     }
 
-    authorize(currentUser, "MUTATE_RND");
+    authorize(currentUser, "MANAGE_PACKET_WORKFLOW");
 
     const body = await request.json();
     const sampleId = typeof body?.sampleId === "string" ? body.sampleId.trim() : "";
@@ -312,7 +349,11 @@ export async function POST(request: NextRequest) {
           throw new Error("PACKET_UNIT_REQUIRED");
         }
 
-        const packetCode = buildPacketCode(sample.job.inspectionSerialNumber, sample.lot.lotNumber, plan.packetNo);
+        const packetCode = await buildUniquePacketCode(tx, {
+          inspectionSerialNumber: sample.job.inspectionSerialNumber,
+          lotNumber: sample.lot.lotNumber,
+          packetNo: plan.packetNo,
+        });
         const status = hasPacketDetails({
           id: "draft",
           sampleId,
@@ -419,7 +460,7 @@ export async function PATCH(request: NextRequest) {
       return jsonError("Unauthorized", "Current user could not be resolved.", 401);
     }
 
-    authorize(currentUser, "MUTATE_RND");
+    authorize(currentUser, "MANAGE_PACKET_WORKFLOW");
 
     const body = await request.json();
     const packetId = typeof body?.packetId === "string" ? body.packetId.trim() : "";
@@ -428,10 +469,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
       const currentPacket = await getPacketScope(tx, packetId, currentUser.companyId);
       const previous = currentPacket as unknown as PacketRecord;
 
       const packetQuantity = body?.packetQuantity !== undefined ? normalizeNumber(body.packetQuantity) : undefined;
+      const packetWeight = body?.packetWeight !== undefined ? normalizeNumber(body.packetWeight) : undefined;
       const packetUnit = body?.packetUnit !== undefined ? normalizeText(body.packetUnit) : undefined;
       const packetType = body?.packetType !== undefined ? normalizeText(body.packetType) : undefined;
       const remarks = body?.remarks !== undefined ? normalizeText(body.remarks) : undefined;
@@ -444,15 +487,27 @@ export async function PATCH(request: NextRequest) {
       const markLabeled = body?.markLabeled === true;
       const markSealed = body?.markSealed === true;
       const markAvailable = body?.markAvailable === true;
+      const markSubmittedToRnd = body?.markSubmittedToRnd === true;
+
+      if (workflowPolicy.workflow.lockPacketEditingAfterRndSubmit && currentPacket.submittedToRndAt && !markSubmittedToRnd) {
+        throw new Error("PACKET_LOCKED_AFTER_RND_SUBMIT");
+      }
 
       if (packetQuantity !== undefined && packetQuantity !== null && packetQuantity <= 0) {
         throw new Error("INVALID_PACKET_QUANTITY");
       }
+      if (packetWeight !== undefined && packetWeight !== null && packetWeight <= 0) {
+        throw new Error("INVALID_PACKET_QUANTITY");
+      }
 
-      const nextQuantity = packetQuantity !== undefined ? packetQuantity : currentPacket.packetQuantity;
+      const nextQuantity =
+        packetWeight !== undefined ? packetWeight : packetQuantity !== undefined ? packetQuantity : currentPacket.packetQuantity;
       const nextUnit = packetUnit !== undefined ? packetUnit : currentPacket.packetUnit;
       if (nextQuantity !== null && nextQuantity !== undefined && !nextUnit) {
         throw new Error("PACKET_UNIT_REQUIRED");
+      }
+      if (workflowPolicy.packet.packetWeightRequired && markSubmittedToRnd && (!nextQuantity || !nextUnit)) {
+        throw new Error("PACKET_WEIGHT_REQUIRED");
       }
 
       const siblingPackets = currentPacket.sample.packets
@@ -465,9 +520,16 @@ export async function PATCH(request: NextRequest) {
 
       const updateData: Prisma.PacketUpdateInput = {
         ...(packetQuantity !== undefined ? { packetQuantity } : {}),
+        ...(packetWeight !== undefined ? { packetWeight } : {}),
         ...(packetUnit !== undefined ? { packetUnit } : {}),
         ...(packetType !== undefined ? { packetType } : {}),
         ...(remarks !== undefined ? { remarks } : {}),
+        ...(markSubmittedToRnd
+          ? {
+              submittedToRndAt: new Date(),
+              submittedToRndBy: currentUser.id,
+            }
+          : {}),
       };
 
       if (Object.keys(updateData).length > 0) {
@@ -651,6 +713,24 @@ export async function PATCH(request: NextRequest) {
         });
       }
 
+      if (markSubmittedToRnd) {
+        await createPacketEvent(tx, {
+          packetId: refreshed.id,
+          eventType: "PACKET_SUBMITTED_TO_RND",
+          performedById: currentUser.id,
+        });
+        await recordAuditLog(tx, {
+          jobId: refreshed.jobId ?? currentPacket.jobId,
+          userId: currentUser.id,
+          entity: "PACKET",
+          action: "PACKET_SUBMITTED_TO_RND",
+          metadata: {
+            packetId: refreshed.id,
+            submittedToRndAt: refreshed.submittedToRndAt,
+          },
+        });
+      }
+
       if (packetType !== undefined && packetType !== previous.packetType) {
         await recordAuditLog(tx, {
           jobId: refreshed.jobId ?? currentPacket.jobId,
@@ -811,11 +891,78 @@ export async function PATCH(request: NextRequest) {
     if (message === "PACKET_QUANTITY_EXCEEDED") {
       return jsonError("Validation Error", "Total packet quantity exceeds sample quantity.", 422);
     }
+    if (message === "PACKET_WEIGHT_REQUIRED") {
+      return jsonError("Validation Error", "Every packet needs weight and unit before Submit to R&D.", 422);
+    }
+    if (message === "PACKET_LOCKED_AFTER_RND_SUBMIT") {
+      return jsonError("Forbidden", "Packet editing is locked after Submit to R&D by company policy.", 403);
+    }
     if (message === "INVALID_ALLOCATION_STATUS") {
       return jsonError("Validation Error", "Invalid packet allocation status.", 422);
     }
     if (message.startsWith("READINESS_BLOCKED:")) {
       return jsonError("Validation Error", message.replace("READINESS_BLOCKED:", ""), 422);
+    }
+    return jsonError("System Error", message, 500);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const currentUser = await getCurrentUserFromRequest(request);
+    if (!currentUser) {
+      return jsonError("Unauthorized", "Current user could not be resolved.", 401);
+    }
+
+    authorize(currentUser, "MANAGE_PACKET_WORKFLOW");
+
+    const body = await request.json();
+    const packetId = typeof body?.packetId === "string" ? body.packetId.trim() : "";
+    if (!packetId) {
+      return jsonError("Validation Error", "packetId is required.", 400);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const packet = await getPacketScope(tx, packetId, currentUser.companyId);
+      const allocationStatus = packet.allocation?.allocationStatus ?? "BLOCKED";
+
+      if (allocationStatus === "RESERVED" || allocationStatus === "ALLOCATED" || allocationStatus === "USED") {
+        throw new Error("PACKET_DELETE_BLOCKED");
+      }
+
+      await tx.packet.delete({
+        where: { id: packet.id },
+      });
+
+      await recordAuditLog(tx, {
+        jobId: packet.jobId,
+        userId: currentUser.id,
+        entity: "PACKET",
+        action: "PACKET_DELETED",
+        metadata: {
+          packetId: packet.id,
+          packetCode: packet.packetCode,
+          sampleId: packet.sampleId,
+          lotId: packet.lotId,
+        },
+      });
+    });
+
+    return NextResponse.json({ success: true, packetId });
+  } catch (error: unknown) {
+    if (error instanceof AuthorizationError) {
+      return jsonError("Forbidden", error.message, 403);
+    }
+
+    const message = error instanceof Error ? error.message : "Failed to delete packet.";
+    if (message === "FORBIDDEN") {
+      return jsonError("Forbidden", "Cross-company access is not allowed.", 403);
+    }
+    if (message === "JOB_LOCKED") {
+      return jsonError("Forbidden", "This job is LOCKED for audit integrity. No packet changes are allowed.", 403);
+    }
+    if (message === "PACKET_DELETE_BLOCKED") {
+      return jsonError("Validation Error", "Reserved, allocated, or used packets cannot be deleted.", 422);
     }
     return jsonError("System Error", message, 500);
   }

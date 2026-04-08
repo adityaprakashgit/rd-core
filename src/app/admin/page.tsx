@@ -17,17 +17,17 @@ import {
   ModalHeader,
   ModalOverlay,
   Select,
-  Stack,
   Text,
+  VStack,
   useToast,
 } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
-import { Card } from "@/components/Card";
+import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
-import { ConfigurationPageTemplate, MobileActionRail } from "@/components/enterprise/PageTemplates";
+import { EnterpriseStickyTable, FilterSearchStrip, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
-import type { TableColumn } from "@/types/ui-table";
+import type { InspectionJob } from "@/types/inspection";
 
 type EscalationRow = {
   id: string;
@@ -45,7 +45,16 @@ type EscalationRow = {
   } | null;
 };
 
-function formatDate(value: string) {
+type GovernanceRow = {
+  id: string;
+  queue: string;
+  pendingAction: string;
+  owner: string;
+  link: string;
+  priority: string;
+};
+
+function formatDate(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return "-";
@@ -79,20 +88,24 @@ function statusColor(value: EscalationRow["status"]) {
   }
 }
 
-export default function AdminPage() {
+export default function AdminWorkspacePage() {
   const router = useRouter();
   const toast = useToast();
 
   const [rows, setRows] = useState<EscalationRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [jobs, setJobs] = useState<InspectionJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
   const [activeEscalation, setActiveEscalation] = useState<EscalationRow | null>(null);
   const [resolutionNote, setResolutionNote] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const loadEscalations = useCallback(async () => {
+  const loadWorkspace = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
       if (statusFilter) {
@@ -102,68 +115,34 @@ export default function AdminPage() {
         params.set("type", typeFilter);
       }
       params.set("page", "1");
-      params.set("pageSize", "50");
+      params.set("pageSize", "100");
 
-      const response = await fetch(`/api/admin/workflow-escalations?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error("Unable to load escalation queue");
+      const [escalationsResponse, jobsResponse] = await Promise.all([
+        fetch(`/api/admin/workflow-escalations?${params.toString()}`),
+        fetch("/api/jobs?view=all"),
+      ]);
+
+      if (!escalationsResponse.ok || !jobsResponse.ok) {
+        throw new Error("Admin workspace could not be loaded.");
       }
 
-      const payload = await response.json() as { rows?: EscalationRow[] };
-      setRows(Array.isArray(payload.rows) ? payload.rows : []);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load escalation queue.";
+      const escalationPayload = (await escalationsResponse.json()) as { rows?: EscalationRow[] };
+      const jobsPayload = (await jobsResponse.json()) as InspectionJob[];
+
+      setRows(Array.isArray(escalationPayload.rows) ? escalationPayload.rows : []);
+      setJobs(Array.isArray(jobsPayload) ? jobsPayload : []);
+    } catch (loadError) {
       setRows([]);
-      toast({ title: "Escalation queue unavailable", description: message, status: "error" });
+      setJobs([]);
+      setError(loadError instanceof Error ? loadError.message : "Admin workspace could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, typeFilter, toast]);
+  }, [statusFilter, typeFilter]);
 
   useEffect(() => {
-    void loadEscalations();
-  }, [loadEscalations]);
-
-  const columns = useMemo<TableColumn<EscalationRow>[]>(
-    () => [
-      {
-        id: "createdAt",
-        header: "Created",
-        render: (row) => formatDate(row.createdAt),
-      },
-      {
-        id: "type",
-        header: "Type",
-        render: (row) => row.type,
-      },
-      {
-        id: "severity",
-        header: "Severity",
-        render: (row) => <Badge colorScheme={severityColor(row.severity)}>{row.severity}</Badge>,
-      },
-      {
-        id: "status",
-        header: "Status",
-        render: (row) => <Badge colorScheme={statusColor(row.status)}>{row.status}</Badge>,
-      },
-      {
-        id: "jobLot",
-        header: "Job/Lot",
-        render: (row) => [row.jobId ?? "-", row.lotId ?? "-"].join(" / "),
-      },
-      {
-        id: "raisedBy",
-        header: "Raised By",
-        render: (row) => row.raisedByUser?.profile?.displayName ?? row.raisedByUser?.email ?? "-",
-      },
-      {
-        id: "title",
-        header: "Title",
-        render: (row) => row.title,
-      },
-    ],
-    [],
-  );
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
   async function updateEscalationStatus(id: string, status: "ACKNOWLEDGED" | "RESOLVED" | "DISMISSED", note?: string) {
     setUpdatingId(id);
@@ -171,10 +150,7 @@ export default function AdminPage() {
       const response = await fetch(`/api/admin/workflow-escalations/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status,
-          resolutionNote: note,
-        }),
+        body: JSON.stringify({ status, resolutionNote: note }),
       });
 
       if (!response.ok) {
@@ -186,92 +162,221 @@ export default function AdminPage() {
         description: `Escalation moved to ${status}.`,
         status: "success",
       });
-      await loadEscalations();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update escalation.";
+      await loadWorkspace();
+    } catch (updateError) {
+      const message = updateError instanceof Error ? updateError.message : "Failed to update escalation.";
       toast({ title: "Update failed", description: message, status: "error" });
     } finally {
       setUpdatingId(null);
     }
   }
 
+  const searchText = search.toLowerCase();
+  const escalationRows = useMemo(() => {
+    return rows.filter((row) => {
+      if (!searchText) {
+        return true;
+      }
+      const lookup = [
+        row.type,
+        row.status,
+        row.title,
+        row.jobId ?? "",
+        row.lotId ?? "",
+        row.raisedByUser?.profile?.displayName ?? row.raisedByUser?.email ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return lookup.includes(searchText);
+    });
+  }, [rows, searchText]);
+
+  const governanceQueues = useMemo(() => {
+    const openEscalations = rows.filter((row) => row.status === "OPEN").length;
+    const activeJobs = jobs.filter((job) => !["COMPLETED", "DISPATCHED"].includes(job.status)).length;
+
+    const userRoleRows: GovernanceRow[] = [
+      {
+        id: "user-role-1",
+        queue: "User and role management",
+        pendingAction: "Review role assignments and access boundaries",
+        owner: "Admin",
+        link: "/settings",
+        priority: openEscalations > 0 ? "High" : "Medium",
+      },
+    ];
+
+    const masterDataRows: GovernanceRow[] = [
+      {
+        id: "master-data-1",
+        queue: "Master data",
+        pendingAction: "Validate client, item, warehouse, transporter records",
+        owner: "Admin",
+        link: "/master",
+        priority: "Medium",
+      },
+    ];
+
+    const workflowRows: GovernanceRow[] = [
+      {
+        id: "workflow-1",
+        queue: "Workflow configuration",
+        pendingAction: "Review checklist and guardrail settings",
+        owner: "Admin",
+        link: "/settings",
+        priority: "High",
+      },
+    ];
+
+    const auditRows: GovernanceRow[] = jobs
+      .slice(0, 8)
+      .map((job) => ({
+        id: `audit-${job.id}`,
+        queue: "Audit logs",
+        pendingAction: `Review timeline for ${job.inspectionSerialNumber || job.jobReferenceNumber || "Job"}`,
+        owner: job.assignedTo?.profile?.displayName || "Unassigned",
+        link: `/operations/job/${job.id}`,
+        priority: activeJobs > 0 ? "Medium" : "Low",
+      }));
+
+    const documentTemplateRows: GovernanceRow[] = [
+      {
+        id: "doc-template-1",
+        queue: "Document templates",
+        pendingAction: "Review report defaults and template branding",
+        owner: "Admin",
+        link: "/settings",
+        priority: "Medium",
+      },
+    ];
+
+    return {
+      userRoleRows,
+      masterDataRows,
+      workflowRows,
+      auditRows,
+      documentTemplateRows,
+    };
+  }, [jobs, rows]);
+
   return (
     <ControlTowerLayout>
-      <Stack spacing={6}>
-        <HStack justify="end" spacing={3} display={{ base: "none", md: "flex" }}>
-          <Button onClick={() => router.push("/master")}>Open Reference Data</Button>
-          <Button variant="outline" onClick={() => router.push("/settings")}>Open Workspace Configuration</Button>
-        </HStack>
+      <VStack align="stretch" spacing={5}>
+        <PageIdentityBar
+          title="Admin Workspace"
+          subtitle="Governance queues for access, masters, workflow, audit, and document configuration"
+          breadcrumbs={[{ label: "Admin", href: "/admin" }]}
+          status={
+            <HStack spacing={2}>
+              <Badge colorScheme="red">Admin</Badge>
+              <Badge variant="subtle">{rows.length} escalations</Badge>
+            </HStack>
+          }
+        />
 
-        <ConfigurationPageTemplate
-          sections={[
-            {
-              id: "access",
-              title: "Access Governance",
-              description: "Role-driven module and action visibility for enterprise-grade least privilege.",
-              content: (
-                <Card>
-                  <Box>
-                    <Text fontSize="sm" color="text.secondary">Access Model</Text>
-                    <Text fontSize="2xl" fontWeight="bold">Role-Governed</Text>
-                  </Box>
-                </Card>
-              ),
-            },
-            {
-              id: "security",
-              title: "Security Enforcement",
-              description: "Validation at both UI and API boundaries for resilient enterprise operations.",
-              content: (
-                <Card>
-                  <Box>
-                    <Text fontSize="sm" color="text.secondary">Security Posture</Text>
-                    <Text fontSize="2xl" fontWeight="bold">Backend-Enforced</Text>
-                  </Box>
-                </Card>
-              ),
-            },
-            {
-              id: "escalations",
-              title: "Escalation Queue",
-              description: "Operational escalation stream for duplicate warnings, lot conflicts, and policy blocks.",
-              content: (
-                <Stack spacing={4}>
-                  <HStack spacing={3} flexWrap="wrap">
-                    <FormControl maxW="240px">
-                      <FormLabel>Status</FormLabel>
-                      <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                        <option value="">All</option>
-                        <option value="OPEN">OPEN</option>
-                        <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
-                        <option value="RESOLVED">RESOLVED</option>
-                        <option value="DISMISSED">DISMISSED</option>
-                      </Select>
-                    </FormControl>
-                    <FormControl maxW="320px">
-                      <FormLabel>Type</FormLabel>
-                      <Select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-                        <option value="">All</option>
-                        <option value="DUPLICATE_JOB">DUPLICATE_JOB</option>
-                        <option value="LOT_CONFLICT">LOT_CONFLICT</option>
-                        <option value="VALIDATION_ERROR">VALIDATION_ERROR</option>
-                        <option value="PACKING_POLICY_BLOCK">PACKING_POLICY_BLOCK</option>
-                        <option value="AUDIT_LOG_FAILURE">AUDIT_LOG_FAILURE</option>
-                        <option value="OPERATIONAL_BLOCK">OPERATIONAL_BLOCK</option>
-                      </Select>
-                    </FormControl>
-                    <Button onClick={() => void loadEscalations()} isLoading={loading}>Refresh</Button>
-                  </HStack>
+        <PageActionBar
+          primaryAction={<Button onClick={() => router.push("/master")}>Open Master Data</Button>}
+          secondaryActions={
+            <HStack spacing={2}>
+              <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>Workflow Configuration</Button>
+              <Button variant="outline" size="sm" onClick={() => router.push("/documents")}>Document Registry</Button>
+            </HStack>
+          }
+        />
 
+        <FilterSearchStrip
+          filters={
+            <HStack spacing={2}>
+              <FormControl maxW="220px">
+                <FormLabel fontSize="xs" mb={1}>Status</FormLabel>
+                <Select size="sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                  <option value="">All</option>
+                  <option value="OPEN">OPEN</option>
+                  <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+                  <option value="RESOLVED">RESOLVED</option>
+                  <option value="DISMISSED">DISMISSED</option>
+                </Select>
+              </FormControl>
+              <FormControl maxW="260px">
+                <FormLabel fontSize="xs" mb={1}>Type</FormLabel>
+                <Select size="sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+                  <option value="">All</option>
+                  <option value="DUPLICATE_JOB">DUPLICATE_JOB</option>
+                  <option value="LOT_CONFLICT">LOT_CONFLICT</option>
+                  <option value="VALIDATION_ERROR">VALIDATION_ERROR</option>
+                  <option value="PACKING_POLICY_BLOCK">PACKING_POLICY_BLOCK</option>
+                  <option value="AUDIT_LOG_FAILURE">AUDIT_LOG_FAILURE</option>
+                  <option value="OPERATIONAL_BLOCK">OPERATIONAL_BLOCK</option>
+                </Select>
+              </FormControl>
+            </HStack>
+          }
+          search={<Input size="sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search escalations" maxW={{ base: "full", lg: "280px" }} />}
+          actions={<Button size="sm" variant="outline" onClick={() => { setSearch(""); void loadWorkspace(); }}>Refresh</Button>}
+        />
+
+        {loading ? <PageSkeleton cards={2} rows={3} /> : null}
+        {!loading && error ? <InlineErrorState title="Admin workspace unavailable" description={error} onRetry={() => void loadWorkspace()} /> : null}
+
+        {!loading && !error ? (
+          <VStack align="stretch" spacing={5}>
+            {[
+              { title: "User and role management", rows: governanceQueues.userRoleRows },
+              { title: "Master data", rows: governanceQueues.masterDataRows },
+              { title: "Workflow configuration", rows: governanceQueues.workflowRows },
+              { title: "Audit logs", rows: governanceQueues.auditRows },
+              { title: "Document templates", rows: governanceQueues.documentTemplateRows },
+            ].map((section) => (
+              <VStack key={section.title} align="stretch" spacing={2}>
+                <HStack justify="space-between">
+                  <Text fontWeight="semibold">{section.title}</Text>
+                  <Badge variant="subtle">{section.rows.length}</Badge>
+                </HStack>
+                <EnterpriseStickyTable>
+                  <Box p={3}>
+                    <EnterpriseDataTable
+                      rows={section.rows}
+                      rowKey={(row) => row.id}
+                      emptyLabel={`No ${section.title.toLowerCase()} items.`}
+                      columns={[
+                        { id: "queue", header: "Queue", render: (row) => row.queue },
+                        { id: "action", header: "Pending Action", render: (row) => row.pendingAction },
+                        { id: "owner", header: "Owner", render: (row) => row.owner },
+                        { id: "priority", header: "Priority", render: (row) => <Badge colorScheme={row.priority === "High" ? "red" : row.priority === "Medium" ? "orange" : "gray"}>{row.priority}</Badge> },
+                      ]}
+                      rowActions={[
+                        {
+                          id: "open",
+                          label: "Open Queue Detail",
+                          onClick: (row) => router.push(row.link),
+                        },
+                      ]}
+                    />
+                  </Box>
+                </EnterpriseStickyTable>
+              </VStack>
+            ))}
+
+            <VStack align="stretch" spacing={2}>
+              <HStack justify="space-between">
+                <Text fontWeight="semibold">Escalation queue</Text>
+                <Badge variant="subtle">{escalationRows.length}</Badge>
+              </HStack>
+              <EnterpriseStickyTable>
+                <Box p={3}>
                   <EnterpriseDataTable
-                    rows={rows}
-                    columns={columns}
+                    rows={escalationRows}
                     rowKey={(row) => row.id}
-                    filters={[
-                      { id: "status", label: "Status", value: statusFilter || "All" },
-                      { id: "type", label: "Type", value: typeFilter || "All" },
+                    emptyLabel="No escalations found."
+                    columns={[
+                      { id: "created", header: "Created", render: (row) => formatDate(row.createdAt) },
+                      { id: "type", header: "Type", render: (row) => row.type },
+                      { id: "severity", header: "Severity", render: (row) => <Badge colorScheme={severityColor(row.severity)}>{row.severity}</Badge> },
+                      { id: "status", header: "Status", render: (row) => <Badge colorScheme={statusColor(row.status)}>{row.status}</Badge> },
+                      { id: "scope", header: "Job/Lot", render: (row) => [row.jobId ?? "-", row.lotId ?? "-"].join(" / ") },
+                      { id: "owner", header: "Raised By", render: (row) => row.raisedByUser?.profile?.displayName ?? row.raisedByUser?.email ?? "-" },
+                      { id: "title", header: "Title", render: (row) => row.title },
                     ]}
-                    emptyLabel={loading ? "Loading escalation queue..." : "No escalations found."}
                     rowActions={[
                       {
                         id: "ack",
@@ -295,79 +400,55 @@ export default function AdminPage() {
                         isDisabled: (row) => row.status === "DISMISSED" || updatingId === row.id,
                       },
                     ]}
-                    recordCard={{
-                      title: (row) => row.title,
-                      subtitle: (row) => `${row.type} • ${row.status}`,
-                      fields: [
-                        { id: "severity", label: "Severity", render: (row) => row.severity },
-                        { id: "created", label: "Created", render: (row) => formatDate(row.createdAt) },
-                        { id: "scope", label: "Job/Lot", render: (row) => [row.jobId ?? "-", row.lotId ?? "-"].join(" / ") },
-                      ],
-                    }}
                   />
-                </Stack>
-              ),
-            },
-            {
-              id: "quick-access",
-              title: "Operational Shortcuts",
-              description: "Direct links to high-frequency governance and execution destinations.",
-              content: (
-                <HStack mt={1} spacing={3} flexWrap="wrap">
-                  <Button onClick={() => router.push("/userinsp")}>Open Control Center</Button>
-                  <Button onClick={() => router.push("/operations")}>Open Execution</Button>
-                  <Button onClick={() => router.push("/userrd")}>Open Lab & Analysis</Button>
-                  <Button onClick={() => router.push("/reports")}>Open Documents & Reports</Button>
-                </HStack>
-              ),
-            },
-          ]}
-        />
+                </Box>
+              </EnterpriseStickyTable>
+            </VStack>
 
-        <MobileActionRail>
-          <Button flex="1" onClick={() => router.push("/master")}>Reference Data</Button>
-          <Button flex="1" variant="outline" onClick={() => router.push("/settings")}>Workspace Config</Button>
-        </MobileActionRail>
-      </Stack>
+            {governanceQueues.userRoleRows.length + governanceQueues.masterDataRows.length + governanceQueues.workflowRows.length + governanceQueues.auditRows.length + governanceQueues.documentTemplateRows.length + escalationRows.length === 0 ? (
+              <EmptyWorkState title="No admin actions" description="All governance queues are currently clear." />
+            ) : null}
+          </VStack>
+        ) : null}
 
-      <Modal isOpen={activeEscalation !== null} onClose={() => setActiveEscalation(null)} isCentered>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Resolve Escalation</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <Stack spacing={3}>
-              <Text fontSize="sm" color="text.secondary">
-                Add a resolution note before moving this escalation to RESOLVED.
-              </Text>
-              <FormControl isRequired>
-                <FormLabel>Resolution Note</FormLabel>
-                <Input
-                  value={resolutionNote}
-                  onChange={(event) => setResolutionNote(event.target.value)}
-                  placeholder="What action resolved this issue?"
-                />
-              </FormControl>
-            </Stack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={() => setActiveEscalation(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!activeEscalation || !resolutionNote.trim()) {
-                  return;
-                }
-                void updateEscalationStatus(activeEscalation.id, "RESOLVED", resolutionNote.trim());
-                setActiveEscalation(null);
-              }}
-            >
-              Resolve
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+        <Modal isOpen={activeEscalation !== null} onClose={() => setActiveEscalation(null)} isCentered>
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>Resolve Escalation</ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              <VStack align="stretch" spacing={3}>
+                <Text fontSize="sm" color="text.secondary">{activeEscalation?.title}</Text>
+                <FormControl>
+                  <FormLabel>Resolution note</FormLabel>
+                  <Input
+                    value={resolutionNote}
+                    onChange={(event) => setResolutionNote(event.target.value)}
+                    placeholder="Add a concise resolution note"
+                  />
+                </FormControl>
+              </VStack>
+            </ModalBody>
+            <ModalFooter>
+              <HStack spacing={2}>
+                <Button variant="outline" onClick={() => setActiveEscalation(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!activeEscalation) return;
+                    await updateEscalationStatus(activeEscalation.id, "RESOLVED", resolutionNote || undefined);
+                    setActiveEscalation(null);
+                  }}
+                  isLoading={Boolean(activeEscalation && updatingId === activeEscalation.id)}
+                >
+                  Resolve
+                </Button>
+              </HStack>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      </VStack>
     </ControlTowerLayout>
   );
 }

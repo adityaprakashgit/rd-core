@@ -1,6 +1,19 @@
 import { deriveSampleStatus } from "@/lib/sample-management";
 import type { SampleRecord } from "@/types/inspection";
 
+function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return parsed;
+}
+
 type ReportValidationJob = {
   jobReferenceNumber: string | null;
   clientName: string;
@@ -11,6 +24,8 @@ type ReportValidationJob = {
     totalBags?: number | null;
     grossWeight?: number | null;
     netWeight?: number | null;
+    grossWeightKg?: unknown;
+    netWeightKg?: unknown;
     bags: Array<{
       netWeight: number | null;
     }>;
@@ -64,8 +79,9 @@ export function buildReportValidation(job: ReportValidationJob) {
       return;
     }
 
-    if (typeof lot.netWeight === "number") {
-      totalNetWeight += lot.netWeight;
+    const lotNetWeight = toFiniteNumber(lot.netWeightKg) ?? toFiniteNumber(lot.netWeight);
+    if (lotNetWeight !== null) {
+      totalNetWeight += lotNetWeight;
       totalBagsFound += typeof lot.totalBags === "number" && lot.totalBags > 0 ? lot.totalBags : 1;
     }
   });
@@ -103,7 +119,11 @@ export function buildReportValidation(job: ReportValidationJob) {
 
   job.lots.forEach((lot) => {
     const hasBagRows = lot.bags.length > 0;
-    const hasLotWeights = typeof lot.grossWeight === "number" || typeof lot.netWeight === "number";
+    const hasLotWeights =
+      toFiniteNumber(lot.grossWeightKg) !== null ||
+      toFiniteNumber(lot.netWeightKg) !== null ||
+      toFiniteNumber(lot.grossWeight) !== null ||
+      toFiniteNumber(lot.netWeight) !== null;
     const requiresBagRows = (lot.quantityMode ?? "SINGLE_PIECE") === "MULTI_WEIGHT";
 
     if ((requiresBagRows && !hasBagRows) || (!requiresBagRows && !hasBagRows && !hasLotWeights)) {

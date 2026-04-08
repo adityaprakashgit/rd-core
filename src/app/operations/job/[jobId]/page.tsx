@@ -1,13 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { JobIntakeWorkspace } from "@/components/inspection/JobIntakeWorkspace";
-
-export default function OperationsJobPage() {
-  return (
-    <JobIntakeWorkspace
-      jobsEndpoint="/api/jobs?view=all"
-      backHref="/operations"
-      lotHref={(jobId, lotId) => `/operations/job/${jobId}/lot/${lotId}`}
-    />
-  );
+export default async function OperationsJobPage({
+  params,
+}: {
+  params: Promise<{ jobId: string }>;
+}) {
+  const { jobId } = await params;
+  redirect(`/jobs/${jobId}/workflow?source=operations`);
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { recordAuditLog } from "@/lib/audit";
+import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { normalizeQuantityMode } from "@/lib/intake-workflow";
 import { isLotVersionConflict, parseExpectedUpdatedAt } from "@/lib/lot-concurrency";
 import { buildLotConflictEscalation, enqueueWorkflowEscalationSafe } from "@/lib/workflow-escalation";
@@ -69,6 +70,23 @@ async function validateJobAccess(jobId: string, companyId: string) {
   return { job };
 }
 
+async function getWorkflowPolicy(companyId: string) {
+  const settings = await prisma.moduleWorkflowSettings.upsert({
+    where: { companyId },
+    update: {},
+    create: buildModuleWorkflowSettingsCreate(companyId),
+  });
+  return toModuleWorkflowPolicy(settings);
+}
+
+async function buildAutoLotNumber(jobId: string, companyId: string, prefix: string, sequenceFormat: string) {
+  const count = await prisma.inspectionLot.count({
+    where: { jobId, companyId },
+  });
+  const width = Math.max(sequenceFormat.length, 4);
+  return `${prefix}-${String(count + 1).padStart(width, "0")}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(req);
@@ -80,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const jobId = typeof body?.jobId === "string" ? body.jobId.trim() : "";
-    const lotNumber = typeof body?.lotNumber === "string" ? body.lotNumber.trim() : "";
+    const requestedLotNumber = typeof body?.lotNumber === "string" ? body.lotNumber.trim() : "";
     const materialName = typeof body?.materialName === "string" ? body.materialName.trim() : "";
     const materialCategory = typeof body?.materialCategory === "string" ? body.materialCategory.trim() : "";
     const quantityMode = normalizeQuantityMode(typeof body?.quantityMode === "string" ? body.quantityMode : null);
@@ -92,8 +110,8 @@ export async function POST(req: NextRequest) {
     const weightUnit = typeof body?.weightUnit === "string" ? body.weightUnit.trim() : "";
     const remarks = typeof body?.remarks === "string" ? body.remarks.trim() : "";
 
-    if (!jobId || !lotNumber || !materialName) {
-      return jsonError("Validation Error", "jobId, lotNumber, and materialName are required fields.", 400);
+    if (!jobId || !materialName) {
+      return jsonError("Validation Error", "jobId and materialName are required fields.", 400);
     }
 
     if (quantityMode === "MULTI_WEIGHT" && totalBags !== null && totalBags < 1) {
@@ -107,6 +125,20 @@ export async function POST(req: NextRequest) {
 
     if (["CLOSED", "CANCELLED", "COMPLETED", "DISPATCHED", "LOCKED"].includes(access.job.status)) {
       return jsonError("Forbidden", "This job is not accepting new lot changes.", 403);
+    }
+
+    const workflowPolicy = await getWorkflowPolicy(currentUser.companyId);
+    const lotNumber = workflowPolicy.workflow.autoLotNumbering
+      ? await buildAutoLotNumber(
+          jobId,
+          currentUser.companyId,
+          workflowPolicy.workflow.lotNumberPrefix,
+          workflowPolicy.workflow.lotNumberSequenceFormat,
+        )
+      : requestedLotNumber;
+
+    if (!lotNumber) {
+      return jsonError("Validation Error", "lotNumber is required when auto lot numbering is disabled.", 400);
     }
 
     const lot = await prisma.$transaction(async (tx) => {

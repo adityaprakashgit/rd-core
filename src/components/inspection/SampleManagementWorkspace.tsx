@@ -29,11 +29,11 @@ import {
   ClipboardCheck,
   FlaskConical,
   PackageCheck,
-  ScanLine,
   ShieldCheck,
 } from "lucide-react";
 
 import { EvidenceRail } from "@/components/inspection/EvidenceRail";
+import { SealScanner } from "@/components/inspection/SealScanner";
 import { EmptyWorkState, InlineErrorState, PageSkeleton, TopErrorBanner } from "@/components/enterprise/AsyncState";
 import { ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
@@ -101,7 +101,7 @@ function buildWorkflowSteps(sample: SampleRecord | null): WorkflowStep[] {
     { id: "details", label: "Details", state: detailsDone ? "completed" : sample ? "current" : "next" },
     { id: "media", label: "Proof", state: requiredMediaComplete ? "completed" : sample ? "current" : "next" },
     { id: "homogenize", label: "Homogenize", state: homogenized ? "completed" : detailsDone ? "current" : "next" },
-    { id: "seal", label: "Seal & Label", state: sealed ? "completed" : homogenized ? "current" : "next" },
+    { id: "seal", label: "Seal", state: sealed ? "completed" : homogenized ? "current" : "next" },
     {
       id: "ready",
       label: "Ready",
@@ -136,7 +136,6 @@ export function SampleManagementWorkspace({
   });
   const [sealForm, setSealForm] = useState({
     sealNo: "",
-    labelText: "",
   });
   const [sealAuto, setSealAuto] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -197,7 +196,6 @@ export function SampleManagementWorkspace({
     });
     setSealForm({
       sealNo: sample?.sealLabel?.sealNo ?? "",
-      labelText: sample?.sealLabel?.labelText ?? "",
     });
     setSealAuto(false);
   }, [sample]);
@@ -209,6 +207,7 @@ export function SampleManagementWorkspace({
   const currentStatus = deriveSampleStatus(sample);
   const workflowSteps = useMemo(() => buildWorkflowSteps(sample), [sample]);
   const requiredMediaCount = requiredMediaConfigs.length;
+  const isSealFormatValid = /^\d{16}$/.test(sealForm.sealNo.trim());
   const lotApproved =
     !inspection ||
     inspection?.inspectionStatus === "COMPLETED" && inspection?.decisionStatus === "READY_FOR_SAMPLING";
@@ -286,18 +285,23 @@ export function SampleManagementWorkspace({
   }, [detailsForm, toast, updateSample]);
 
   const handleSaveSeal = useCallback(async () => {
+    if (!/^\d{16}$/.test(sealForm.sealNo.trim())) {
+      const message = "Seal number must be exactly 16 digits.";
+      setStepErrors((prev) => ({ ...prev, seal: message }));
+      setSurfaceError(message);
+      toast({ title: "Seal validation failed", description: message, status: "error" });
+      return;
+    }
     setSavingSeal(true);
     try {
       await updateSample({
         sealNo: sealForm.sealNo,
-        labelText: sealForm.labelText,
         sealAuto,
         markSealed: true,
-        markLabeled: true,
       });
       setStepErrors((prev) => ({ ...prev, seal: undefined }));
       setSurfaceError(null);
-      toast({ title: "Seal and label saved", status: "success" });
+      toast({ title: "Seal saved", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save seal details.";
       setStepErrors((prev) => ({ ...prev, seal: message }));
@@ -306,7 +310,7 @@ export function SampleManagementWorkspace({
     } finally {
       setSavingSeal(false);
     }
-  }, [sealAuto, sealForm.labelText, sealForm.sealNo, toast, updateSample]);
+  }, [sealAuto, sealForm.sealNo, toast, updateSample]);
 
   const handleGenerateSeal = useCallback(async () => {
     setGeneratingSeal(true);
@@ -454,7 +458,7 @@ export function SampleManagementWorkspace({
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
+      <VStack align="stretch" spacing={6}>
         {surfaceError ? (
           <TopErrorBanner title="Action blocked" description={surfaceError} onDismiss={() => setSurfaceError(null)} />
         ) : null}
@@ -694,47 +698,71 @@ export function SampleManagementWorkspace({
                     Step 5
                   </Text>
                   <Heading size="md" mt={1}>
-                    Seal and label
+                    Scan and confirm seal
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2} mb={5}>
-                    Keep sealing simple in MVP: one seal number, one label text, one final confirmation.
+                    Scan the pre-printed seal first. Use manual entry only if scan is unavailable.
                   </Text>
 
-                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                  <SimpleGrid columns={{ base: 1, md: 1 }} spacing={4}>
                     <FormControl>
                       <FormLabel>Seal number</FormLabel>
-                      <HStack align="stretch">
+                      <HStack align="stretch" flexWrap={{ base: "wrap", sm: "nowrap" }}>
                         <Input
                           value={sealForm.sealNo}
                           onChange={(event) => {
-                            setSealForm((prev) => ({ ...prev, sealNo: event.target.value }));
+                            setSealForm((prev) => ({ ...prev, sealNo: event.target.value.replace(/\D/g, "").slice(0, 16) }));
                             setSealAuto(false);
                           }}
-                          placeholder="Auto-generate or enter seal number"
+                          placeholder="Scan or enter 16-digit seal number"
+                          inputMode="numeric"
+                          isDisabled={!sample}
+                        />
+                        <SealScanner
+                          onScanned={(sealNumber) => {
+                            setSealForm((prev) => ({ ...prev, sealNo: sealNumber }));
+                            setSealAuto(false);
+                          }}
+                          onManualConfirm={(sealNumber) => {
+                            setSealForm((prev) => ({ ...prev, sealNo: sealNumber }));
+                            setSealAuto(false);
+                          }}
                           isDisabled={!sample}
                         />
                         <Button
                           variant="outline"
-                          leftIcon={<ScanLine size={16} />}
                           onClick={() => void handleGenerateSeal()}
                           isLoading={generatingSeal}
                           isDisabled={!sample}
                         >
-                          Auto
+                          Auto-generate
                         </Button>
                       </HStack>
+                      <HStack mt={2} spacing={2} flexWrap="wrap">
+                        <Badge colorScheme={isSealFormatValid ? "green" : "orange"}>
+                          {isSealFormatValid ? "Seal format valid" : "Seal must be 16 digits"}
+                        </Badge>
+                        {sealAuto ? (
+                          <Badge colorScheme="blue">Auto generated</Badge>
+                        ) : (
+                          <Badge colorScheme="gray">Scanned / manual</Badge>
+                        )}
+                      </HStack>
                       <Text fontSize="xs" color="text.secondary" mt={2}>
-                        {sealAuto ? "Seal will be saved as auto-generated." : "You can type a manual seal number or auto-generate one."}
+                        {sealAuto ? "Seal was generated by system." : "Scan seal, then save. Manual entry is fallback only."}
                       </Text>
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Label text</FormLabel>
-                      <Input value={sealForm.labelText} onChange={(event) => setSealForm((prev) => ({ ...prev, labelText: event.target.value }))} placeholder="Visible sample label text" isDisabled={!sample} />
                     </FormControl>
                   </SimpleGrid>
 
-                  <Button mt={5} colorScheme="blue" leftIcon={<PackageCheck size={16} />} onClick={() => void handleSaveSeal()} isLoading={savingSeal} isDisabled={!sample}>
-                    Save seal and label
+                  <Button
+                    mt={5}
+                    colorScheme="blue"
+                    leftIcon={<PackageCheck size={16} />}
+                    onClick={() => void handleSaveSeal()}
+                    isLoading={savingSeal}
+                    isDisabled={!sample || !isSealFormatValid}
+                  >
+                    Save seal
                   </Button>
                   {stepErrors.seal ? (
                     <Box mt={3} borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
@@ -753,7 +781,7 @@ export function SampleManagementWorkspace({
                     Complete
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2} mb={5}>
-                    Readiness requires sample details, homogenized sample proof, homogeneous confirmation, and seal-label traceability.
+                    Readiness requires sample details, homogenized sample proof, homogeneous confirmation, and seal traceability.
                   </Text>
                   <VStack align="stretch" spacing={2}>
                     {(readiness.missing.length > 0 ? readiness.missing : ["Ready for packet generation"]).map((item) => (

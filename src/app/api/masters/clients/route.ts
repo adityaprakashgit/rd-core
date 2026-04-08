@@ -29,10 +29,15 @@ export async function GET(request: NextRequest) {
       where: { companyId: currentUser.companyId, ...(typeof isActiveFilter === "boolean" ? { isActive: isActiveFilter } : {}) },
       orderBy: { clientName: "asc" },
       select: {
+        id: true,
         clientName: true,
         billToAddress: true,
         shipToAddress: true,
         gstOrId: true,
+        contactPerson: true,
+        contactNumber: true,
+        email: true,
+        sameAsBilling: true,
       },
     });
 
@@ -62,6 +67,10 @@ export async function POST(request: NextRequest) {
           billToAddress?: unknown;
           shipToAddress?: unknown;
           gstOrId?: unknown;
+          contactPerson?: unknown;
+          contactNumber?: unknown;
+          email?: unknown;
+          sameAsBilling?: unknown;
           isActive?: unknown;
         })
       : {};
@@ -75,6 +84,10 @@ export async function POST(request: NextRequest) {
     }
 
     const gstOrId = asNonEmptyString(payload.gstOrId);
+    const contactPerson = asNonEmptyString(payload.contactPerson);
+    const contactNumber = asNonEmptyString(payload.contactNumber);
+    const email = asNonEmptyString(payload.email);
+    const sameAsBilling = payload.sameAsBilling === false ? false : true;
     const isActive = payload.isActive === false ? false : true;
 
     const record = await prisma.clientMaster.upsert({
@@ -88,6 +101,10 @@ export async function POST(request: NextRequest) {
         billToAddress,
         shipToAddress,
         gstOrId,
+        contactPerson,
+        contactNumber,
+        email,
+        sameAsBilling,
         isActive,
       },
       create: {
@@ -96,13 +113,22 @@ export async function POST(request: NextRequest) {
         billToAddress,
         shipToAddress,
         gstOrId,
+        contactPerson,
+        contactNumber,
+        email,
+        sameAsBilling,
         isActive,
       },
       select: {
+        id: true,
         clientName: true,
         billToAddress: true,
         shipToAddress: true,
         gstOrId: true,
+        contactPerson: true,
+        contactNumber: true,
+        email: true,
+        sameAsBilling: true,
       },
     });
 

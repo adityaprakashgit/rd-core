@@ -1,52 +1,128 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, Heading, HStack, SimpleGrid, Stack, Text, VStack, useToast } from "@chakra-ui/react";
-import { FileDown, Puzzle } from "lucide-react";
+import { Badge, Box, Button, HStack, Input, Select, Text, VStack } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
-import { Card } from "@/components/Card";
-import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
-import { WorkflowStepTracker } from "@/components/enterprise/WorkflowStepTracker";
+import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
+import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
+import {
+  EnterpriseStickyTable,
+  FilterSearchStrip,
+  PageActionBar,
+  PageIdentityBar,
+} from "@/components/enterprise/EnterprisePatterns";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
-import { getStoredAuth } from "@/lib/auth-client";
-import { buildWorkflowSteps, getJobWorkflowPresentation, getWorkflowStepRoute, summarizeLotProgress } from "@/lib/workflow-stage";
-import type { InspectionJob } from "@/types/inspection";
+import type { InspectionJob, RDTrial } from "@/types/inspection";
+
+type QueueBucket = "Pending Samples" | "In Testing" | "Awaiting Review" | "Completed";
+
+type RdQueueRow = {
+  id: string;
+  bucket: QueueBucket;
+  sampleId: string;
+  lotId: string;
+  jobId: string;
+  receivedDate: string;
+  testType: string;
+  priority: "High" | "Medium" | "Low";
+  assignedUser: string;
+  dueStatus: "On Track" | "Due Soon" | "Overdue";
+  jobRefId: string;
+  lotRefId: string;
+};
 
 function formatDate(value: string | Date | null | undefined) {
   if (!value) {
     return "—";
   }
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+}
+
+function toAgeHours(value: string | Date | null | undefined) {
+  if (!value) {
+    return 0;
+  }
+  const ms = Date.now() - Number(new Date(value));
+  return ms > 0 ? Math.floor(ms / (1000 * 60 * 60)) : 0;
+}
+
+function deriveDueStatus(receivedDate: string | Date | null | undefined): "On Track" | "Due Soon" | "Overdue" {
+  const ageHours = toAgeHours(receivedDate);
+  if (ageHours >= 48) {
+    return "Overdue";
+  }
+  if (ageHours >= 24) {
+    return "Due Soon";
+  }
+  return "On Track";
+}
+
+function priorityFromBucket(bucket: QueueBucket, dueStatus: "On Track" | "Due Soon" | "Overdue"): "High" | "Medium" | "Low" {
+  if (bucket === "Completed") {
+    return "Low";
+  }
+  if (bucket === "Awaiting Review" || dueStatus === "Overdue") {
+    return "High";
+  }
+  return "Medium";
+}
+
+function colorForDue(dueStatus: RdQueueRow["dueStatus"]) {
+  if (dueStatus === "Overdue") {
+    return "red";
+  }
+  if (dueStatus === "Due Soon") {
+    return "orange";
+  }
+  return "green";
+}
+
+function colorForPriority(priority: RdQueueRow["priority"]) {
+  if (priority === "High") {
+    return "red";
+  }
+  if (priority === "Medium") {
+    return "orange";
+  }
+  return "gray";
 }
 
 export default function UserRdDashboard() {
   const router = useRouter();
-  const toast = useToast();
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
+  const [trialMap, setTrialMap] = useState<Record<string, RDTrial[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessionRole, setSessionRole] = useState<"ADMIN" | "OPERATIONS" | "RND" | "VIEWER" | null>(null);
-  const [archivingJobId, setArchivingJobId] = useState<string | null>(null);
-  const [jobsPage, setJobsPage] = useState(1);
-  const [activePanel, setActivePanel] = useState<"overview" | "jobs">("overview");
-
-  const canArchive = sessionRole === "ADMIN" || sessionRole === "OPERATIONS";
-  const jobsPerPage = 2;
+  const [search, setSearch] = useState("");
+  const [bucketFilter, setBucketFilter] = useState("all");
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/jobs?view=all");
-      if (!res.ok) {
-        throw new Error("The lab queue could not be loaded.");
+      const jobsRes = await fetch("/api/jobs?view=all");
+      if (!jobsRes.ok) {
+        throw new Error("R&D queue could not be loaded.");
       }
-      const data = await res.json();
-      setJobs(Array.isArray(data) ? data : []);
+      const jobItems = (await jobsRes.json()) as InspectionJob[];
+      const nextJobs = Array.isArray(jobItems) ? jobItems : [];
+      setJobs(nextJobs);
+
+      const trialEntries = await Promise.all(
+        nextJobs.map(async (job) => {
+          const res = await fetch(`/api/rd/trial?jobId=${job.id}`);
+          if (!res.ok) {
+            return [job.id, []] as const;
+          }
+          const trials = (await res.json()) as RDTrial[];
+          return [job.id, Array.isArray(trials) ? trials : []] as const;
+        }),
+      );
+      setTrialMap(Object.fromEntries(trialEntries));
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "The lab queue could not be loaded.");
+      setError(fetchError instanceof Error ? fetchError.message : "R&D queue could not be loaded.");
     } finally {
       setLoading(false);
     }
@@ -56,276 +132,182 @@ export default function UserRdDashboard() {
     void fetchJobs();
   }, [fetchJobs]);
 
-  useEffect(() => {
-    setSessionRole(getStoredAuth()?.role ?? null);
-  }, []);
+  const rows = useMemo(() => {
+    const result: RdQueueRow[] = [];
+    for (const job of jobs) {
+      const jobTrials = trialMap[job.id] ?? [];
+      for (const lot of job.lots ?? []) {
+        const sample = lot.sample;
+        const lotTrials = jobTrials.filter((trial) => trial.lotId === lot.id);
+        const anyTrial = lotTrials.length > 0;
+        const anyTrialIncomplete = lotTrials.some((trial) => trial.measurements.length === 0);
+        const allTrialsMeasured = anyTrial && lotTrials.every((trial) => trial.measurements.length > 0);
 
-  const handleArchive = useCallback(
-    async (jobId: string) => {
-      if (!canArchive || archivingJobId) {
-        return;
-      }
-
-      setArchivingJobId(jobId);
-      try {
-        const response = await fetch(`/api/jobs/${jobId}/archive`, { method: "POST" });
-        const payload = await response.json().catch(() => null) as { details?: string } | null;
-        if (!response.ok) {
-          throw new Error(payload?.details ?? "Archive failed.");
+        let bucket: QueueBucket = "Pending Samples";
+        if (["LOCKED", "COMPLETED", "DISPATCHED"].includes(job.status)) {
+          bucket = "Completed";
+        } else if (anyTrial && anyTrialIncomplete) {
+          bucket = "In Testing";
+        } else if (allTrialsMeasured) {
+          bucket = "Awaiting Review";
         }
-        toast({ title: "Job archived", status: "success" });
-        await fetchJobs();
-      } catch (archiveError) {
-        const message = archiveError instanceof Error ? archiveError.message : "Archive failed.";
-        toast({ title: "Archive failed", description: message, status: "error" });
-      } finally {
-        setArchivingJobId(null);
+
+        const receivedBase = sample?.samplingDate ?? sample?.createdAt ?? lot.createdAt;
+        const dueStatus = deriveDueStatus(receivedBase);
+        const priority = priorityFromBucket(bucket, dueStatus);
+        const assignedUser =
+          sample?.createdBy?.profile?.displayName ||
+          lot.assignedTo?.profile?.displayName ||
+          job.assignedTo?.profile?.displayName ||
+          "Unassigned";
+
+        result.push({
+          id: `${job.id}:${lot.id}`,
+          bucket,
+          sampleId: sample?.sampleCode || "—",
+          lotId: lot.lotNumber,
+          jobId: job.inspectionSerialNumber || job.jobReferenceNumber || "—",
+          receivedDate: formatDate(receivedBase),
+          testType: sample?.sampleType || "Standard Assay",
+          priority,
+          assignedUser,
+          dueStatus,
+          jobRefId: job.id,
+          lotRefId: lot.id,
+        });
       }
-    },
-    [archivingJobId, canArchive, fetchJobs, toast]
-  );
+    }
+    return result;
+  }, [jobs, trialMap]);
 
-  const summary = useMemo(() => {
-    const activeLab = jobs.filter((job) => ["RND_RUNNING", "QA"].includes(job.status)).length;
-    const reportReady = jobs.filter((job) => ["REPORT_READY", "LOCKED"].includes(job.status)).length;
-    const completed = jobs.filter((job) => ["COMPLETED", "DISPATCHED"].includes(job.status)).length;
-    return { total: jobs.length, activeLab, reportReady, completed };
-  }, [jobs]);
-
-  const queue = useMemo(() => {
-    return [...jobs].sort((left, right) => {
-      const leftPresentation = getJobWorkflowPresentation(left);
-      const rightPresentation = getJobWorkflowPresentation(right);
-      const order = ["lab", "reporting", "sampling", "lot_capture", "intake", "complete", "blocked"];
-      return order.indexOf(leftPresentation.stage) - order.indexOf(rightPresentation.stage);
+  const filteredRows = useMemo(() => {
+    return rows.filter((row) => {
+      const searchHit =
+        !search ||
+        [row.sampleId, row.lotId, row.jobId, row.testType, row.assignedUser, row.dueStatus]
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase());
+      const bucketHit = bucketFilter === "all" || row.bucket.toLowerCase() === bucketFilter;
+      return searchHit && bucketHit;
     });
-  }, [jobs]);
+  }, [rows, search, bucketFilter]);
 
-  const focusJob = queue[0] ?? null;
-  const jobsPageCount = Math.max(Math.ceil(queue.length / jobsPerPage), 1);
-  const pagedQueue = useMemo(
-    () => queue.slice((jobsPage - 1) * jobsPerPage, jobsPage * jobsPerPage),
-    [jobsPage, queue]
-  );
-
-  useEffect(() => {
-    setJobsPage((current) => Math.min(current, jobsPageCount));
-  }, [jobsPageCount]);
+  const queueSections = useMemo(() => {
+    const pendingSamples = filteredRows.filter((row) => row.bucket === "Pending Samples");
+    const inProgressTests = filteredRows.filter((row) => row.bucket === "In Testing");
+    const awaitingReview = filteredRows.filter((row) => row.bucket === "Awaiting Review");
+    const overdueTesting = filteredRows.filter((row) => row.dueStatus === "Overdue" && row.bucket !== "Completed");
+    return {
+      pendingSamples,
+      inProgressTests,
+      awaitingReview,
+      overdueTesting,
+    };
+  }, [filteredRows]);
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
-        <Stack direction={{ base: "column", lg: "row" }} justify="space-between" spacing={4}>
-          <Box>
-            <HStack spacing={2} mb={2} flexWrap="wrap">
-              <Badge colorScheme="purple" borderRadius="full" px={2.5} py={1}>
-                LAB & ANALYSIS
+      <VStack align="stretch" spacing={4}>
+        <PageIdentityBar
+          title="R&D Queue"
+          subtitle="Action-first R&D workspace for pending samples, testing, approvals, and overdue items."
+          status={
+            <HStack spacing={2}>
+              <Badge colorScheme="purple" variant="subtle">
+                R&D
               </Badge>
-              <Badge colorScheme="gray" borderRadius="full" px={2.5} py={1}>
-                ACTIVE WORK
+              <Badge colorScheme="gray" variant="subtle">
+                {rows.length} sample rows
               </Badge>
             </HStack>
-            <Heading size="lg" color="text.primary">
-              Lab Queue
-            </Heading>
-          </Box>
+          }
+        />
 
-          <HStack spacing={3} flexWrap="wrap">
-            <Button minH="48px" variant="outline" leftIcon={<Puzzle size={16} />} onClick={() => router.push("/playground")}>
-              Open playground
-            </Button>
-            <Button minH="48px" onClick={() => router.push("/rd")}>
-              Create job
-            </Button>
-          </HStack>
-        </Stack>
+        <PageActionBar
+          primaryAction={<Button onClick={() => router.push("/rd")}>Create Job</Button>}
+          secondaryActions={<Text fontSize="sm" color="text.secondary">Queues: Pending Samples / In-progress Tests / Awaiting Review / Overdue Testing</Text>}
+        />
 
-        {loading ? <PageSkeleton cards={4} rows={2} /> : null}
-        {!loading && error ? (
-          <InlineErrorState
-            title="Lab workspace unavailable"
-            description={error}
-            onRetry={() => void fetchJobs()}
-          />
-        ) : null}
+        <FilterSearchStrip
+          filters={
+            <Select value={bucketFilter} onChange={(event) => setBucketFilter(event.target.value)} maxW="240px" size="sm">
+              <option value="all">All buckets</option>
+              <option value="pending samples">Pending Samples</option>
+              <option value="in testing">In Testing</option>
+              <option value="awaiting review">Awaiting Review</option>
+              <option value="completed">Completed</option>
+            </Select>
+          }
+          search={
+            <Input
+              size="sm"
+              placeholder="Search sample, lot, job, test type, assignee"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              maxW={{ base: "full", lg: "320px" }}
+            />
+          }
+          actions={<Button size="sm" variant="outline" onClick={() => { setSearch(""); setBucketFilter("all"); }}>Clear</Button>}
+        />
 
+        {loading ? <PageSkeleton cards={3} rows={2} /> : null}
+        {!loading && error ? <InlineErrorState title="R&D queue unavailable" description={error} onRetry={() => void fetchJobs()} /> : null}
         {!loading && !error ? (
-          <>
-            <HStack spacing={3}>
-              <Button variant={activePanel === "overview" ? "solid" : "outline"} onClick={() => setActivePanel("overview")}>
-                Overview
-              </Button>
-              <Button variant={activePanel === "jobs" ? "solid" : "outline"} onClick={() => setActivePanel("jobs")}>
-                Jobs
-              </Button>
-            </HStack>
-
-            {activePanel === "overview" ? (
-            <VStack align="stretch" spacing={5}>
-            <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={4}>
-              <Card>
-                <Text fontSize="sm" color="text.secondary">Active lab reviews</Text>
-                <Text fontSize="3xl" fontWeight="bold" color="purple.600" mt={2}>{summary.activeLab}</Text>
-              </Card>
-              <Card>
-                <Text fontSize="sm" color="text.secondary">Ready for client documents</Text>
-                <Text fontSize="3xl" fontWeight="bold" color="teal.600" mt={2}>{summary.reportReady}</Text>
-              </Card>
-              <Card>
-                <Text fontSize="sm" color="text.secondary">Closed out</Text>
-                <Text fontSize="3xl" fontWeight="bold" color="green.600" mt={2}>{summary.completed}</Text>
-              </Card>
-            </SimpleGrid>
-
-            <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={5}>
-              <Box gridColumn={{ xl: "span 2" }}>
-                <Card>
-                  {focusJob ? (
-                    <Card bg="bg.rail">
-                      <Stack direction={{ base: "column", md: "row" }} justify="space-between" spacing={4}>
-                        <Box>
-                          <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                            Current analytical priority
-                          </Text>
-                          <Heading size="md" mt={1} color="text.primary">
-                            {focusJob.inspectionSerialNumber}
-                          </Heading>
-                          <Text color="text.secondary">{focusJob.clientName}</Text>
-                        </Box>
-                        <VStack align={{ base: "stretch", md: "end" }} spacing={2}>
-                          <Badge colorScheme={getJobWorkflowPresentation(focusJob).tone} borderRadius="full" px={3} py={1}>
-                            {getJobWorkflowPresentation(focusJob).label}
-                          </Badge>
-                          <Button minH="48px" onClick={() => router.push(`/userrd/job/${focusJob.id}`)}>
-                            {getJobWorkflowPresentation(focusJob).nextAction}
-                          </Button>
-                        </VStack>
-                      </Stack>
-                    </Card>
-                  ) : null}
-                </Card>
-              </Box>
-              <Card>
-                <VStack align="stretch" spacing={3}>
-                  <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                    Lab rules
-                  </Text>
-                  <SectionHint label="Jobs in queue" value={String(summary.total)} />
-                  <SectionHint label="Primary action" value={focusJob ? getJobWorkflowPresentation(focusJob).nextAction : "Create first job"} />
-                  <SectionHint label="Reports waiting" value={`${summary.reportReady} jobs`} />
-                </VStack>
-              </Card>
-            </SimpleGrid>
-            </VStack>
-            ) : null}
-
-            {activePanel === "jobs" && queue.length === 0 ? (
-              <EmptyWorkState
-                title="No lab jobs yet"
-                description="There is nothing ready for analysis in this workspace right now."
-                action={<Button minH="48px" onClick={() => router.push("/rd")}>Create first job</Button>}
-              />
-            ) : activePanel === "jobs" ? (
-              <VStack align="stretch" spacing={4}>
-                {pagedQueue.map((job) => {
-                  const presentation = getJobWorkflowPresentation(job);
-                  const lotProgress = summarizeLotProgress(job);
-                  const reports = job.reportSnapshots?.length ?? 0;
-                  const actionHref = presentation.stage === "reporting" ? "/reports" : `/userrd/job/${job.id}`;
-
-                  return (
-                    <Card key={job.id}>
-                      <VStack align="stretch" spacing={4}>
-                        <Stack direction={{ base: "column", xl: "row" }} spacing={5} justify="space-between">
-                          <Box>
-                            <HStack spacing={2} flexWrap="wrap">
-                              <Badge colorScheme="purple" borderRadius="full" px={3} py={1}>
-                                {job.inspectionSerialNumber || job.jobReferenceNumber}
-                              </Badge>
-                              <Badge colorScheme={presentation.tone} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                                {presentation.label}
-                              </Badge>
-                            </HStack>
-                            <Heading size="md" mt={3} color="text.primary">
-                              {job.clientName}
-                            </Heading>
-                            <Text fontSize="sm" color="text.secondary" mt={1}>
-                              {job.commodity}
-                            </Text>
-                          </Box>
-                          <VStack align={{ base: "stretch", xl: "end" }} spacing={2}>
-                            <Button
-                              minH="48px"
-                              leftIcon={presentation.stage === "reporting" ? <FileDown size={16} /> : undefined}
-                              onClick={() => router.push(actionHref)}
-                            >
-                              {presentation.stage === "reporting" ? "Open reports" : presentation.nextAction}
-                            </Button>
-                            <Button minH="48px" variant="outline" onClick={() => router.push(`/userrd/job/${job.id}`)}>
-                              Open job
-                            </Button>
-                            {canArchive ? (
-                              <Button
-                                minH="48px"
-                                variant="outline"
-                                colorScheme="red"
-                                isLoading={archivingJobId === job.id}
-                                loadingText="Archiving"
-                                onClick={() => void handleArchive(job.id)}
-                              >
-                                Archive
-                              </Button>
-                            ) : null}
-                          </VStack>
-                        </Stack>
-
-                        <WorkflowStepTracker
-                          title="Job flow"
-                          steps={buildWorkflowSteps(job).map((step) => ({
-                            ...step,
-                            onClick: () => router.push(getWorkflowStepRoute(job.id, step.id)),
-                          }))}
-                          compact
-                        />
-
-                        <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Lots sampled</Text>
-                            <Text fontSize="2xl" fontWeight="bold" color="purple.600" mt={1}>{lotProgress.completed}</Text>
-                          </Box>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Active lots</Text>
-                            <Text fontSize="2xl" fontWeight="bold" color="orange.600" mt={1}>{lotProgress.inProgress}</Text>
-                          </Box>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Snapshots</Text>
-                            <Text fontSize="2xl" fontWeight="bold" color="teal.600" mt={1}>{reports}</Text>
-                          </Box>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Updated</Text>
-                            <Text fontSize="sm" fontWeight="semibold" color="text.primary" mt={1}>{formatDate(job.updatedAt)}</Text>
-                          </Box>
-                        </SimpleGrid>
-                      </VStack>
-                    </Card>
-                  );
-                })}
-                {queue.length > jobsPerPage ? (
-                  <HStack justify="flex-end" spacing={3}>
-                    <Button size="sm" variant="outline" onClick={() => setJobsPage((current) => Math.max(1, current - 1))} isDisabled={jobsPage <= 1}>
-                      Prev
-                    </Button>
-                    <Text fontSize="xs" color="text.secondary">
-                      {jobsPage}/{jobsPageCount}
-                    </Text>
-                    <Button size="sm" variant="outline" onClick={() => setJobsPage((current) => Math.min(jobsPageCount, current + 1))} isDisabled={jobsPage >= jobsPageCount}>
-                      Next
-                    </Button>
-                  </HStack>
-                ) : null}
+          <VStack align="stretch" spacing={5}>
+            {[
+              { id: "pending", label: "Pending samples", rows: queueSections.pendingSamples },
+              { id: "in-testing", label: "In-progress tests", rows: queueSections.inProgressTests },
+              { id: "awaiting-review", label: "Awaiting Review", rows: queueSections.awaitingReview },
+              { id: "overdue", label: "Overdue testing items", rows: queueSections.overdueTesting },
+            ].map((section) => (
+              <VStack key={section.id} align="stretch" spacing={2}>
+                <HStack justify="space-between">
+                  <Text fontWeight="semibold">{section.label}</Text>
+                  <Badge colorScheme={section.id === "overdue" ? "red" : "gray"} variant="subtle">{section.rows.length}</Badge>
+                </HStack>
+                <EnterpriseStickyTable>
+                  <Box p={3}>
+                    <EnterpriseDataTable
+                      rows={section.rows}
+                      rowKey={(row) => `${section.id}-${row.id}`}
+                      emptyLabel={`No rows in ${section.label}.`}
+                      columns={[
+                        { id: "sample-id", header: "Sample ID", render: (row) => row.sampleId },
+                        { id: "lot-id", header: "Lot Number", render: (row) => row.lotId },
+                        { id: "job-id", header: "Job Number", render: (row) => row.jobId },
+                        { id: "received-date", header: "Received Date", render: (row) => row.receivedDate },
+                        { id: "test-type", header: "Test type", render: (row) => row.testType },
+                        { id: "priority", header: "Priority", render: (row) => <Badge colorScheme={colorForPriority(row.priority)} variant="subtle">{row.priority}</Badge> },
+                        { id: "assigned-user", header: "Assigned user", render: (row) => row.assignedUser },
+                        { id: "due-status", header: "Due status", render: (row) => <Badge colorScheme={colorForDue(row.dueStatus)} variant="subtle">{row.dueStatus}</Badge> },
+                      ]}
+                      rowActions={[
+                        {
+                          id: "open-testing-board",
+                          label: "Open Sample Testing Board",
+                          onClick: (row) => router.push(`/userrd/job/${row.jobRefId}`),
+                        },
+                        {
+                          id: "open-lot-packet",
+                          label: "Open Packet Mapping",
+                          onClick: (row) => router.push(`/operations/job/${row.jobRefId}/lot/${row.lotRefId}/packet`),
+                        },
+                        {
+                          id: "open-traceability",
+                          label: "Open Traceability",
+                          onClick: (row) => router.push(`/traceability/lot/${row.lotRefId}`),
+                        },
+                      ]}
+                    />
+                  </Box>
+                </EnterpriseStickyTable>
               </VStack>
+            ))}
+            {filteredRows.length === 0 ? (
+              <EmptyWorkState title="No R&D rows found" description="Try a different filter or search term." />
             ) : null}
-          </>
+          </VStack>
         ) : null}
       </VStack>
     </ControlTowerLayout>

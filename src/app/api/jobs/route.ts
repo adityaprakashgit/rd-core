@@ -115,6 +115,8 @@ export async function POST(request: Request) {
     }
 
     const payload = body as {
+      clientId?: unknown;
+      itemId?: unknown;
       clientName?: unknown;
       sourceName?: unknown;
       commodity?: unknown;
@@ -123,6 +125,7 @@ export async function POST(request: Request) {
       userId?: unknown;
       plantLocation?: unknown;
       sourceLocation?: unknown;
+      deadline?: unknown;
       materialType?: unknown;
       overrideDuplicate?: unknown;
       overrideReason?: unknown;
@@ -132,6 +135,9 @@ export async function POST(request: Request) {
     const materialCategory = typeof payload.materialCategory === "string" ? payload.materialCategory : payload.commodity;
     const sourceLocation = typeof payload.sourceLocation === "string" ? payload.sourceLocation : payload.plantLocation;
     const materialType = normalizeMaterialType(payload.materialType);
+    const clientId = normalizeText(payload.clientId);
+    const itemId = normalizeText(payload.itemId);
+    const deadline = normalizeText(payload.deadline);
     const overrideDuplicate = payload.overrideDuplicate === true;
     const overrideReason = normalizeText(payload.overrideReason);
 
@@ -232,6 +238,11 @@ export async function POST(request: Request) {
       authorize(currentUser, "OVERRIDE_DUPLICATE_JOB");
     }
 
+    const deadlineDate = deadline ? new Date(deadline) : null;
+    if (deadline && (!deadlineDate || Number.isNaN(deadlineDate.getTime()))) {
+      return jsonError("Validation Error", "deadline must be a valid date.", 400);
+    }
+
     const { generateInspectionSerial } = await import("@/lib/serial");
     const serial = await generateInspectionSerial();
 
@@ -243,6 +254,9 @@ export async function POST(request: Request) {
           assignedToId: currentUser.id,
           assignedById: currentUser.id,
           assignedAt: new Date(),
+          clientId,
+          itemId,
+          deadline: deadlineDate,
           clientName: normalizedSourceName,
           commodity: normalizedMaterialCategory,
           plantLocation: normalizedSourceLocation

@@ -52,7 +52,7 @@ function sanitizeSegment(value: string | null | undefined) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 12);
+    .slice(0, 20);
 }
 
 export function buildPacketCode(
@@ -107,10 +107,7 @@ export function hasPacketDetails(packet: PacketRecord | null | undefined) {
 export function hasPacketSealAndLabel(sealLabel: PacketSealLabelRecord | null | undefined) {
   return Boolean(
     sealLabel?.sealNo &&
-      sealLabel.labelText &&
-      sealLabel.labelCode &&
-      sealLabel.sealedAt &&
-      sealLabel.labeledAt,
+      sealLabel.sealedAt,
   );
 }
 
@@ -141,7 +138,7 @@ export function getPacketReadiness(packet: PacketRecord | null | undefined) {
   }
 
   if (!hasPacketSealAndLabel(packet.sealLabel)) {
-    missing.push("Complete seal and label traceability");
+    missing.push("Add seal no.");
   }
 
   return {

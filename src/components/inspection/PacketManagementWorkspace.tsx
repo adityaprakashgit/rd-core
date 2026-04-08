@@ -30,9 +30,12 @@ import {
   CheckCircle2,
   PackageCheck,
   ScanLine,
+  Trash2,
 } from "lucide-react";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint, TopErrorBanner } from "@/components/enterprise/AsyncState";
+import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
+import { DetailTabsLayout, ExceptionBanner, HistoryTimeline, LinkedRecordsPanel } from "@/components/enterprise/EnterprisePatterns";
 import { MobileActionRail, WorkbenchPageTemplate } from "@/components/enterprise/PageTemplates";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
@@ -71,7 +74,6 @@ type PacketDraft = {
   remarks: string;
   sealNo: string;
   labelText: string;
-  labelCode: string;
 };
 
 type MediaConfig = {
@@ -109,6 +111,14 @@ const mediaConfigs: MediaConfig[] = [
 ];
 
 const packetUnitOptions = ["g", "kg", "ml", "l", "pcs"];
+
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) {
+    return "—";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
 
 function getPacketStatusColor(status: string) {
   switch (status) {
@@ -151,17 +161,71 @@ function buildWorkflowSteps(sample: SampleRecord | null, packets: PacketRecord[]
   ];
 }
 
-function buildDraft(packet: PacketRecord): PacketDraft {
+function buildDraft(packet: PacketRecord, sampleUnit?: string | null): PacketDraft {
   return {
     packetType: packet.packetType ?? "",
     packetQuantity:
       packet.packetQuantity !== null && packet.packetQuantity !== undefined ? String(packet.packetQuantity) : "",
-    packetUnit: packet.packetUnit ?? "",
+    packetUnit: packet.packetUnit ?? sampleUnit ?? "",
     remarks: packet.remarks ?? "",
     sealNo: packet.sealLabel?.sealNo ?? "",
     labelText: packet.sealLabel?.labelText ?? "",
-    labelCode: packet.sealLabel?.labelCode ?? packet.packetCode,
   };
+}
+
+function formatDraftQuantity(value: number) {
+  const normalized = Number(value.toFixed(4));
+  return Number.isInteger(normalized) ? String(normalized) : String(normalized).replace(/(\.\d*?[1-9])0+$/u, "$1").replace(/\.0+$/u, "");
+}
+
+function applyLastPacketRemainingWeight(
+  draftMap: Record<string, PacketDraft>,
+  packets: PacketRecord[],
+  totalQuantity: number,
+  sampleUnit: string | null | undefined,
+) {
+  if (totalQuantity <= 0 || packets.length < 2) {
+    return draftMap;
+  }
+
+  const orderedPackets = [...packets].sort((left, right) => left.packetNo - right.packetNo);
+  const lastPacket = orderedPackets.at(-1);
+  if (!lastPacket) {
+    return draftMap;
+  }
+
+  const othersTotal = orderedPackets
+    .slice(0, -1)
+    .reduce((sum, packet) => sum + Math.max(Number(draftMap[packet.id]?.packetQuantity || 0) || 0, 0), 0);
+  const remaining = Math.max(totalQuantity - othersTotal, 0);
+
+  return {
+    ...draftMap,
+    [lastPacket.id]: {
+      ...(draftMap[lastPacket.id] ?? buildDraft(lastPacket, sampleUnit)),
+      packetQuantity: formatDraftQuantity(remaining),
+      packetUnit: draftMap[lastPacket.id]?.packetUnit || sampleUnit || "",
+    },
+  };
+}
+
+function buildEqualWeightPlan(count: number, totalQuantity: number, sampleUnit: string | null | undefined) {
+  if (count <= 0 || totalQuantity <= 0) {
+    return [];
+  }
+
+  const baseShare = Number((totalQuantity / count).toFixed(4));
+  let allocated = 0;
+
+  return Array.from({ length: count }, (_, index) => {
+    const isLast = index === count - 1;
+    const packetQuantity = isLast ? Number((totalQuantity - allocated).toFixed(4)) : baseShare;
+    allocated += packetQuantity;
+    return {
+      packetQuantity,
+      packetUnit: sampleUnit ?? "",
+    };
+  });
 }
 
 export function PacketManagementWorkspace() {
@@ -181,7 +245,10 @@ export function PacketManagementWorkspace() {
   const [creating, setCreating] = useState(false);
   const [savingPacketId, setSavingPacketId] = useState<string | null>(null);
   const [readyPacketId, setReadyPacketId] = useState<string | null>(null);
+  const [deletingPacketId, setDeletingPacketId] = useState<string | null>(null);
+  const [generatingSealPacketId, setGeneratingSealPacketId] = useState<string | null>(null);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [selectedPacketId, setSelectedPacketId] = useState<string | null>(null);
 
   const fileInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -233,12 +300,21 @@ export function PacketManagementWorkspace() {
   }, [fetchData]);
 
   useEffect(() => {
-    setDrafts((current) => {
+    setDrafts(() => {
       const next: Record<string, PacketDraft> = {};
       for (const packet of packets) {
-        next[packet.id] = current[packet.id] ?? buildDraft(packet);
+        next[packet.id] = buildDraft(packet, sample?.sampleUnit);
       }
-      return next;
+      return applyLastPacketRemainingWeight(next, packets, sample?.sampleQuantity ?? 0, sample?.sampleUnit);
+    });
+  }, [packets, sample?.sampleQuantity, sample?.sampleUnit]);
+
+  useEffect(() => {
+    setSelectedPacketId((current) => {
+      if (current && packets.some((packet) => packet.id === current)) {
+        return current;
+      }
+      return packets[0]?.id ?? null;
     });
   }, [packets]);
 
@@ -249,7 +325,96 @@ export function PacketManagementWorkspace() {
   const progressValue = totalQuantity > 0 ? Math.min((allocatedQuantity / totalQuantity) * 100, 100) : 0;
   const readyPackets = useMemo(() => packets.filter((packet) => packet.packetStatus === "AVAILABLE"), [packets]);
   const lot = payload?.lot ?? null;
+  const lotNumber = lot?.lotNumber ?? "—";
+  const selectedPacket = packets.find((packet) => packet.id === selectedPacketId) ?? packets[0] ?? null;
+  const selectedPacketReadiness = selectedPacket ? getPacketReadiness(selectedPacket) : null;
   const sampleReady = deriveSampleStatus(sample) === "READY_FOR_PACKETING";
+  const hasLinkedCoa = ["REPORT_READY", "LOCKED", "COMPLETED", "DISPATCHED"].includes(lot?.job.status ?? "");
+  const hasDispatchArtifact = ["COMPLETED", "DISPATCHED"].includes(lot?.job.status ?? "");
+  const autoBalancedPacketId = useMemo(() => {
+    if (totalQuantity <= 0 || packets.length < 2) {
+      return null;
+    }
+    return [...packets].sort((left, right) => left.packetNo - right.packetNo).at(-1)?.id ?? null;
+  }, [packets, totalQuantity]);
+  const dispatchBlockers = useMemo(() => {
+    const blockers: Array<{
+      id: string;
+      title: string;
+      description: string;
+      actionLabel: string;
+      actionHref: string;
+    }> = [];
+
+    if (!hasLinkedCoa) {
+      blockers.push({
+        id: "missing-coa",
+        title: "Missing COA",
+        description: "Certificate of Analysis is not available for this lot yet.",
+        actionLabel: "Open Documents",
+        actionHref: `/documents?job=${jobId}&lot=${lotNumber}`,
+      });
+    }
+
+    if (!hasDispatchArtifact) {
+      blockers.push({
+        id: "missing-dispatch-doc",
+        title: "Missing dispatch document artifact",
+        description: "Dispatch document artifact is not available in the current job stage.",
+        actionLabel: "View PDF",
+        actionHref: `/reports?jobId=${jobId}`,
+      });
+    }
+
+    if (selectedPacketReadiness && !selectedPacketReadiness.isReady) {
+      blockers.push({
+        id: "packet-proof",
+        title: "Incomplete required packet evidence",
+        description: selectedPacketReadiness.missing.length
+          ? selectedPacketReadiness.missing.map((item) => item.replaceAll("_", " ")).join(", ")
+          : "Packet readiness checks are still pending.",
+        actionLabel: "Open Packet Detail",
+        actionHref: pathname,
+      });
+    }
+
+    if (readyPackets.length === 0) {
+      blockers.push({
+        id: "stage-not-ready",
+        title: "Stage not ready",
+        description: "No packet is marked AVAILABLE for downstream dispatch preparation.",
+        actionLabel: "Open Traceability",
+        actionHref: `/traceability/lot/${lotId}`,
+      });
+    }
+
+    return blockers;
+  }, [hasDispatchArtifact, hasLinkedCoa, jobId, lotId, lotNumber, pathname, readyPackets.length, selectedPacketReadiness]);
+
+  const updateDraft = useCallback(
+    (packetId: string, patch: Partial<PacketDraft>) => {
+      const packet = packets.find((currentPacket) => currentPacket.id === packetId);
+      if (!packet) {
+        return;
+      }
+
+      setDrafts((current) =>
+        applyLastPacketRemainingWeight(
+          {
+            ...current,
+            [packetId]: {
+              ...(current[packetId] ?? buildDraft(packet, sample?.sampleUnit)),
+              ...patch,
+            },
+          },
+          packets,
+          totalQuantity,
+          sample?.sampleUnit,
+        ),
+      );
+    },
+    [packets, sample?.sampleUnit, totalQuantity],
+  );
 
   const updatePacket = useCallback(
     async (body: Record<string, unknown>) => {
@@ -271,7 +436,7 @@ export function PacketManagementWorkspace() {
     [],
   );
 
-  const handleCreatePackets = useCallback(async () => {
+  const handleCreatePackets = useCallback(async (mode: "manual" | "equal" = "manual") => {
     if (!sample?.id) {
       return;
     }
@@ -281,13 +446,22 @@ export function PacketManagementWorkspace() {
       setSurfaceError("Packet count must be a positive whole number.");
       return;
     }
+    if (mode === "equal" && totalQuantity <= 0) {
+      setSurfaceError("Equal split requires a tracked sample quantity.");
+      return;
+    }
 
     setCreating(true);
     try {
+      const equalPlan = mode === "equal" ? buildEqualWeightPlan(count, totalQuantity, sample.sampleUnit) : [];
       const res = await fetch("/api/rd/packet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleId: sample.id, count }),
+        body: JSON.stringify({
+          sampleId: sample.id,
+          count,
+          ...(mode === "equal" ? { packets: equalPlan } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -298,7 +472,7 @@ export function PacketManagementWorkspace() {
       const nextPackets = (await res.json()) as PacketRecord[];
       setPackets(nextPackets);
       setSurfaceError(null);
-      toast({ title: "Packet cards created", status: "success" });
+      toast({ title: mode === "equal" ? "Equal packet plan created" : "Packet cards created", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create packets.";
       setSurfaceError(message);
@@ -306,7 +480,41 @@ export function PacketManagementWorkspace() {
     } finally {
       setCreating(false);
     }
-  }, [packetCount, sample?.id, toast]);
+  }, [packetCount, sample, toast, totalQuantity]);
+
+  const handleDeletePacket = useCallback(
+    async (packetId: string) => {
+      setDeletingPacketId(packetId);
+      try {
+        const res = await fetch("/api/rd/packet", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ packetId }),
+        });
+
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as { details?: string } | null;
+          throw new Error(payload?.details ?? "Unable to delete packet.");
+        }
+
+        setPackets((current) => current.filter((packet) => packet.id !== packetId));
+        setDrafts((current) => {
+          const next = { ...current };
+          delete next[packetId];
+          return applyLastPacketRemainingWeight(next, packets.filter((packet) => packet.id !== packetId), totalQuantity, sample?.sampleUnit);
+        });
+        setSurfaceError(null);
+        toast({ title: "Packet deleted", status: "success" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to delete packet.";
+        setSurfaceError(message);
+        toast({ title: "Delete failed", description: message, status: "error" });
+      } finally {
+        setDeletingPacketId(null);
+      }
+    },
+    [packets, sample?.sampleUnit, toast, totalQuantity],
+  );
 
   const handleSaveDetails = useCallback(
     async (packetId: string) => {
@@ -315,9 +523,8 @@ export function PacketManagementWorkspace() {
         return;
       }
 
-      const hasCompleteSealDraft = Boolean(
-        draft.sealNo.trim() && draft.labelText.trim() && draft.labelCode.trim(),
-      );
+      const hasSealNo = Boolean(draft.sealNo.trim());
+      const hasLabelText = Boolean(draft.labelText.trim());
 
       setSavingPacketId(packetId);
       try {
@@ -325,12 +532,12 @@ export function PacketManagementWorkspace() {
           packetId,
           packetType: draft.packetType,
           packetQuantity: draft.packetQuantity,
-          packetUnit: draft.packetUnit,
+          packetUnit: draft.packetUnit || sample?.sampleUnit || "",
           remarks: draft.remarks,
           sealNo: draft.sealNo,
           labelText: draft.labelText,
-          labelCode: draft.labelCode,
-          ...(hasCompleteSealDraft ? { markLabeled: true, markSealed: true } : {}),
+          ...(hasLabelText ? { markLabeled: true } : {}),
+          ...(hasSealNo ? { markSealed: true } : {}),
         });
         setSurfaceError(null);
         toast({ title: "Packet card saved", status: "success" });
@@ -342,7 +549,7 @@ export function PacketManagementWorkspace() {
         setSavingPacketId(null);
       }
     },
-    [drafts, toast, updatePacket],
+    [drafts, sample?.sampleUnit, toast, updatePacket],
   );
 
   const handleMarkReady = useCallback(
@@ -352,19 +559,21 @@ export function PacketManagementWorkspace() {
         return;
       }
 
+      const hasSealNo = Boolean(draft.sealNo.trim());
+      const hasLabelText = Boolean(draft.labelText.trim());
+
       setReadyPacketId(packetId);
       try {
         await updatePacket({
           packetId,
           packetType: draft.packetType,
           packetQuantity: draft.packetQuantity,
-          packetUnit: draft.packetUnit,
+          packetUnit: draft.packetUnit || sample?.sampleUnit || "",
           remarks: draft.remarks,
           sealNo: draft.sealNo,
           labelText: draft.labelText,
-          labelCode: draft.labelCode,
-          markLabeled: true,
-          markSealed: true,
+          ...(hasLabelText ? { markLabeled: true } : {}),
+          ...(hasSealNo ? { markSealed: true } : {}),
           markAvailable: true,
         });
         setSurfaceError(null);
@@ -377,7 +586,41 @@ export function PacketManagementWorkspace() {
         setReadyPacketId(null);
       }
     },
-    [drafts, toast, updatePacket],
+    [drafts, sample?.sampleUnit, toast, updatePacket],
+  );
+
+  const handleGenerateSeal = useCallback(
+    async (packetId: string) => {
+      setGeneratingSealPacketId(packetId);
+      try {
+        const res = await fetch("/api/seal/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as { details?: string } | null;
+          throw new Error(payload?.details ?? "Unable to generate seal.");
+        }
+
+        const data = (await res.json()) as { sealNumber?: string };
+        if (!data.sealNumber) {
+          throw new Error("Seal generation failed.");
+        }
+
+        updateDraft(packetId, { sealNo: data.sealNumber });
+        setSurfaceError(null);
+        toast({ title: "Seal number generated", status: "success" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to generate seal.";
+        setSurfaceError(message);
+        toast({ title: "Generation failed", description: message, status: "error" });
+      } finally {
+        setGeneratingSealPacketId(null);
+      }
+    },
+    [jobId, toast, updateDraft],
   );
 
   const handleMediaUpload = useCallback(
@@ -455,7 +698,7 @@ export function PacketManagementWorkspace() {
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
+      <VStack align="stretch" spacing={6}>
         {surfaceError ? (
           <TopErrorBanner title="Action blocked" description={surfaceError} onDismiss={() => setSurfaceError(null)} />
         ) : null}
@@ -545,6 +788,186 @@ export function PacketManagementWorkspace() {
           </CardBody>
         </Card>
 
+        <Card variant="outline" borderRadius="2xl">
+          <CardBody p={5}>
+            <VStack align="stretch" spacing={4}>
+              <HStack justify="space-between">
+                <Heading size="sm">Packet List</Heading>
+                <Badge colorScheme="gray" variant="subtle">{packets.length} packets</Badge>
+              </HStack>
+              <EnterpriseDataTable
+                rows={packets}
+                rowKey={(row) => row.id}
+                emptyLabel="No packets available."
+                columns={[
+                  { id: "packet-id", header: "Packet ID", render: (row) => row.packetCode },
+                  { id: "linked-lot", header: "Linked lot", render: (row) => row.lot?.lotNumber ?? lot.lotNumber },
+                  { id: "quantity", header: "Quantity", render: (row) => `${row.packetQuantity ?? "—"} ${row.packetUnit ?? ""}` },
+                  { id: "status", header: "Status", render: (row) => <Badge colorScheme={getPacketStatusColor(row.packetStatus)} variant="subtle">{row.packetStatus.replaceAll("_", " ")}</Badge> },
+                  { id: "storage-dispatch", header: "Storage / dispatch state", render: (row) => row.allocation?.allocationStatus ?? "BLOCKED" },
+                  {
+                    id: "coa",
+                    header: "Linked COA",
+                    render: () => (
+                      <Badge colorScheme={hasLinkedCoa ? "green" : "gray"} variant="subtle">
+                        {hasLinkedCoa ? "COA Available" : "Not Available"}
+                      </Badge>
+                    ),
+                  },
+                  {
+                    id: "dispatch-docs",
+                    header: "Linked dispatch documents",
+                    render: () => (
+                      <Button size="xs" variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>
+                        View PDF
+                      </Button>
+                    ),
+                  },
+                ]}
+                rowActions={[
+                  { id: "select", label: "Open Packet Detail", onClick: (row) => setSelectedPacketId(row.id) },
+                  { id: "lot-map", label: "Packet-to-Lot Mapping", onClick: (row) => router.push(`/operations/job/${jobId}/lot/${row.lotId ?? lotId}`) },
+                  { id: "trace", label: "Open Traceability", onClick: (row) => router.push(`/traceability/lot/${row.lotId ?? lotId}`) },
+                ]}
+              />
+            </VStack>
+          </CardBody>
+        </Card>
+
+        <Card variant="outline" borderRadius="2xl">
+          <CardBody p={5}>
+            <VStack align="stretch" spacing={4}>
+              <HStack justify="space-between">
+                <Heading size="sm">Packet Detail</Heading>
+                {selectedPacket ? <Badge colorScheme="brand" variant="subtle">{selectedPacket.packetCode}</Badge> : null}
+              </HStack>
+              <DetailTabsLayout
+                tabs={[
+                  {
+                    id: "overview",
+                    label: "Overview",
+                    content: (
+                      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+                        <SectionHint label="Packet ID" value={selectedPacket?.packetCode ?? "Not Available"} />
+                        <SectionHint label="Quantity" value={selectedPacket ? `${selectedPacket.packetQuantity ?? "—"} ${selectedPacket.packetUnit ?? ""}` : "Not Available"} />
+                        <SectionHint label="Status" value={selectedPacket?.packetStatus.replaceAll("_", " ") ?? "Not Available"} />
+                      </SimpleGrid>
+                    ),
+                  },
+                  {
+                    id: "source-lot",
+                    label: "Source Lot",
+                    content: (
+                      <LinkedRecordsPanel
+                        items={[
+                          { label: "Job Number", value: jobId, href: `/userrd/job/${jobId}` },
+                          { label: "Lot Number", value: lot.lotNumber, href: pathname.replace(/\/packet$/, "") },
+                          { label: "Sample", value: sample.sampleCode || "Not Available" },
+                          { label: "Packet", value: selectedPacket?.packetCode ?? "Not Available" },
+                        ]}
+                      />
+                    ),
+                  },
+                  {
+                    id: "quality-summary",
+                    label: "Quality / Test Summary",
+                    content: (
+                      <VStack align="stretch" spacing={3}>
+                        <SectionHint label="Required checks" value={selectedPacketReadiness?.isReady ? "Completed" : "Pending"} />
+                        <SectionHint label="Missing checks" value={selectedPacketReadiness ? String(selectedPacketReadiness.missing.length) : "0"} />
+                        <SectionHint label="Allocation" value={selectedPacket?.allocation?.allocationStatus ?? "BLOCKED"} />
+                      </VStack>
+                    ),
+                  },
+                  {
+                    id: "documents",
+                    label: "Documents",
+                    content: (
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3}>
+                        <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>View PDF</Button>
+                        <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>Download Packing List PDF</Button>
+                        <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>Download Report PDF</Button>
+                        <Button variant="outline" onClick={() => router.push(`/traceability/lot/${lotId}`)}>Open Traceability</Button>
+                        <Badge alignSelf="start" colorScheme={hasLinkedCoa ? "green" : "gray"} variant="subtle">
+                          {hasLinkedCoa ? "Linked COA available" : "Linked COA Not Available"}
+                        </Badge>
+                      </SimpleGrid>
+                    ),
+                  },
+                  {
+                    id: "dispatch",
+                    label: "Dispatch",
+                    content: (
+                      <VStack align="stretch" spacing={3}>
+                        {dispatchBlockers.length === 0 ? (
+                          <SectionHint label="Dispatch readiness" value={`${readyPackets.length} packet(s) ready`} />
+                        ) : (
+                          <>
+                            <ExceptionBanner
+                              status="warning"
+                              title="Dispatch readiness blocked"
+                              description="Resolve all blockers before moving to dispatch."
+                            />
+                            {dispatchBlockers.map((blocker) => (
+                              <Card key={blocker.id} variant="outline">
+                                <CardBody p={4}>
+                                  <VStack align="stretch" spacing={2}>
+                                    <Text fontWeight="semibold">{blocker.title}</Text>
+                                    <Text fontSize="sm" color="text.secondary">{blocker.description}</Text>
+                                    <Button size="sm" variant="outline" alignSelf="start" onClick={() => router.push(blocker.actionHref)}>
+                                      {blocker.actionLabel}
+                                    </Button>
+                                  </VStack>
+                                </CardBody>
+                              </Card>
+                            ))}
+                          </>
+                        )}
+                      </VStack>
+                    ),
+                  },
+                  {
+                    id: "audit-trail",
+                    label: "Audit Trail",
+                    content: (
+                      <HistoryTimeline
+                        events={(selectedPacket?.events ?? []).map((event) => ({
+                          id: event.id,
+                          title: event.eventType.replaceAll("_", " "),
+                          subtitle: event.remarks ?? "Packet audit event",
+                          at: formatDate(event.eventTime),
+                        }))}
+                      />
+                    ),
+                  },
+                ]}
+                rightRail={
+                  <VStack align="stretch" spacing={3}>
+                    <LinkedRecordsPanel
+                      items={[
+                        { label: "Job Number", value: jobId, href: `/userrd/job/${jobId}` },
+                        { label: "Lot Number", value: lot.lotNumber, href: pathname.replace(/\/packet$/, "") },
+                        { label: "Current Step", value: lot.job.status.replaceAll("_", " ") },
+                        { label: "Sample", value: sample.sampleCode || "Not Available" },
+                        { label: "Packet", value: selectedPacket?.packetCode ?? "Not Available" },
+                        { label: "Traceability", value: "Open", href: `/traceability/lot/${lotId}` },
+                      ]}
+                    />
+                    <HistoryTimeline
+                      events={(selectedPacket?.events ?? []).slice(0, 5).map((event) => ({
+                        id: `rail-${event.id}`,
+                        title: event.eventType.replaceAll("_", " "),
+                        subtitle: event.remarks ?? "Packet audit event",
+                        at: formatDate(event.eventTime),
+                      }))}
+                    />
+                  </VStack>
+                }
+              />
+            </VStack>
+          </CardBody>
+        </Card>
+
         <WorkbenchPageTemplate
           rightLabel="Quantity & Readiness"
           left={
@@ -563,21 +986,30 @@ export function PacketManagementWorkspace() {
                         Split the homogeneous sample into draft packet cards, then complete each card before release.
                       </Text>
                     </Box>
-                    <HStack spacing={3}>
+                    <Stack direction={{ base: "column", md: "row" }} spacing={3} align="stretch">
                       <Input
                         type="number"
                         min={1}
                         max={50}
                         size="sm"
-                        w="92px"
+                        w={{ base: "full", md: "92px" }}
                         value={packetCount}
                         onChange={(event) => setPacketCount(event.target.value)}
                         isDisabled={!sampleReady}
                       />
-                      <Button colorScheme="purple" isLoading={creating} onClick={handleCreatePackets} isDisabled={!sampleReady}>
+                      <Button w={{ base: "full", md: "auto" }} colorScheme="purple" isLoading={creating} onClick={() => void handleCreatePackets("manual")} isDisabled={!sampleReady}>
                         Create packet cards
                       </Button>
-                    </HStack>
+                      <Button
+                        w={{ base: "full", md: "auto" }}
+                        variant="outline"
+                        isLoading={creating}
+                        onClick={() => void handleCreatePackets("equal")}
+                        isDisabled={!sampleReady || totalQuantity <= 0}
+                      >
+                        Create equal split
+                      </Button>
+                    </Stack>
                   </Stack>
                 </CardBody>
               </Card>
@@ -603,6 +1035,13 @@ export function PacketManagementWorkspace() {
                     <Card key={packet.id} variant="outline" borderRadius="2xl" borderColor={packet.packetStatus === "AVAILABLE" ? "green.200" : undefined}>
                       <CardBody p={6}>
                         <Stack spacing={5}>
+                          {draft.packetUnit && packet.packetUnit !== draft.packetUnit ? (
+                            <Box p={3} borderRadius="xl" bg="orange.50" border="1px solid" borderColor="orange.100">
+                              <Text fontSize="sm" color="orange.800">
+                                Unit will be saved as {draft.packetUnit}. Packet unit is inherited from the sample.
+                              </Text>
+                            </Box>
+                          ) : null}
                           <Stack direction={{ base: "column", md: "row" }} justify="space-between" align={{ base: "stretch", md: "start" }} spacing={3}>
                             <Box>
                               <HStack spacing={2} flexWrap="wrap">
@@ -615,6 +1054,21 @@ export function PacketManagementWorkspace() {
                                 <Badge colorScheme={packet.allocation?.allocationStatus === "AVAILABLE" ? "green" : "gray"} variant="subtle" borderRadius="full" px={3} py={1}>
                                   {packet.allocation?.allocationStatus ?? "BLOCKED"}
                                 </Badge>
+                                <Button
+                                  size="xs"
+                                  colorScheme="red"
+                                  variant="ghost"
+                                  leftIcon={<Trash2 size={12} />}
+                                  isLoading={deletingPacketId === packet.id}
+                                  onClick={() => void handleDeletePacket(packet.id)}
+                                  isDisabled={
+                                    packet.allocation?.allocationStatus === "RESERVED" ||
+                                    packet.allocation?.allocationStatus === "ALLOCATED" ||
+                                    packet.allocation?.allocationStatus === "USED"
+                                  }
+                                >
+                                  Delete
+                                </Button>
                               </HStack>
                               <Heading size="sm" mt={3} color="text.primary">
                                 {packet.packetCode}
@@ -657,12 +1111,7 @@ export function PacketManagementWorkspace() {
                               <FormLabel>Packet type</FormLabel>
                               <Select
                                 value={draft.packetType}
-                                onChange={(event) =>
-                                  setDrafts((current) => ({
-                                    ...current,
-                                    [packet.id]: { ...draft, packetType: event.target.value },
-                                  }))
-                                }
+                                onChange={(event) => updateDraft(packet.id, { packetType: event.target.value })}
                               >
                                 <option value="">Select packet type</option>
                                 {PACKET_TYPES.map((packetType) => (
@@ -675,37 +1124,46 @@ export function PacketManagementWorkspace() {
                             <SimpleGrid columns={2} spacing={3}>
                               <FormControl>
                                 <FormLabel>Quantity</FormLabel>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  value={draft.packetQuantity}
-                                  onChange={(event) =>
-                                    setDrafts((current) => ({
-                                      ...current,
-                                      [packet.id]: { ...draft, packetQuantity: event.target.value },
-                                    }))
-                                  }
-                                />
+                                <VStack align="stretch" spacing={1}>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={draft.packetQuantity}
+                                    onChange={(event) => updateDraft(packet.id, { packetQuantity: event.target.value })}
+                                    isDisabled={packet.id === autoBalancedPacketId}
+                                  />
+                                  {packet.id === autoBalancedPacketId && totalQuantity > 0 ? (
+                                    <Text fontSize="xs" color="text.secondary">
+                                      Auto-filled from remaining available weight.
+                                    </Text>
+                                  ) : null}
+                                </VStack>
                               </FormControl>
                               <FormControl>
                                 <FormLabel>Unit</FormLabel>
-                                <Select
-                                  value={draft.packetUnit}
-                                  onChange={(event) =>
-                                    setDrafts((current) => ({
-                                      ...current,
-                                      [packet.id]: { ...draft, packetUnit: event.target.value },
-                                    }))
-                                  }
-                                >
-                                  <option value="">Select unit</option>
-                                  {packetUnitOptions.map((unit) => (
-                                    <option key={unit} value={unit}>
-                                      {unit}
-                                    </option>
-                                  ))}
-                                </Select>
+                                <VStack align="stretch" spacing={1}>
+                                  {sample?.sampleUnit ? (
+                                    <Input value={sample.sampleUnit} isReadOnly />
+                                  ) : (
+                                    <Select
+                                      value={draft.packetUnit}
+                                      onChange={(event) => updateDraft(packet.id, { packetUnit: event.target.value })}
+                                    >
+                                      <option value="">Select unit</option>
+                                      {packetUnitOptions.map((unit) => (
+                                        <option key={unit} value={unit}>
+                                          {unit}
+                                        </option>
+                                      ))}
+                                    </Select>
+                                  )}
+                                  {sample?.sampleUnit ? (
+                                    <Text fontSize="xs" color="orange.700">
+                                      Unit is fixed from sample quantity as {sample.sampleUnit}. Equal split packets keep this unit locked.
+                                    </Text>
+                                  ) : null}
+                                </VStack>
                               </FormControl>
                             </SimpleGrid>
                           </SimpleGrid>
@@ -715,12 +1173,7 @@ export function PacketManagementWorkspace() {
                             <Textarea
                               rows={2}
                               value={draft.remarks}
-                              onChange={(event) =>
-                                setDrafts((current) => ({
-                                  ...current,
-                                  [packet.id]: { ...draft, remarks: event.target.value },
-                                }))
-                              }
+                              onChange={(event) => updateDraft(packet.id, { remarks: event.target.value })}
                               placeholder="Optional packet handling notes"
                             />
                           </FormControl>
@@ -756,43 +1209,28 @@ export function PacketManagementWorkspace() {
                                 <FormLabel>Label text</FormLabel>
                                 <Input
                                   value={draft.labelText}
-                                  onChange={(event) =>
-                                    setDrafts((current) => ({
-                                      ...current,
-                                      [packet.id]: { ...draft, labelText: event.target.value },
-                                    }))
-                                  }
+                                  onChange={(event) => updateDraft(packet.id, { labelText: event.target.value })}
                                   placeholder="Visible packet label"
                                 />
                               </FormControl>
-                              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3}>
-                                <FormControl>
-                                  <FormLabel>Label code</FormLabel>
-                                  <Input
-                                    value={draft.labelCode}
-                                    onChange={(event) =>
-                                      setDrafts((current) => ({
-                                        ...current,
-                                        [packet.id]: { ...draft, labelCode: event.target.value },
-                                      }))
-                                    }
-                                    placeholder="Machine-readable code"
-                                  />
-                                </FormControl>
-                                <FormControl>
-                                  <FormLabel>Seal number</FormLabel>
+                              <FormControl>
+                                <FormLabel>Seal no.</FormLabel>
+                                <HStack align="stretch">
                                   <Input
                                     value={draft.sealNo}
-                                    onChange={(event) =>
-                                      setDrafts((current) => ({
-                                        ...current,
-                                        [packet.id]: { ...draft, sealNo: event.target.value },
-                                      }))
-                                    }
-                                    placeholder="Seal reference"
+                                    onChange={(event) => updateDraft(packet.id, { sealNo: event.target.value })}
+                                    placeholder="Auto-generate or enter seal number"
                                   />
-                                </FormControl>
-                              </SimpleGrid>
+                                  <Button
+                                    variant="outline"
+                                    leftIcon={<ScanLine size={14} />}
+                                    isLoading={generatingSealPacketId === packet.id}
+                                    onClick={() => void handleGenerateSeal(packet.id)}
+                                  >
+                                    Auto
+                                  </Button>
+                                </HStack>
+                              </FormControl>
                             </VStack>
 
                             <VStack align="stretch" spacing={4}>
@@ -825,10 +1263,31 @@ export function PacketManagementWorkspace() {
                                         variant={media?.fileUrl ? "outline" : "solid"}
                                         leftIcon={<Camera size={14} />}
                                         isLoading={uploadingKey === inputKey}
-                                        onClick={() => fileInputsRef.current[inputKey]?.click()}
+                                        onClick={() => fileInputsRef.current[`${inputKey}:camera`]?.click()}
                                       >
-                                        {media?.fileUrl ? "Replace" : "Add photo"}
+                                        {media?.fileUrl ? "Retake photo" : "Capture photo"}
                                       </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        isLoading={uploadingKey === inputKey}
+                                        onClick={() => fileInputsRef.current[`${inputKey}:device`]?.click()}
+                                      >
+                                        {media?.fileUrl ? "Replace from device" : "Upload from device"}
+                                      </Button>
+                                      {media?.fileUrl ? (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => {
+                                            if (typeof window !== "undefined") {
+                                              window.open(media.fileUrl, "_blank", "noopener,noreferrer");
+                                            }
+                                          }}
+                                        >
+                                          View photo
+                                        </Button>
+                                      ) : null}
                                     </HStack>
 
                                     {media?.fileUrl ? (
@@ -838,9 +1297,25 @@ export function PacketManagementWorkspace() {
                                     <input
                                       type="file"
                                       accept="image/*"
+                                      capture="environment"
                                       style={{ display: "none" }}
                                       ref={(node) => {
-                                        fileInputsRef.current[inputKey] = node;
+                                        fileInputsRef.current[`${inputKey}:camera`] = node;
+                                      }}
+                                      onChange={(event) => {
+                                        const file = event.target.files?.[0];
+                                        if (file) {
+                                          void handleMediaUpload(packet.id, config, file);
+                                        }
+                                        event.currentTarget.value = "";
+                                      }}
+                                    />
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      style={{ display: "none" }}
+                                      ref={(node) => {
+                                        fileInputsRef.current[`${inputKey}:device`] = node;
                                       }}
                                       onChange={(event) => {
                                         const file = event.target.files?.[0];
@@ -861,6 +1336,11 @@ export function PacketManagementWorkspace() {
                               <Text fontSize="sm" fontWeight="semibold" color="orange.800">
                                 Missing before availability
                               </Text>
+                              {packet.id === autoBalancedPacketId && totalQuantity > 0 ? (
+                                <Text fontSize="xs" color="orange.700" mt={1}>
+                                  Last packet quantity is auto-balanced from the remaining sample weight.
+                                </Text>
+                              ) : null}
                               <VStack align="stretch" spacing={1} mt={2}>
                                 {readiness.missing.map((item) => (
                                   <Text key={item} fontSize="sm" color="orange.700">
@@ -927,8 +1407,11 @@ export function PacketManagementWorkspace() {
           <Button variant="outline" onClick={() => router.push(pathname.replace(/\/packet$/, ""))}>
             Back
           </Button>
-          <Button colorScheme="purple" isLoading={creating} onClick={handleCreatePackets} isDisabled={!sampleReady}>
+          <Button colorScheme="purple" isLoading={creating} onClick={() => void handleCreatePackets("manual")} isDisabled={!sampleReady}>
             Create cards
+          </Button>
+          <Button variant="outline" isLoading={creating} onClick={() => void handleCreatePackets("equal")} isDisabled={!sampleReady || totalQuantity <= 0}>
+            Equal split
           </Button>
           <Button colorScheme="green" onClick={() => router.push(`/userrd/job/${jobId}`)}>
             Trials

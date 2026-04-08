@@ -11,6 +11,7 @@ import {
   LEGACY_DEFAULT_INSPECTION_ITEM_KEYS,
 } from "@/lib/inspection-checklist";
 import { getIssueDraftValidationErrors } from "@/lib/inspection-workspace";
+import { buildModuleWorkflowSettingsCreate, canApproveFinalDecision, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { getCurrentUserFromRequest } from "@/lib/session";
@@ -38,6 +39,16 @@ const inspectionInclude = {
     orderBy: { createdAt: "asc" },
   },
 } as const;
+
+const imageCategoryMap: Record<string, string> = {
+  "Bag photo with visible LOT no": "BAG_WITH_LOT_NO",
+  "Material in bag": "MATERIAL_VISIBLE",
+  "During Sampling Photo": "SAMPLING_IN_PROGRESS",
+  "Sample Completion": "SEALED_BAG",
+  "Seal on bag": "SEAL_CLOSEUP",
+  "Bag condition": "BAG_CONDITION",
+  "Whole Job bag palletized and packed": "LOT_OVERVIEW",
+};
 
 function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
@@ -92,6 +103,11 @@ async function getLotScope(tx: PrismaLike, lotId: string, companyId: string) {
       bagPhotoUrl: true,
       samplingPhotoUrl: true,
       sealPhotoUrl: true,
+      mediaFiles: {
+        select: {
+          category: true,
+        },
+      },
       createdAt: true,
       updatedAt: true,
       job: {
@@ -144,6 +160,15 @@ async function buildInspectionPayload(tx: PrismaLike, lotId: string, companyId: 
     assessment,
     suggestedIssueCategories,
   };
+}
+
+async function getWorkflowPolicy(tx: PrismaLike, companyId: string) {
+  const settings = await tx.moduleWorkflowSettings.upsert({
+    where: { companyId },
+    update: {},
+    create: buildModuleWorkflowSettingsCreate(companyId),
+  });
+  return toModuleWorkflowPolicy(settings);
 }
 
 function normalizeDecisionStatus(value: unknown): InspectionDecisionStatus | undefined {
@@ -327,9 +352,26 @@ export async function PATCH(request: NextRequest) {
     const overallRemarkProvided = Object.prototype.hasOwnProperty.call(body ?? {}, "overallRemark");
 
     const payload = await prisma.$transaction(async (tx) => {
+      const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
       const lot = await getLotScope(tx, lotId, currentUser.companyId);
       if (lot.job.status === "LOCKED") {
         throw new Error("JOB_LOCKED");
+      }
+      if (decisionStatus && decisionStatus !== "PENDING" && !canApproveFinalDecision(currentUser.role, workflowPolicy.workflow.finalDecisionApproverPolicy)) {
+        throw new Error("DECISION_APPROVER_REQUIRED");
+      }
+      if ((decisionStatus === "ON_HOLD" || decisionStatus === "REJECTED") && !overallRemark) {
+        throw new Error("DECISION_NOTE_REQUIRED");
+      }
+      if (decisionStatus) {
+        const capturedCategories = new Set((lot.mediaFiles ?? []).map((file) => file.category));
+        const missingCategories = workflowPolicy.images.requiredImageCategories.filter((label) => {
+          const category = imageCategoryMap[label] ?? label.toUpperCase().replaceAll(" ", "_");
+          return !capturedCategories.has(category);
+        });
+        if (missingCategories.length > 0) {
+          throw new Error(`VALIDATION:Missing required images: ${missingCategories.join(", ")}`);
+        }
       }
 
       await ensureChecklistSeeded(tx);
@@ -581,6 +623,12 @@ export async function PATCH(request: NextRequest) {
     }
     if (message.startsWith("VALIDATION:")) {
       return jsonError("Validation Error", message.replace("VALIDATION:", "").trim(), 422);
+    }
+    if (message === "DECISION_APPROVER_REQUIRED") {
+      return jsonError("Forbidden", "Only the configured Manager/Admin approver can pass, hold, or reject the final decision.", 403);
+    }
+    if (message === "DECISION_NOTE_REQUIRED") {
+      return jsonError("Validation Error", "Notes are required for Hold and Reject decisions.", 400);
     }
 
     return jsonError("System Error", message, 500);

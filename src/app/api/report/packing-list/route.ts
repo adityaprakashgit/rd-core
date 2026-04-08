@@ -162,6 +162,10 @@ export async function POST(request: NextRequest) {
           shipTo?: unknown;
           buyersOrder?: unknown;
           otherReference?: unknown;
+          invoiceNumber?: unknown;
+          lrNumber?: unknown;
+          transporterId?: unknown;
+          ewayBillDetails?: unknown;
           vehicleNo?: unknown;
           transporterName?: unknown;
           termsOfDelivery?: unknown;
@@ -177,6 +181,11 @@ export async function POST(request: NextRequest) {
     }
 
     const vehicleNoInput = typeof payload.vehicleNo === "string" ? payload.vehicleNo.trim() : "";
+    const invoiceNumberInput = typeof payload.invoiceNumber === "string" ? payload.invoiceNumber.trim() : "";
+    if (!invoiceNumberInput) {
+      return jsonError("Validation Error", "invoiceNumber is required for every packing list.", 400);
+    }
+
     if (!vehicleNoInput) {
       return jsonError("Validation Error", "vehicleNo is required for every packing list.", 400);
     }
@@ -329,7 +338,7 @@ export async function POST(request: NextRequest) {
       itemName: typeof payload.itemName === "string" && payload.itemName.trim().length > 0
         ? payload.itemName.trim()
         : undefined,
-      invoiceNumber: job.jobReferenceNumber,
+      invoiceNumber: invoiceNumberInput,
       dateLabel: job.createdAt.toLocaleDateString("en-US", {
         month: "long",
         day: "2-digit",
@@ -347,11 +356,18 @@ export async function POST(request: NextRequest) {
       shipTo: typeof payload.shipTo === "string" && payload.shipTo.trim().length > 0
         ? payload.shipTo.trim()
         : job.plantLocation ?? job.clientName,
-      buyersOrder: typeof payload.buyersOrder === "string" && payload.buyersOrder.trim().length > 0
-        ? payload.buyersOrder.trim()
-        : undefined,
-      otherReference: typeof payload.otherReference === "string" && payload.otherReference.trim().length > 0
-        ? payload.otherReference.trim()
+      lrNumber: typeof payload.lrNumber === "string" && payload.lrNumber.trim().length > 0
+        ? payload.lrNumber.trim()
+        : typeof payload.buyersOrder === "string" && payload.buyersOrder.trim().length > 0
+          ? payload.buyersOrder.trim()
+          : undefined,
+      ewayBillDetails: typeof payload.ewayBillDetails === "string" && payload.ewayBillDetails.trim().length > 0
+        ? payload.ewayBillDetails.trim()
+        : typeof payload.otherReference === "string" && payload.otherReference.trim().length > 0
+          ? payload.otherReference.trim()
+          : undefined,
+      transporterId: typeof payload.transporterId === "string" && payload.transporterId.trim().length > 0
+        ? payload.transporterId.trim()
         : undefined,
       vehicleNo: vehicleNoInput,
       transporterName: typeof payload.transporterName === "string" && payload.transporterName.trim().length > 0
@@ -359,7 +375,7 @@ export async function POST(request: NextRequest) {
         : undefined,
       termsOfDelivery: typeof payload.termsOfDelivery === "string" && payload.termsOfDelivery.trim().length > 0
         ? payload.termsOfDelivery.trim()
-        : "As per dispatch workflow",
+        : undefined,
       lots: normalizedLots,
     });
 

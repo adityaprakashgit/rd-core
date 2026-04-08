@@ -141,7 +141,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <Box h="100dvh" bg="bg.app" overflow="hidden">
-      <Box display={{ base: "none", md: "block" }} position="fixed" insetY={0} left={0} zIndex={20}>
+      <Box display={{ base: "none", lg: "block" }} position="fixed" insetY={0} left={0} zIndex={20}>
         <Sidebar
           role={session.role}
           companyName={companyName}
@@ -152,7 +152,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         />
       </Box>
 
-      <Box ml={{ base: 0, md: isSidebarCollapsed ? 24 : 80 }} h="100dvh" transition="margin-left 180ms ease" overflow="hidden">
+      <Box ml={{ base: 0, lg: isSidebarCollapsed ? 20 : 64 }} h="100dvh" transition="margin-left 180ms ease" overflow="hidden">
         <Header
           role={session.role}
           displayName={displayName}
@@ -166,13 +166,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         />
 
         <Box
-          px={{ base: 4, md: 8 }}
-          py={{ base: 4, md: 6 }}
-          pb={{ base: MOBILE_CONTENT_BOTTOM_PADDING, md: 10 }}
+          px={{ base: 4, md: 6, lg: 8 }}
+          py={{ base: 4, md: 5, lg: 6 }}
+          pb={{ base: MOBILE_CONTENT_BOTTOM_PADDING, lg: 10 }}
           maxW="8xl"
           mx="auto"
-          h={{ base: "calc(100dvh - 72px)", md: "calc(100dvh - 80px)" }}
-          overflow="hidden"
+          h={{ base: "calc(100dvh - 72px)", md: "calc(100dvh - 76px)", lg: "calc(100dvh - 80px)" }}
+          overflowY="auto"
+          overflowX="hidden"
         >
           {children}
         </Box>

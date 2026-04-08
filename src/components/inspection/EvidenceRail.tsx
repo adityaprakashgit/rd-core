@@ -39,6 +39,7 @@ export function EvidenceRail({
   onClearError?: (itemId: string) => void;
 }) {
   const fileInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
+  const cameraInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
 
   const nextMissingId = useMemo(
     () => items.find((item) => item.required && item.status !== "uploaded")?.id ?? null,
@@ -131,16 +132,54 @@ export function EvidenceRail({
                     event.currentTarget.value = "";
                   }}
                 />
+                <Input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  display="none"
+                  ref={(node) => {
+                    cameraInputsRef.current[item.id] = node;
+                  }}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      void onUpload(item.id, file);
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <Button
+                  size="sm"
+                  leftIcon={item.status === "retake" ? <RefreshCcw size={14} /> : <Camera size={14} />}
+                  onClick={() => cameraInputsRef.current[item.id]?.click()}
+                  isLoading={item.isLoading}
+                  isDisabled={item.isDisabled}
+                >
+                  {item.status === "retake" ? "Retake photo" : "Capture photo"}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  leftIcon={item.status === "retake" ? <RefreshCcw size={14} /> : item.previewUrl ? <Camera size={14} /> : <Upload size={14} />}
+                  leftIcon={<Upload size={14} />}
                   onClick={() => fileInputsRef.current[item.id]?.click()}
                   isLoading={item.isLoading}
                   isDisabled={item.isDisabled}
                 >
-                  {item.status === "retake" ? "Retry" : item.previewUrl ? "Retake" : "Upload"}
+                  {item.previewUrl ? "Replace from device" : "Upload from device"}
                 </Button>
+                {item.previewUrl ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        window.open(item.previewUrl ?? "", "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                  >
+                    View photo
+                  </Button>
+                ) : null}
               </HStack>
             </VStack>
             {index < items.length - 1 ? <Divider mt={4} /> : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Box,
@@ -136,17 +136,24 @@ export default function ReportsPage() {
   const [selectedItemName, setSelectedItemName] = useState("");
   const [billToAddress, setBillToAddress] = useState("");
   const [shipToAddress, setShipToAddress] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [lrNumber, setLrNumber] = useState("");
+  const [transporterId, setTransporterId] = useState("");
+  const [ewayBillDetails, setEwayBillDetails] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
   const [previewing, setPreviewing] = useState<"packing" | "stickers" | null>(null);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [pdfPreview, setPdfPreview] = useState<{
     kind: "packing" | "stickers";
     fileName: string;
     url: string;
   } | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const [reportPreferences, setReportPreferences] = useState<ReportPreferences>(() =>
     getDefaultReportPreferences("Inspection Control Tower")
   );
   const [selectedDocumentType, setSelectedDocumentType] = useState<ReportPreferences["defaultDocumentType"]>("EXPORT");
+  const supportsShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   const loadJobs = useCallback(async () => {
     setLoadingJobs(true);
@@ -261,6 +268,16 @@ export default function ReportsPage() {
   }, [loadLots]);
 
   useEffect(() => {
+    setPdfPreview((current) => {
+      if (current?.url) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+    setIsPreviewModalOpen(false);
+  }, [selectedJobId]);
+
+  useEffect(() => {
     return () => {
       if (pdfPreview?.url) {
         URL.revokeObjectURL(pdfPreview.url);
@@ -311,6 +328,10 @@ export default function ReportsPage() {
 
     setSelectedClientName((current) => current || selectedJob.clientName || "");
     setSelectedItemName((current) => current || selectedJob.commodity || "");
+    setInvoiceNumber("");
+    setLrNumber("");
+    setTransporterId("");
+    setEwayBillDetails("");
     setVehicleNo("");
   }, [selectedJob]);
 
@@ -347,19 +368,19 @@ export default function ReportsPage() {
     () => [
       {
         id: "setup",
-        label: "Setup",
+        label: "Select Job & Dispatch Details",
         state: activeStep === "setup" ? "current" : "completed",
         onClick: () => setActiveStep("setup"),
       },
       {
         id: "review",
-        label: "Lot Review",
+        label: "Review Lot Weights & Seals",
         state: activeStep === "review" ? "current" : activeStep === "preview" ? "completed" : "next",
         onClick: () => setActiveStep("review"),
       },
       {
         id: "preview",
-        label: "Preview",
+        label: "Preview & Download",
         state: activeStep === "preview" ? "current" : "upcoming",
         onClick: () => setActiveStep("preview"),
       },
@@ -380,7 +401,7 @@ export default function ReportsPage() {
             </Badge>
           ) : (
             <Badge colorScheme="orange" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              Pending in lot workflow
+              Not recorded yet
             </Badge>
           ),
       },
@@ -404,6 +425,10 @@ export default function ReportsPage() {
       setGenerating(kind);
       setPreviewing(kind);
       try {
+        if (kind === "packing" && invoiceNumber.trim().length === 0) {
+          throw new Error("Invoice number is required for every packing list.");
+        }
+
         if (kind === "packing" && vehicleNo.trim().length === 0) {
           throw new Error("Vehicle number is required for every packing list.");
         }
@@ -425,6 +450,10 @@ export default function ReportsPage() {
                     reportPreferences,
                     billTo: billToAddress.trim() || selectedJob?.clientName,
                     shipTo: shipToAddress.trim() || selectedJob?.plantLocation || selectedJob?.clientName,
+                    invoiceNumber: invoiceNumber.trim(),
+                    lrNumber: lrNumber.trim(),
+                    transporterId: transporterId.trim(),
+                    ewayBillDetails: ewayBillDetails.trim(),
                     transporterName: selectedTransporter?.transporterName ?? undefined,
                     vehicleNo: vehicleNo.trim(),
                     itemName: selectedItemName.trim() || selectedJob?.commodity,
@@ -448,6 +477,7 @@ export default function ReportsPage() {
           }
           return { kind, fileName, url: objectUrl };
         });
+        setIsPreviewModalOpen(true);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Report generation failed.";
         setPreviewError(message);
@@ -459,6 +489,9 @@ export default function ReportsPage() {
     },
     [
       billToAddress,
+      ewayBillDetails,
+      invoiceNumber,
+      lrNumber,
       reportPreferences,
       selectedDocumentType,
       selectedItemName,
@@ -470,6 +503,7 @@ export default function ReportsPage() {
       selectedTransporterName,
       shipToAddress,
       toast,
+      transporterId,
       transporters,
       vehicleNo,
     ]
@@ -487,13 +521,29 @@ export default function ReportsPage() {
   }, [pdfPreview]);
 
   const handleClosePreview = useCallback(() => {
-    setPdfPreview((current) => {
-      if (current?.url) {
-        URL.revokeObjectURL(current.url);
-      }
-      return null;
-    });
+    setIsPreviewModalOpen(false);
   }, []);
+
+  const handlePrintPreview = useCallback(() => {
+    previewFrameRef.current?.contentWindow?.print();
+  }, []);
+
+  const handleSharePreview = useCallback(async () => {
+    if (!pdfPreview || !supportsShare) {
+      return;
+    }
+    try {
+      const response = await fetch(pdfPreview.url);
+      const blob = await response.blob();
+      const file = new File([blob], pdfPreview.fileName, { type: "application/pdf" });
+      await navigator.share({
+        title: pdfPreview.fileName,
+        files: [file],
+      });
+    } catch {
+      // noop: share is optional
+    }
+  }, [pdfPreview, supportsShare]);
 
   if (loadingJobs && jobs.length === 0) {
     return (
@@ -518,12 +568,12 @@ export default function ReportsPage() {
   if (!loadingJobs && jobs.length === 0) {
     return (
       <ControlTowerLayout>
-        <EmptyWorkState
-          title="No jobs are ready for document work"
-          description="This workspace only becomes useful when a real job has reached document preparation or sticker output."
+          <EmptyWorkState
+          title="No jobs are ready for documents"
+          description="Once a job reaches the reporting stage, you can preview and download packing lists and stickers here."
           action={
             <Button as="a" href="/operations" variant="outline">
-              Review operational queue
+              Open operations queue
             </Button>
           }
         />
@@ -533,14 +583,14 @@ export default function ReportsPage() {
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
+      <VStack align="stretch" spacing={6}>
         <Box>
           <HStack spacing={2} mb={2} flexWrap="wrap">
             <Badge colorScheme="brand" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              DOCUMENT OUTPUT
+              DOCUMENT WORKFLOW
             </Badge>
             <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              PREVIEW FIRST
+              PREVIEW BEFORE DOWNLOAD
             </Badge>
           </HStack>
           <Heading size="lg" color="text.primary">
@@ -548,32 +598,9 @@ export default function ReportsPage() {
           </Heading>
         </Box>
 
-        <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
-          {[
-            { label: "Selected Job", value: selectedJob?.inspectionSerialNumber ?? "—", tone: "brand" },
-            { label: "Lots Reviewed", value: String(totals.totalLots), tone: "blue" },
-            { label: "Total Net", value: formatWeight(totals.totalNet), tone: "green" },
-            { label: "Seal Coverage", value: `${totals.sealedLots}/${totals.totalLots || 0}`, tone: "orange" },
-          ].map((item) => (
-            <Card key={item.label} variant="outline" borderRadius="2xl">
-              <CardBody p={5}>
-                <Text fontSize="sm" color="text.muted">
-                  {item.label}
-                </Text>
-                <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
-                  {item.value}
-                </Text>
-                <Badge mt={3} colorScheme={item.tone} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                  Live workspace state
-                </Badge>
-              </CardBody>
-            </Card>
-          ))}
-        </SimpleGrid>
-
         <ProcessFlowLayout
-          contextLabel="Document Status"
-          tracker={<WorkflowStepTracker steps={flowSteps} title="Document Flow" compact />}
+          contextLabel="Document Readiness"
+          tracker={<WorkflowStepTracker steps={flowSteps} title="Document Workflow" compact />}
           activeStep={
             <VStack align="stretch" spacing={4}>
               {activeStep === "setup" ? (
@@ -585,7 +612,7 @@ export default function ReportsPage() {
                         Step 1
                       </Text>
                       <Heading size="md" color="text.primary" mt={1}>
-                        Document setup
+                        Select job and dispatch details
                       </Heading>
                     </Box>
                     <Badge colorScheme={getStatusColor(selectedJob?.status ?? "PENDING")} variant="subtle" borderRadius="full" px={3} py={1}>
@@ -618,7 +645,7 @@ export default function ReportsPage() {
                       >
                         {REPORT_DOCUMENT_TYPES.map((documentType) => (
                           <option key={documentType} value={documentType}>
-                            {getReportDocumentTypeLabel(documentType)} Format
+                            {getReportDocumentTypeLabel(documentType)}
                           </option>
                         ))}
                       </Select>
@@ -628,7 +655,7 @@ export default function ReportsPage() {
                         isLoading={generating === "packing"}
                         isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                       >
-                        Preview packing list
+                        View Packing List PDF
                       </Button>
                       <Button
                         variant="outline"
@@ -637,7 +664,7 @@ export default function ReportsPage() {
                         isLoading={generating === "stickers"}
                         isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                       >
-                        Preview stickers
+                        View Sticker PDF
                       </Button>
                     </FilterRail>
                   </Box>
@@ -648,7 +675,7 @@ export default function ReportsPage() {
                       <HStack spacing={2} mt={2}>
                         {lastPreviewKind ? (
                           <Button size="xs" variant="ghost" onClick={() => void handlePreviewDocument(lastPreviewKind)}>
-                            Retry {lastPreviewKind === "packing" ? "packing list" : "stickers"}
+                            Retry {lastPreviewKind === "packing" ? "packing list preview" : "sticker preview"}
                           </Button>
                         ) : null}
                         <Button size="xs" variant="ghost" onClick={() => setPreviewError(null)}>
@@ -730,6 +757,42 @@ export default function ReportsPage() {
                       </Select>
                     </FormControl>
                     <FormControl isRequired>
+                      <FormLabel fontSize="sm">Invoice no</FormLabel>
+                      <Input
+                        borderRadius="xl"
+                        value={invoiceNumber}
+                        onChange={(event) => setInvoiceNumber(event.target.value)}
+                        placeholder="Enter invoice number from ERP/accounting software"
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">LR no</FormLabel>
+                      <Input
+                        borderRadius="xl"
+                        value={lrNumber}
+                        onChange={(event) => setLrNumber(event.target.value)}
+                        placeholder="Enter LR number"
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Transporter ID</FormLabel>
+                      <Input
+                        borderRadius="xl"
+                        value={transporterId}
+                        onChange={(event) => setTransporterId(event.target.value)}
+                        placeholder="Enter transporter ID"
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">E-way bill details</FormLabel>
+                      <Input
+                        borderRadius="xl"
+                        value={ewayBillDetails}
+                        onChange={(event) => setEwayBillDetails(event.target.value)}
+                        placeholder="Enter E-way bill no and details"
+                      />
+                    </FormControl>
+                    <FormControl isRequired>
                       <FormLabel fontSize="sm">Vehicle number</FormLabel>
                       <Input
                         borderRadius="xl"
@@ -739,13 +802,17 @@ export default function ReportsPage() {
                       />
                     </FormControl>
                   </SimpleGrid>
+                  <Text fontSize="sm" color="text.muted" mt={3}>
+                    Vehicle number is required for packing list preview. Sticker preview can be generated without it.
+                  </Text>
                   <HStack mt={5} justify="flex-end">
                     <Button
+                      w={{ base: "full", sm: "auto" }}
                       rightIcon={<ChevronRight size={16} />}
                       onClick={() => setActiveStep("review")}
                       isDisabled={loadingLots}
                     >
-                      Next
+                      Continue to lot review
                     </Button>
                   </HStack>
                 </CardBody>
@@ -767,11 +834,11 @@ export default function ReportsPage() {
                         Step 2
                       </Text>
                       <Heading size="md" color="text.primary" mt={1}>
-                        Lot review
+                        Review lot data
                       </Heading>
                     </Box>
                     <Button as="a" href="/master" variant="outline" borderRadius="xl">
-                      Open master registry
+                      Open master data
                     </Button>
                   </Stack>
 
@@ -786,7 +853,7 @@ export default function ReportsPage() {
                   ) : lots.length === 0 ? (
                     <EmptyWorkState
                       title="No lot rows available"
-                      description="The selected job does not have any completed lot data to include in the report yet."
+                      description="The selected job does not have completed lot records ready for document generation yet."
                     />
                   ) : (
                     <VStack align="stretch" spacing={4}>
@@ -801,7 +868,7 @@ export default function ReportsPage() {
                         emptyLabel="No lot records available."
                         recordCard={{
                           title: (lot) => lot.lotNumber,
-                          subtitle: (lot) => `Seal: ${lot.sealNumber ?? "Pending in lot workflow"}`,
+                          subtitle: (lot) => `Seal: ${lot.sealNumber ?? "Not recorded yet"}`,
                           fields: [
                             { id: "gross", label: "Gross", render: (lot) => formatWeight(lot.grossWeight) },
                             { id: "tare", label: "Tare", render: (lot) => formatWeight(lot.tareWeight) },
@@ -830,14 +897,14 @@ export default function ReportsPage() {
                       </SimpleGrid>
                     </VStack>
                   )}
-                  <HStack mt={5} justify="space-between">
-                    <Button variant="outline" leftIcon={<ChevronLeft size={16} />} onClick={() => setActiveStep("setup")}>
-                      Back
+                  <Stack mt={5} direction={{ base: "column", sm: "row" }} justify="space-between" spacing={3}>
+                    <Button w={{ base: "full", sm: "auto" }} variant="outline" leftIcon={<ChevronLeft size={16} />} onClick={() => setActiveStep("setup")}>
+                      Back to details
                     </Button>
-                    <Button rightIcon={<ChevronRight size={16} />} onClick={() => setActiveStep("preview")}>
-                      Next
+                    <Button w={{ base: "full", sm: "auto" }} rightIcon={<ChevronRight size={16} />} onClick={() => setActiveStep("preview")}>
+                      Continue to preview
                     </Button>
-                  </HStack>
+                  </Stack>
                 </CardBody>
               </Card>
               ) : null}
@@ -857,7 +924,7 @@ export default function ReportsPage() {
                       isLoading={generating === "packing"}
                       isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                     >
-                      Open packing preview
+                      View Packing List PDF
                     </Button>
                     <Button
                       variant="outline"
@@ -865,7 +932,7 @@ export default function ReportsPage() {
                       isLoading={generating === "stickers"}
                       isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                     >
-                      Open sticker preview
+                      View Sticker PDF
                     </Button>
                     {pdfPreview ? (
                       <Badge colorScheme="green" variant="subtle" borderRadius="full" px={3} py={1}>
@@ -873,13 +940,13 @@ export default function ReportsPage() {
                       </Badge>
                     ) : (
                       <Badge colorScheme="gray" variant="subtle" borderRadius="full" px={3} py={1}>
-                        Generate after setup
+                        Generate a preview first
                       </Badge>
                     )}
                   </HStack>
                   <HStack mt={5}>
-                    <Button variant="outline" leftIcon={<ChevronLeft size={16} />} onClick={() => setActiveStep("review")}>
-                      Back
+                    <Button w={{ base: "full", sm: "auto" }} variant="outline" leftIcon={<ChevronLeft size={16} />} onClick={() => setActiveStep("review")}>
+                      Back to lot review
                     </Button>
                   </HStack>
                 </CardBody>
@@ -900,10 +967,14 @@ export default function ReportsPage() {
 
               <VStack align="stretch" spacing={3}>
                 <SectionHint label="Document type" value={getReportDocumentTypeLabel(selectedDocumentType)} />
-                <SectionHint label="Commercial item" value={selectedItemName || selectedJob?.commodity || "Pending"} />
-                <SectionHint label="Transporter" value={selectedTransporterName || "Pending"} />
-                <SectionHint label="Vehicle number" value={vehicleNo || "Required before packing list"} />
-                <SectionHint label="Preview state" value={pdfPreview ? "Ready to download" : "Not generated"} />
+                <SectionHint label="Item" value={selectedItemName || selectedJob?.commodity || "Not selected"} />
+                <SectionHint label="Invoice no" value={invoiceNumber || "Not entered"} />
+                <SectionHint label="LR no" value={lrNumber || "Not entered"} />
+                <SectionHint label="Transporter ID" value={transporterId || "Not entered"} />
+                <SectionHint label="E-way bill" value={ewayBillDetails || "Not entered"} />
+                <SectionHint label="Transporter" value={selectedTransporterName || "Not selected"} />
+                <SectionHint label="Vehicle number" value={vehicleNo || "Required for packing list preview"} />
+                <SectionHint label="Preview state" value={pdfPreview ? "Ready to download" : "No preview generated"} />
               </VStack>
 
               <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl">
@@ -911,12 +982,13 @@ export default function ReportsPage() {
                   Readiness checks
                 </Text>
                 <VStack align="stretch" spacing={3} mt={3}>
-                  <SectionHint label="Job selected" value={selectedJobId ? "Yes" : "No"} />
-                  <SectionHint label="Lot data loaded" value={lots.length > 0 ? "Yes" : "No"} />
-                  <SectionHint label="Vehicle entered" value={vehicleNo.trim() ? "Yes" : "No"} />
+                  <SectionHint label="Job selected" value={selectedJobId ? "Complete" : "Missing"} />
+                  <SectionHint label="Lot data loaded" value={lots.length > 0 ? "Complete" : "Missing"} />
+                  <SectionHint label="Invoice entered" value={invoiceNumber.trim() ? "Complete" : "Missing"} />
+                  <SectionHint label="Vehicle entered" value={vehicleNo.trim() ? "Complete" : "Missing"} />
                   <SectionHint
-                    label="Seal exceptions"
-                    value={totals.sealedLots === totals.totalLots ? "None" : "Resolve in lot workflow"}
+                    label="Lot seals"
+                    value={totals.sealedLots === totals.totalLots ? "Complete" : "Some lots missing seal numbers"}
                   />
                 </VStack>
               </Box>
@@ -937,7 +1009,7 @@ export default function ReportsPage() {
             </VStack>
           }
           mobileActions={
-            <HStack spacing={3} align="stretch" flexWrap="wrap">
+            <Stack direction={{ base: "column", sm: "row" }} spacing={3} align="stretch">
               {activeStep !== "setup" ? (
                 <Button
                   variant="outline"
@@ -952,7 +1024,7 @@ export default function ReportsPage() {
                   rightIcon={<ChevronRight size={16} />}
                   onClick={() => setActiveStep(activeStep === "setup" ? "review" : "preview")}
                 >
-                  Next
+                  Continue
                 </Button>
               ) : (
                 <Button
@@ -960,15 +1032,15 @@ export default function ReportsPage() {
                   isLoading={generating === "packing"}
                   isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                 >
-                  Preview
+                  View Packing List PDF
                 </Button>
               )}
-            </HStack>
+            </Stack>
           }
         />
       </VStack>
 
-      <Modal isOpen={Boolean(pdfPreview)} onClose={handleClosePreview} size="full" motionPreset="slideInBottom">
+      <Modal isOpen={isPreviewModalOpen && Boolean(pdfPreview)} onClose={handleClosePreview} size="full" motionPreset="slideInBottom">
         <ModalOverlay bg="blackAlpha.600" />
         <ModalContent borderRadius={{ base: 0, md: "2xl" }} overflow="hidden">
           <ModalHeader>
@@ -983,6 +1055,7 @@ export default function ReportsPage() {
             {pdfPreview ? (
               <Box
                 as="iframe"
+                ref={previewFrameRef}
                 title={pdfPreview.fileName}
                 src={pdfPreview.url}
                 w="full"
@@ -994,10 +1067,16 @@ export default function ReportsPage() {
           </ModalBody>
           <ModalFooter borderTopWidth="1px" borderColor="border.subtle" gap={3}>
             <Button variant="outline" onClick={handleClosePreview}>
-              Back to setup
+              Back to workflow
+            </Button>
+            <Button variant="outline" onClick={handlePrintPreview}>
+              Print PDF
+            </Button>
+            <Button variant="outline" onClick={() => void handleSharePreview()} isDisabled={!supportsShare}>
+              Share PDF
             </Button>
             <Button onClick={handleDownloadPreview} isLoading={previewing !== null}>
-              Download {pdfPreview?.kind === "stickers" ? "stickers" : "PDF"}
+              Download {pdfPreview?.kind === "stickers" ? "Sticker PDF" : "Packing List PDF"}
             </Button>
           </ModalFooter>
         </ModalContent>

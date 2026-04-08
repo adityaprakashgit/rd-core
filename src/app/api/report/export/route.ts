@@ -49,6 +49,53 @@ function formatDateValue(value: string | Date | null | undefined): string {
   return date.toLocaleDateString("en-GB");
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function resolveLotGrossWeight(lot: {
+  grossWeightKg?: unknown;
+  grossWeight?: unknown;
+  bags: Array<{ grossWeight?: unknown }>;
+}): number {
+  const lotGross = toFiniteNumber(lot.grossWeightKg) ?? toFiniteNumber(lot.grossWeight);
+  if (lotGross !== null) {
+    return lotGross;
+  }
+
+  if (lot.bags.length > 0) {
+    return lot.bags.reduce((sum, bag) => sum + (toFiniteNumber(bag.grossWeight) ?? 0), 0);
+  }
+
+  return 0;
+}
+
+function resolveLotNetWeight(lot: {
+  netWeightKg?: unknown;
+  netWeight?: unknown;
+  bags: Array<{ netWeight?: unknown }>;
+}): number {
+  const lotNet = toFiniteNumber(lot.netWeightKg) ?? toFiniteNumber(lot.netWeight);
+  if (lotNet !== null) {
+    return lotNet;
+  }
+
+  if (lot.bags.length > 0) {
+    return lot.bags.reduce((sum, bag) => sum + (toFiniteNumber(bag.netWeight) ?? 0), 0);
+  }
+
+  return 0;
+}
+
 async function toDataUrl(imageUrl: string): Promise<string | null> {
   try {
     if (imageUrl.startsWith("/")) {
@@ -559,12 +606,14 @@ export async function POST(req: NextRequest) {
         { header: "Net Weight (kg)", key: "net", width: 20 },
       ];
       job.lots.forEach(lot => {
-        const netSum = lot.bags.reduce((acc, b) => acc + (b.netWeight || 0), 0);
+        const grossWeight = resolveLotGrossWeight(lot);
+        const netWeight = resolveLotNetWeight(lot);
+        const bagCount = lot.totalBags || lot.bagCount || lot.pieceCount || lot.bags.length || 0;
         lotSheet.addRow({
           lotNumber: lot.lotNumber,
-          bags: lot.bags.length,
-          gross: Number(lot.grossWeightKg) || 0,
-          net: netSum,
+          bags: bagCount,
+          gross: Number(grossWeight.toFixed(2)),
+          net: Number(netWeight.toFixed(2)),
         });
       });
 

@@ -1,17 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { JobIntakeWorkspace } from "@/components/inspection/JobIntakeWorkspace";
-import { useWorkspaceView } from "@/context/WorkspaceViewContext";
-
-export default function UserInspectionJobPage() {
-  const { viewMode } = useWorkspaceView();
-
-  return (
-    <JobIntakeWorkspace
-      jobsEndpoint={`/api/jobs?view=${viewMode}`}
-      backHref="/userinsp"
-      lotHref={(currentJobId, lotId) => `/userinsp/job/${currentJobId}/lot/${lotId}?view=${viewMode}`}
-      viewVariant="queue"
-    />
-  );
+export default async function UserInspectionJobPage({
+  params,
+}: {
+  params: Promise<{ jobId: string }>;
+}) {
+  const { jobId } = await params;
+  redirect(`/jobs/${jobId}/workflow?source=userinsp`);
 }

@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
+import { DetailTabsLayout, HistoryTimeline, LinkedRecordsPanel } from "@/components/enterprise/EnterprisePatterns";
 import { WorkbenchPageTemplate } from "@/components/enterprise/PageTemplates";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import { AuditTrail } from "@/components/inspection/AuditTrail";
@@ -98,6 +99,14 @@ function inferStage({
 function formatMeasurementValue(value: number | string | null | undefined) {
   const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numericValue) ? numericValue.toFixed(4) : "—";
+}
+
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) {
+    return "—";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
 function isEnterKey(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -495,7 +504,7 @@ export default function UserRdJobDetail() {
   return (
     <ControlTowerLayout>
       <VStack align="stretch" spacing={6}>
-        <Stack id="rd-qa-section" direction={{ base: "column", lg: "row" }} justify="space-between" align={{ base: "stretch", lg: "center" }} spacing={3}>
+        <Stack id="rd-overview-section" direction={{ base: "column", lg: "row" }} justify="space-between" align={{ base: "stretch", lg: "center" }} spacing={3}>
           <HStack spacing={3} align="start">
             <Button size="sm" variant="ghost" leftIcon={<ArrowLeft size={14} />} onClick={() => router.push("/userrd")}>
               Back to R&D
@@ -538,7 +547,7 @@ export default function UserRdJobDetail() {
           </HStack>
         </Stack>
 
-        <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
+        <SimpleGrid display={{ base: "none", lg: "grid" }} columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
           {[
             { label: "Current stage", value: rdStage.toUpperCase() },
             { label: "Packets", value: packets.length },
@@ -563,6 +572,98 @@ export default function UserRdJobDetail() {
             <WorkflowStepTracker title="Job progress" steps={workflowSteps} compact />
           </CardBody>
         </Card>
+
+        <DetailTabsLayout
+          tabs={[
+            {
+              id: "sample-testing-board",
+              label: "Sample Testing Board",
+              content: (
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="sm" color="text.secondary">
+                    Review sample handoff and packet readiness for this job.
+                  </Text>
+                  <HStack spacing={2} flexWrap="wrap">
+                    <Button size="sm" variant="outline" onClick={() => jumpToSection("rd-sample-section")}>
+                      Open sample section
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => jumpToSection("rd-packets-section")}>
+                      Open packet section
+                    </Button>
+                  </HStack>
+                </VStack>
+              ),
+            },
+            {
+              id: "test-entry",
+              label: "Test Entry",
+              content: (
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="sm" color="text.secondary">
+                    Capture and update trial measurements for packet-linked testing.
+                  </Text>
+                  <Button size="sm" variant="outline" alignSelf="start" onClick={() => jumpToSection("rd-trials-section")}>
+                    Open test entry section
+                  </Button>
+                </VStack>
+              ),
+            },
+            {
+              id: "result-review-approval",
+              label: "Result Review / Approval",
+              content: (
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="sm" color="text.secondary">
+                    Validate report readiness, then progress QA decisions.
+                  </Text>
+                  <HStack spacing={2} flexWrap="wrap">
+                    <Button size="sm" variant="outline" onClick={() => jumpToSection("rd-report-section")}>
+                      Open result review section
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => jumpToSection("rd-qa-section")}>
+                      Open approval history
+                    </Button>
+                  </HStack>
+                </VStack>
+              ),
+            },
+            {
+              id: "rd-history",
+              label: "R&D History",
+              content: (
+                <HistoryTimeline
+                  events={logs.slice(0, 20).map((log) => ({
+                    id: log.id,
+                    title: log.entity ? `${log.entity} · ${log.action}` : log.action,
+                    subtitle: log.notes || "R&D audit event",
+                    at: formatDate(log.createdAt),
+                  }))}
+                />
+              ),
+            },
+          ]}
+          rightRail={
+            <VStack align="stretch" spacing={3}>
+              <LinkedRecordsPanel
+                items={[
+                  { label: "Job Number", value: job.inspectionSerialNumber || job.jobReferenceNumber || "Not Available" },
+                  { label: "Current Step", value: rdStage.toUpperCase() },
+                  { label: "Sample", value: readySampleLots[0]?.sample?.sampleCode || "Not Available" },
+                  { label: "Packet", value: availablePackets[0]?.packetCode || "Not Available" },
+                  { label: "Traceability", value: "Open", href: readySampleLots[0] ? `/traceability/lot/${readySampleLots[0].id}` : undefined },
+                ]}
+              />
+              <HistoryTimeline
+                events={logs.slice(0, 5).map((log) => ({
+                  id: `rail-${log.id}`,
+                  title: log.entity ? `${log.entity} · ${log.action}` : log.action,
+                  subtitle: log.notes || "R&D audit event",
+                  at: formatDate(log.createdAt),
+                }))}
+              />
+            </VStack>
+          }
+        />
 
         <WorkbenchPageTemplate
           rightLabel="Status & Governance"
@@ -849,7 +950,7 @@ export default function UserRdJobDetail() {
                   <VStack align="stretch" spacing={4}>
                     <HStack spacing={3} flexWrap="wrap">
                       <Button size="md" colorScheme="blue" leftIcon={<FlaskConical size={18} />} onClick={handleReportBuild} isLoading={buildingReport}>
-                        Validate report
+                        Check report
                       </Button>
                       {reportResult ? (
                         <Badge colorScheme={reportResult.validation.isValid ? "green" : "orange"} variant="subtle" borderRadius="full" px={3} py={1}>
@@ -892,10 +993,10 @@ export default function UserRdJobDetail() {
                         </Select>
                       </FormControl>
                       <Button size="sm" variant="outline" leftIcon={<Download size={14} />} onClick={() => void handleExport("excel")}>
-                        Export XLSX
+                        Download Excel
                       </Button>
                       <Button size="sm" variant="outline" leftIcon={<Download size={14} />} colorScheme="red" onClick={() => void handleExport("pdf")}>
-                        Preview PDF
+                        View PDF
                       </Button>
                     </SimpleGrid>
                   </VStack>
@@ -972,7 +1073,7 @@ export default function UserRdJobDetail() {
               </Card>
 
               {isAdmin ? (
-                <Card variant="outline" borderRadius="2xl" borderTop="4px solid" borderTopColor="purple.500">
+                <Card id="rd-qa-section" variant="outline" borderRadius="2xl" borderTop="4px solid" borderTopColor="purple.500">
                   <Accordion allowToggle defaultIndex={[]}>
                     <AccordionItem border="none">
                       <AccordionButton px={4} py={4}>
@@ -1047,7 +1148,7 @@ export default function UserRdJobDetail() {
               Back to report
             </Button>
             <Button colorScheme="red" onClick={handleDownloadPreview}>
-              Download PDF
+              Download Report PDF
             </Button>
           </ModalFooter>
         </ModalContent>

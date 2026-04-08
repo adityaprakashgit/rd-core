@@ -731,7 +731,22 @@ export function LotInspectionWorkspace({
               capture="environment"
               display="none"
               ref={(node) => {
-                fileInputsRef.current[LOT_OVERVIEW_CATEGORY] = node;
+                fileInputsRef.current[`${LOT_OVERVIEW_CATEGORY}:camera`] = node;
+              }}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  void uploadMedia(LOT_OVERVIEW_CATEGORY, file);
+                }
+                event.target.value = "";
+              }}
+            />
+            <Input
+              type="file"
+              accept="image/*"
+              display="none"
+              ref={(node) => {
+                fileInputsRef.current[`${LOT_OVERVIEW_CATEGORY}:device`] = node;
               }}
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -752,7 +767,7 @@ export function LotInspectionWorkspace({
               borderRadius="2xl"
               overflow="hidden"
               cursor="pointer"
-              onClick={() => fileInputsRef.current[LOT_OVERVIEW_CATEGORY]?.click()}
+              onClick={() => fileInputsRef.current[`${LOT_OVERVIEW_CATEGORY}:camera`]?.click()}
             >
               {lotOverviewMedia ? (
                 <Image
@@ -786,11 +801,32 @@ export function LotInspectionWorkspace({
               <Button
                 size="lg"
                 leftIcon={hasLotOverviewPhoto ? <Camera size={16} /> : <Upload size={16} />}
-                onClick={() => fileInputsRef.current[LOT_OVERVIEW_CATEGORY]?.click()}
+                onClick={() => fileInputsRef.current[`${LOT_OVERVIEW_CATEGORY}:camera`]?.click()}
                 isLoading={uploadingCategory === LOT_OVERVIEW_CATEGORY}
               >
                 {hasLotOverviewPhoto ? "Retake photo" : "Capture lot overview"}
               </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => fileInputsRef.current[`${LOT_OVERVIEW_CATEGORY}:device`]?.click()}
+                isLoading={uploadingCategory === LOT_OVERVIEW_CATEGORY}
+              >
+                Upload from device
+              </Button>
+              {lotOverviewMedia?.storageKey ? (
+                <Button
+                  size="lg"
+                  variant="ghost"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.open(lotOverviewMedia.storageKey, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
+                  View photo
+                </Button>
+              ) : null}
               <Button
                 size="lg"
                 variant="outline"
@@ -854,7 +890,7 @@ export function LotInspectionWorkspace({
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
+      <VStack align="stretch" spacing={6}>
         {surfaceError ? (
           <TopErrorBanner title="Action blocked" description={surfaceError} onDismiss={() => setSurfaceError(null)} />
         ) : null}

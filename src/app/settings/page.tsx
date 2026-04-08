@@ -14,6 +14,7 @@ import {
   Input,
   Select,
   SimpleGrid,
+  Stack,
   Switch,
   Text,
   Textarea,
@@ -24,6 +25,10 @@ import { Building2, Plus, Save, Settings2, ShieldCheck, Workflow } from "lucide-
 
 import { ConfigurationPageTemplate, MobileActionRail } from "@/components/enterprise/PageTemplates";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import {
+  defaultModuleWorkflowSettings,
+  type ModuleWorkflowPolicy,
+} from "@/lib/module-workflow-policy";
 import {
   getDefaultReportPreferences,
   getReportDocumentTypeLabel,
@@ -72,6 +77,43 @@ export default function SettingsPageRoute() {
     | "inspection-checklist"
     | "registry-navigation"
   >("company-profile");
+  const [workflowSettings, setWorkflowSettings] = useState<ModuleWorkflowPolicy>({
+    workflow: {
+      autoLotNumbering: defaultModuleWorkflowSettings.autoLotNumbering,
+      lotNumberPrefix: defaultModuleWorkflowSettings.lotNumberPrefix ?? "LOT",
+      lotNumberSequenceFormat: defaultModuleWorkflowSettings.lotNumberSequenceFormat ?? "0001",
+      autoSampleIdGeneration: defaultModuleWorkflowSettings.autoSampleIdGeneration,
+      sampleIdPrefix: defaultModuleWorkflowSettings.sampleIdPrefix ?? "SMP",
+      sampleIdSequenceFormat: defaultModuleWorkflowSettings.sampleIdSequenceFormat ?? "0001",
+      finalDecisionApproverPolicy: "MANAGER_ADMIN",
+      lockPacketEditingAfterRndSubmit: defaultModuleWorkflowSettings.lockPacketEditingAfterRndSubmit,
+    },
+    images: {
+      requiredImageCategories: defaultModuleWorkflowSettings.requiredImageCategories,
+      optionalImageCategories: defaultModuleWorkflowSettings.optionalImageCategories,
+      imageTimestampRequired: defaultModuleWorkflowSettings.imageTimestampRequired,
+    },
+    seal: {
+      sealScanRequired: defaultModuleWorkflowSettings.sealScanRequired,
+      bulkSealGenerationEnabled: defaultModuleWorkflowSettings.bulkSealGenerationEnabled,
+      sealEditPolicy: "ADMIN_ONLY",
+    },
+    sampling: {
+      containerTypeSource: "MASTER_ONLY",
+      homogeneousProofRequired: defaultModuleWorkflowSettings.homogeneousProofRequired,
+      homogeneousWeightEnabled: false,
+    },
+    packet: {
+      packetWeightRequired: true,
+      packetPurposeMode: "OPTIONAL",
+    },
+    ui: {
+      showOptionalImageSection: defaultModuleWorkflowSettings.showOptionalImageSection,
+      showBlockersInline: defaultModuleWorkflowSettings.showBlockersInline,
+    },
+  });
+  const [loadingWorkflowSettings, setLoadingWorkflowSettings] = useState(true);
+  const [savingWorkflowSettings, setSavingWorkflowSettings] = useState(false);
 
   useEffect(() => {
     const defaults = getDefaultReportPreferences(companyName);
@@ -118,6 +160,38 @@ export default function SettingsPageRoute() {
     void fetchChecklistSettings();
   }, [fetchChecklistSettings]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function fetchWorkflowSettings() {
+      setLoadingWorkflowSettings(true);
+      try {
+        const res = await fetch("/api/settings/module-workflow");
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as { details?: string } | null;
+          throw new Error(payload?.details ?? "Failed to load workflow settings.");
+        }
+
+        const payload = (await res.json()) as ModuleWorkflowPolicy;
+        if (active) {
+          setWorkflowSettings(payload);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load workflow settings.";
+        toast({ title: "Workflow settings unavailable", description: message, status: "warning" });
+      } finally {
+        if (active) {
+          setLoadingWorkflowSettings(false);
+        }
+      }
+    }
+
+    void fetchWorkflowSettings();
+    return () => {
+      active = false;
+    };
+  }, [toast]);
+
   const saveBasics = () => {
     try {
       const normalized = sanitizeReportPreferences(reportPreferences, companyName);
@@ -129,6 +203,29 @@ export default function SettingsPageRoute() {
 
     toast({ title: "Settings saved", status: "success" });
   };
+
+  async function saveWorkflowSettings() {
+    setSavingWorkflowSettings(true);
+    try {
+      const response = await fetch("/api/settings/module-workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(workflowSettings),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { details?: string } | null;
+        throw new Error(payload?.details ?? "Failed to save workflow settings.");
+      }
+      const payload = (await response.json()) as ModuleWorkflowPolicy;
+      setWorkflowSettings(payload);
+      toast({ title: "Workflow settings saved", status: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save workflow settings.";
+      toast({ title: "Save failed", description: message, status: "error" });
+    } finally {
+      setSavingWorkflowSettings(false);
+    }
+  }
 
   async function saveChecklistItem(item: InspectionChecklistItem) {
     setSavingChecklistId(item.id);
@@ -191,7 +288,7 @@ export default function SettingsPageRoute() {
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
+      <VStack align="stretch" spacing={6}>
         <Box>
           <HStack spacing={2} flexWrap="wrap">
             <Badge colorScheme="brand" variant="subtle" borderRadius="full" px={2.5} py={1}>
@@ -239,23 +336,23 @@ export default function SettingsPageRoute() {
           </Card>
         </SimpleGrid>
 
-        <HStack spacing={3} flexWrap="wrap">
-          <Button variant={activeSettingsSection === "company-profile" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("company-profile")}>
+        <Stack direction={{ base: "column", md: "row" }} spacing={3} align="stretch" flexWrap={{ md: "wrap" }}>
+          <Button w={{ base: "full", md: "auto" }} variant={activeSettingsSection === "company-profile" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("company-profile")}>
             Identity
           </Button>
-          <Button variant={activeSettingsSection === "report-defaults" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("report-defaults")}>
+          <Button w={{ base: "full", md: "auto" }} variant={activeSettingsSection === "report-defaults" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("report-defaults")}>
             Reports
           </Button>
-          <Button variant={activeSettingsSection === "workflow-guardrails" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("workflow-guardrails")}>
+          <Button w={{ base: "full", md: "auto" }} variant={activeSettingsSection === "workflow-guardrails" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("workflow-guardrails")}>
             Guardrails
           </Button>
-          <Button variant={activeSettingsSection === "inspection-checklist" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("inspection-checklist")}>
+          <Button w={{ base: "full", md: "auto" }} variant={activeSettingsSection === "inspection-checklist" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("inspection-checklist")}>
             Checklist
           </Button>
-          <Button variant={activeSettingsSection === "registry-navigation" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("registry-navigation")}>
+          <Button w={{ base: "full", md: "auto" }} variant={activeSettingsSection === "registry-navigation" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("registry-navigation")}>
             Registry
           </Button>
-        </HStack>
+        </Stack>
 
         <ConfigurationPageTemplate
           sections={[
@@ -466,6 +563,42 @@ export default function SettingsPageRoute() {
                         </Box>
                         <Switch colorScheme="teal" isChecked={samplingRequired} onChange={(event) => setSamplingRequired(event.target.checked)} />
                       </HStack>
+                      <HStack justify="space-between">
+                        <Box>
+                          <Text color="text.primary">Auto lot numbering</Text>
+                          <Text fontSize="sm" color="text.secondary">
+                            Generate lot numbers from company settings instead of manual entry.
+                          </Text>
+                        </Box>
+                        <Switch
+                          colorScheme="teal"
+                          isChecked={workflowSettings.workflow.autoLotNumbering}
+                          onChange={(event) =>
+                            setWorkflowSettings((prev) => ({
+                              ...prev,
+                              workflow: { ...prev.workflow, autoLotNumbering: event.target.checked },
+                            }))
+                          }
+                        />
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Box>
+                          <Text color="text.primary">Auto sample ID generation</Text>
+                          <Text fontSize="sm" color="text.secondary">
+                            Create sample IDs automatically during the sampling step.
+                          </Text>
+                        </Box>
+                        <Switch
+                          colorScheme="teal"
+                          isChecked={workflowSettings.workflow.autoSampleIdGeneration}
+                          onChange={(event) =>
+                            setWorkflowSettings((prev) => ({
+                              ...prev,
+                              workflow: { ...prev.workflow, autoSampleIdGeneration: event.target.checked },
+                            }))
+                          }
+                        />
+                      </HStack>
                     </VStack>
                     <VStack align="stretch" spacing={4}>
                       <HStack justify="space-between">
@@ -486,8 +619,256 @@ export default function SettingsPageRoute() {
                         </Box>
                         <Switch colorScheme="teal" isChecked={lockStrictMode} onChange={(event) => setLockStrictMode(event.target.checked)} />
                       </HStack>
+                      <HStack justify="space-between">
+                        <Box>
+                          <Text color="text.primary">Seal scan required</Text>
+                          <Text fontSize="sm" color="text.secondary">
+                            Force scan-first seal capture with a later generated fallback only when needed.
+                          </Text>
+                        </Box>
+                        <Switch
+                          colorScheme="teal"
+                          isChecked={workflowSettings.seal.sealScanRequired}
+                          onChange={(event) =>
+                            setWorkflowSettings((prev) => ({
+                              ...prev,
+                              seal: { ...prev.seal, sealScanRequired: event.target.checked },
+                            }))
+                          }
+                        />
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Box>
+                          <Text color="text.primary">Image timestamp overlay</Text>
+                          <Text fontSize="sm" color="text.secondary">
+                            Add timestamp proof to captured images when the company requires it.
+                          </Text>
+                        </Box>
+                        <Switch
+                          colorScheme="teal"
+                          isChecked={workflowSettings.images.imageTimestampRequired}
+                          onChange={(event) =>
+                            setWorkflowSettings((prev) => ({
+                              ...prev,
+                              images: { ...prev.images, imageTimestampRequired: event.target.checked },
+                            }))
+                          }
+                        />
+                      </HStack>
                     </VStack>
                   </SimpleGrid>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+                    <FormControl>
+                      <FormLabel>Final decision approver</FormLabel>
+                      <Select
+                        value={workflowSettings.workflow.finalDecisionApproverPolicy}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            workflow: {
+                              ...prev.workflow,
+                              finalDecisionApproverPolicy: event.target.value as ModuleWorkflowPolicy["workflow"]["finalDecisionApproverPolicy"],
+                            },
+                          }))
+                        }
+                      >
+                        <option value="MANAGER">Manager only</option>
+                        <option value="ADMIN">Admin only</option>
+                        <option value="MANAGER_ADMIN">Manager or Admin</option>
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Seal edit control</FormLabel>
+                      <Select
+                        value={workflowSettings.seal.sealEditPolicy}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            seal: {
+                              ...prev.seal,
+                              sealEditPolicy: event.target.value as ModuleWorkflowPolicy["seal"]["sealEditPolicy"],
+                            },
+                          }))
+                        }
+                      >
+                        <option value="ADMIN_ONLY">Admin only after generation</option>
+                        <option value="ALLOWED">Allowed by assigned workflow user</option>
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Lot numbering prefix</FormLabel>
+                      <Input
+                        value={workflowSettings.workflow.lotNumberPrefix}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            workflow: { ...prev.workflow, lotNumberPrefix: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Sample ID prefix</FormLabel>
+                      <Input
+                        value={workflowSettings.workflow.sampleIdPrefix}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            workflow: { ...prev.workflow, sampleIdPrefix: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Packet editing after Submit to R&D</FormLabel>
+                      <Select
+                        value={workflowSettings.workflow.lockPacketEditingAfterRndSubmit ? "LOCK" : "ALLOW"}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            workflow: {
+                              ...prev.workflow,
+                              lockPacketEditingAfterRndSubmit: event.target.value === "LOCK",
+                            },
+                          }))
+                        }
+                      >
+                        <option value="LOCK">Lock packet edits after submit</option>
+                        <option value="ALLOW">Allow packet edits after submit</option>
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Container type source</FormLabel>
+                      <Select
+                        value={workflowSettings.sampling.containerTypeSource}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            sampling: {
+                              ...prev.sampling,
+                              containerTypeSource: event.target.value as ModuleWorkflowPolicy["sampling"]["containerTypeSource"],
+                            },
+                          }))
+                        }
+                      >
+                        <option value="MASTER_ONLY">Master list only</option>
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Required image categories</FormLabel>
+                      <Textarea
+                        rows={5}
+                        value={workflowSettings.images.requiredImageCategories.join("\n")}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            images: {
+                              ...prev.images,
+                              requiredImageCategories: event.target.value
+                                .split("\n")
+                                .map((value) => value.trim())
+                                .filter(Boolean),
+                            },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Optional image categories</FormLabel>
+                      <Textarea
+                        rows={5}
+                        value={workflowSettings.images.optionalImageCategories.join("\n")}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            images: {
+                              ...prev.images,
+                              optionalImageCategories: event.target.value
+                                .split("\n")
+                                .map((value) => value.trim())
+                                .filter(Boolean),
+                            },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Packet purpose mode</FormLabel>
+                      <Select
+                        value={workflowSettings.packet.packetPurposeMode}
+                        onChange={(event) =>
+                          setWorkflowSettings((prev) => ({
+                            ...prev,
+                            packet: {
+                              ...prev.packet,
+                              packetPurposeMode: event.target.value as ModuleWorkflowPolicy["packet"]["packetPurposeMode"],
+                            },
+                          }))
+                        }
+                      >
+                        <option value="OPTIONAL">Optional in operations workflow</option>
+                        <option value="RND_OWNED">Set later by R&D</option>
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Workflow preview behavior</FormLabel>
+                      <Stack spacing={3}>
+                        <HStack justify="space-between">
+                          <Text fontSize="sm" color="text.primary">Show optional images section</Text>
+                          <Switch
+                            colorScheme="teal"
+                            isChecked={workflowSettings.ui.showOptionalImageSection}
+                            onChange={(event) =>
+                              setWorkflowSettings((prev) => ({
+                                ...prev,
+                                ui: { ...prev.ui, showOptionalImageSection: event.target.checked },
+                              }))
+                            }
+                          />
+                        </HStack>
+                        <HStack justify="space-between">
+                          <Text fontSize="sm" color="text.primary">Show blockers inline in workflow</Text>
+                          <Switch
+                            colorScheme="teal"
+                            isChecked={workflowSettings.ui.showBlockersInline}
+                            onChange={(event) =>
+                              setWorkflowSettings((prev) => ({
+                                ...prev,
+                                ui: { ...prev.ui, showBlockersInline: event.target.checked },
+                              }))
+                            }
+                          />
+                        </HStack>
+                        <HStack justify="space-between">
+                          <Text fontSize="sm" color="text.primary">Homogeneous proof required</Text>
+                          <Switch
+                            colorScheme="teal"
+                            isChecked={workflowSettings.sampling.homogeneousProofRequired}
+                            onChange={(event) =>
+                              setWorkflowSettings((prev) => ({
+                                ...prev,
+                                sampling: { ...prev.sampling, homogeneousProofRequired: event.target.checked },
+                              }))
+                            }
+                          />
+                        </HStack>
+                      </Stack>
+                    </FormControl>
+                  </SimpleGrid>
+                  <HStack justify="space-between" align="center">
+                    <Text fontSize="sm" color="text.secondary">
+                      {loadingWorkflowSettings ? "Loading workflow controls..." : "Workflow controls are company-scoped."}
+                    </Text>
+                    <Button
+                      leftIcon={<Save size={16} />}
+                      colorScheme="teal"
+                      onClick={() => void saveWorkflowSettings()}
+                      isLoading={savingWorkflowSettings}
+                      isDisabled={loadingWorkflowSettings}
+                    >
+                      Save Workflow Settings
+                    </Button>
+                  </HStack>
                 </VStack>
               ),
             },

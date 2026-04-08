@@ -12,6 +12,7 @@ import {
   mapSampleMediaByType,
   normalizeSampleMediaType,
 } from "@/lib/sample-management";
+import { buildModuleWorkflowSettingsCreate, canEditSeal, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import type { SampleRecord } from "@/types/inspection";
@@ -213,15 +214,26 @@ async function fetchSample(tx: PrismaLike, lotId: string) {
   });
 }
 
+async function getWorkflowPolicy(tx: PrismaLike, companyId: string) {
+  const settings = await tx.moduleWorkflowSettings.upsert({
+    where: { companyId },
+    update: {},
+    create: buildModuleWorkflowSettingsCreate(companyId),
+  });
+  return toModuleWorkflowPolicy(settings);
+}
+
 async function ensureSampleStarted(
   tx: Prisma.TransactionClient,
   input: {
     lotId: string;
     companyId: string;
     userId: string;
+    sampleCode?: string | null;
   },
 ) {
   const lot = await getLotScope(tx, input.lotId, input.companyId);
+  const workflowPolicy = await getWorkflowPolicy(tx, input.companyId);
   const existingSample = await fetchSample(tx, input.lotId);
   if (existingSample) {
     return existingSample;
@@ -257,7 +269,12 @@ async function ensureSampleStarted(
     });
   }
 
-  const sampleCode = buildSampleCode(lot.job.inspectionSerialNumber, lot.lotNumber);
+  const sampleCode = workflowPolicy.workflow.autoSampleIdGeneration
+    ? buildSampleCode(lot.job.inspectionSerialNumber, lot.lotNumber)
+    : input.sampleCode?.trim() || null;
+  if (!sampleCode) {
+    throw new Error("SAMPLE_CODE_REQUIRED");
+  }
   const created = await tx.sample.create({
     data: {
       companyId: input.companyId,
@@ -341,6 +358,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const lotId = typeof body?.lotId === "string" ? body.lotId.trim() : "";
+    const sampleCode = typeof body?.sampleCode === "string" ? body.sampleCode.trim() : "";
     if (!lotId) {
       return jsonError("Validation Error", "lotId is required.", 400);
     }
@@ -350,6 +368,7 @@ export async function POST(request: NextRequest) {
         lotId,
         companyId: currentUser.companyId,
         userId: currentUser.id,
+        sampleCode,
       }),
     );
 
@@ -372,6 +391,9 @@ export async function POST(request: NextRequest) {
     if (message === "INSPECTION_REQUIRED") {
       return jsonError("Validation Error", "Inspection record is required before sampling can begin.", 422);
     }
+    if (message === "SAMPLE_CODE_REQUIRED") {
+      return jsonError("Validation Error", "Sample ID is required when auto sample ID generation is disabled.", 400);
+    }
     return jsonError("System Error", message, 500);
   }
 }
@@ -390,13 +412,16 @@ export async function PATCH(request: NextRequest) {
     }
 
     const sample = await prisma.$transaction(async (tx) => {
+      const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
       const started = await ensureSampleStarted(tx, {
         lotId,
         companyId: currentUser.companyId,
         userId: currentUser.id,
+        sampleCode: typeof body?.sampleCode === "string" ? body.sampleCode.trim() : "",
       });
       const previous = started as unknown as SampleRecord;
 
+      const sampleCode = body?.sampleCode !== undefined ? normalizeText(body.sampleCode) : undefined;
       const sampleType = body?.sampleType !== undefined ? normalizeText(body.sampleType) : undefined;
       const samplingMethod = body?.samplingMethod !== undefined ? normalizeText(body.samplingMethod) : undefined;
       const sampleQuantity = body?.sampleQuantity !== undefined ? normalizeNumber(body.sampleQuantity) : undefined;
@@ -412,11 +437,16 @@ export async function PATCH(request: NextRequest) {
       const markSealed = body?.markSealed === true;
       const markLabeled = body?.markLabeled === true;
 
+      if (!workflowPolicy.workflow.autoSampleIdGeneration && sampleCode !== undefined && !sampleCode) {
+        throw new Error("SAMPLE_CODE_REQUIRED");
+      }
+
       if (sampleQuantity !== undefined && sampleQuantity !== null && sampleQuantity <= 0) {
         throw new Error("INVALID_SAMPLE_QUANTITY");
       }
 
       const updateData: Prisma.SampleUpdateInput = {
+        ...(!workflowPolicy.workflow.autoSampleIdGeneration && typeof sampleCode === "string" ? { sampleCode } : {}),
         ...(sampleType !== undefined ? { sampleType } : {}),
         ...(samplingMethod !== undefined ? { samplingMethod } : {}),
         ...(sampleQuantity !== undefined ? { sampleQuantity } : {}),
@@ -426,8 +456,9 @@ export async function PATCH(request: NextRequest) {
         ...(samplingDate !== undefined ? { samplingDate } : {}),
       };
 
-      if (markHomogenized && !previous.homogenizedAt) {
+      if (markHomogenized && workflowPolicy.sampling.homogeneousProofRequired && !previous.homogenizedAt) {
         updateData.homogenizedAt = new Date();
+        updateData.homogeneousProofDone = true;
       }
 
       if (Object.keys(updateData).length > 0) {
@@ -482,6 +513,9 @@ export async function PATCH(request: NextRequest) {
         markSealed ||
         markLabeled
       ) {
+        if ((sealNo !== undefined || markSealed || markLabeled) && previous.sealLabel?.sealNo && !canEditSeal(currentUser.role, workflowPolicy.seal.sealEditPolicy)) {
+          throw new Error("SEAL_EDIT_FORBIDDEN");
+        }
         await tx.sampleSealLabel.upsert({
           where: { sampleId: previous.id },
           update: {
@@ -628,6 +662,12 @@ export async function PATCH(request: NextRequest) {
 
     if (message === "INVALID_SAMPLE_QUANTITY") {
       return jsonError("Validation Error", "Sample quantity must be a positive number.", 400);
+    }
+    if (message === "SAMPLE_CODE_REQUIRED") {
+      return jsonError("Validation Error", "Sample ID is required when auto sample ID generation is disabled.", 400);
+    }
+    if (message === "SEAL_EDIT_FORBIDDEN") {
+      return jsonError("Forbidden", "Only Admin can edit seal values after seal mapping is created.", 403);
     }
 
     if (message.startsWith("READINESS_BLOCKED:")) {

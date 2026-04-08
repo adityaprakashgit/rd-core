@@ -158,13 +158,14 @@ export function FilterRail({ children }: { children: ReactNode }) {
 export function MobileActionRail({ children }: { children: ReactNode }) {
   return (
     <Box
-      display={{ base: "block", md: "none" }}
+      display={{ base: "block", lg: "none" }}
       position="sticky"
       bottom={MOBILE_ACTION_RAIL_BOTTOM_OFFSET}
       zIndex={15}
       mt={4}
     >
-      <HStack
+      <Stack
+        direction={{ base: "column", sm: "row" }}
         spacing={3}
         px={3}
         py={3}
@@ -174,16 +175,22 @@ export function MobileActionRail({ children }: { children: ReactNode }) {
         sx={{
           ...mobileBottomInteractiveSx,
           "& .chakra-button, & .chakra-icon-button": {
-            flex: "1 1 120px",
+            width: "100%",
             minH: "52px",
+            whiteSpace: "normal",
+            textAlign: "center",
+            lineHeight: "1.2",
           },
-          "& > *": {
-            minW: 0,
+          "@media (min-width: 30em)": {
+            "& .chakra-button, & .chakra-icon-button": {
+              width: "auto",
+              flex: "1 1 calc(50% - 12px)",
+            },
           },
         }}
       >
         {children}
-      </HStack>
+      </Stack>
     </Box>
   );
 }

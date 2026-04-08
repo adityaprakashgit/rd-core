@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Box,
   Button,
   FormControl,
   FormLabel,
-  Heading,
   HStack,
   Input,
   ListItem,
@@ -19,36 +18,46 @@ import {
   ModalHeader,
   ModalOverlay,
   OrderedList,
-  SimpleGrid,
-  Stack,
+  Select,
   Text,
   VStack,
+  useDisclosure,
   useToast,
 } from "@chakra-ui/react";
-import { ArrowRight, CheckCircle2, Clock3, MapPin, PackagePlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { Card } from "@/components/Card";
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
+import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
+import {
+  EnterpriseStickyTable,
+  FilterSearchStrip,
+  PageActionBar,
+  PageIdentityBar,
+  QuickEditDrawer,
+} from "@/components/enterprise/EnterprisePatterns";
 import { MasterAutocomplete } from "@/components/forms/MasterAutocomplete";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
-import { isLotReadyForNextStage } from "@/lib/intake-workflow";
 import { getJobWorkflowPresentation } from "@/lib/workflow-stage";
 import type { InspectionJob } from "@/types/inspection";
 
 type ClientMasterOption = {
+  id?: string;
   clientName: string;
   billToAddress: string;
   shipToAddress: string;
+  contactPerson?: string | null;
+  contactNumber?: string | null;
+  email?: string | null;
   gstOrId?: string | null;
+  sameAsBilling?: boolean;
 };
 
 type ItemMasterOption = {
+  id?: string;
   itemName: string;
   materialType?: "INHOUSE" | "TRADED" | string | null;
   description?: string | null;
-  uom?: string | null;
 };
 
 type WarehouseMasterOption = {
@@ -59,13 +68,11 @@ type WarehouseMasterOption = {
 type DuplicateCandidate = {
   id: string;
   inspectionSerialNumber: string;
-  jobReferenceNumber: string | null;
   status: string;
   createdAt: string;
 };
 
 type DuplicateWarningPayload = {
-  code: string;
   details: string;
   duplicateWindowHours: number;
   canOverrideDuplicate: boolean;
@@ -81,23 +88,18 @@ function formatDate(value: string | Date | null | undefined) {
   if (!value) {
     return "—";
   }
-
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
-function countCompletedLots(job: InspectionJob) {
-  return (job.lots ?? []).filter((lot) => isLotReadyForNextStage(lot)).length;
-}
-
-function formatMaterialTypeLabel(value: string | null | undefined) {
-  if (value === "INHOUSE") {
-    return "In-house";
+function getAging(updatedAt: string | Date) {
+  const ms = Date.now() - Number(new Date(updatedAt));
+  const hours = Math.max(Math.floor(ms / (1000 * 60 * 60)), 0);
+  if (hours < 24) {
+    return `${hours}h`;
   }
-  if (value === "TRADED") {
-    return "Traded";
-  }
-  return "Not set";
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 function getErrorDetails(error: unknown, fallback: string) {
@@ -111,16 +113,19 @@ export default function RdPage() {
   const router = useRouter();
   const toast = useToast();
   const { viewMode } = useWorkspaceView();
+  const createDrawer = useDisclosure();
 
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [stage, setStage] = useState("all");
+
   const [creating, setCreating] = useState(false);
   const [sourceName, setSourceName] = useState("");
   const [materialCategory, setMaterialCategory] = useState("");
   const [sourceLocation, setSourceLocation] = useState("");
   const [materialType, setMaterialType] = useState<"" | "INHOUSE" | "TRADED">("");
-
   const [clients, setClients] = useState<ClientMasterOption[]>([]);
   const [items, setItems] = useState<ItemMasterOption[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseMasterOption[]>([]);
@@ -132,24 +137,24 @@ export default function RdPage() {
   const [overrideReason, setOverrideReason] = useState("");
   const [sendingDuplicateEscalation, setSendingDuplicateEscalation] = useState(false);
 
-  async function fetchJobs() {
+  const fetchJobs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(`/api/jobs?view=${viewMode}`);
       if (!response.ok) {
-        throw new Error("The intake feed could not be loaded.");
+        throw new Error("Job registry could not be loaded.");
       }
       const data = await response.json();
       setJobs(Array.isArray(data) ? data : []);
     } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : "The intake feed could not be loaded.");
+      setError(fetchError instanceof Error ? fetchError.message : "Job registry could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }
+  }, [viewMode]);
 
-  async function fetchReferenceData() {
+  const fetchReferenceData = useCallback(async () => {
     setReferenceError(null);
     try {
       const [clientResponse, itemResponse, warehouseResponse] = await Promise.all([
@@ -157,30 +162,26 @@ export default function RdPage() {
         fetch("/api/masters/items"),
         fetch("/api/masters/warehouses"),
       ]);
-
       if (!clientResponse.ok || !itemResponse.ok || !warehouseResponse.ok) {
         throw new Error("Master options could not be loaded.");
       }
-
       const [clientData, itemData, warehouseData] = await Promise.all([
         clientResponse.json() as Promise<ClientMasterOption[]>,
         itemResponse.json() as Promise<ItemMasterOption[]>,
         warehouseResponse.json() as Promise<WarehouseMasterOption[]>,
       ]);
-
       setClients(Array.isArray(clientData) ? clientData : []);
       setItems(Array.isArray(itemData) ? itemData : []);
       setWarehouses(Array.isArray(warehouseData) ? warehouseData : []);
     } catch (fetchError) {
       setReferenceError(fetchError instanceof Error ? fetchError.message : "Master options could not be loaded.");
     }
-  }
+  }, []);
 
   useEffect(() => {
     void fetchJobs();
     void fetchReferenceData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode]);
+  }, [fetchJobs, fetchReferenceData]);
 
   useEffect(() => {
     const selectedItem = items.find((item) => item.itemName.toLowerCase() === materialCategory.trim().toLowerCase()) ?? null;
@@ -189,37 +190,20 @@ export default function RdPage() {
     }
   }, [items, materialCategory]);
 
-  const pendingJobs = useMemo(
-    () => jobs.filter((job) => countCompletedLots(job) < (job.lots?.length ?? 0) || (job.lots?.length ?? 0) === 0),
-    [jobs],
-  );
-
-  const nextJob = pendingJobs[0] ?? jobs[0] ?? null;
-
   const clientOptions = useMemo(
-    () =>
-      clients.map((client) => ({
-        value: client.clientName,
-        description: client.shipToAddress || client.billToAddress,
-      })),
+    () => clients.map((client) => ({ value: client.clientName, description: client.shipToAddress || client.billToAddress })),
     [clients],
   );
-
   const itemOptions = useMemo(
     () =>
       items.map((item) => ({
         value: item.itemName,
-        description: [formatMaterialTypeLabel(item.materialType), item.description].filter(Boolean).join(" • "),
+        description: [item.materialType ?? "Not set", item.description].filter(Boolean).join(" • "),
       })),
     [items],
   );
-
   const warehouseOptions = useMemo(
-    () =>
-      warehouses.map((warehouse) => ({
-        value: warehouse.warehouseName,
-        description: warehouse.description || undefined,
-      })),
+    () => warehouses.map((warehouse) => ({ value: warehouse.warehouseName, description: warehouse.description || undefined })),
     [warehouses],
   );
 
@@ -231,24 +215,12 @@ export default function RdPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientName: name }),
       });
-
-      if (!response.ok) {
-        throw await response.json();
-      }
-
+      if (!response.ok) throw await response.json();
       await fetchReferenceData();
       setSourceName(name);
-      toast({
-        title: "Customer added",
-        description: `${name} is now available in the master list.`,
-        status: "success",
-      });
+      toast({ title: "Customer added", status: "success" });
     } catch (createError: unknown) {
-      toast({
-        title: "Could not add customer",
-        description: getErrorDetails(createError, "Unable to add the customer master."),
-        status: "error",
-      });
+      toast({ title: "Could not add customer", description: getErrorDetails(createError, "Unable to add customer."), status: "error" });
     } finally {
       setAddingClient(false);
     }
@@ -256,14 +228,9 @@ export default function RdPage() {
 
   async function addItemMaster(name: string) {
     if (!materialType) {
-      toast({
-        title: "Select material type first",
-        description: "Choose in-house or traded before adding a new material.",
-        status: "warning",
-      });
+      toast({ title: "Select material type first", status: "warning" });
       return;
     }
-
     setAddingItem(true);
     try {
       const response = await fetch("/api/masters/items", {
@@ -271,24 +238,12 @@ export default function RdPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemName: name, materialType }),
       });
-
-      if (!response.ok) {
-        throw await response.json();
-      }
-
+      if (!response.ok) throw await response.json();
       await fetchReferenceData();
       setMaterialCategory(name);
-      toast({
-        title: "Material added",
-        description: `${name} is now available in the material master.`,
-        status: "success",
-      });
+      toast({ title: "Material added", status: "success" });
     } catch (createError: unknown) {
-      toast({
-        title: "Could not add material",
-        description: getErrorDetails(createError, "Unable to add the material master."),
-        status: "error",
-      });
+      toast({ title: "Could not add material", description: getErrorDetails(createError, "Unable to add material."), status: "error" });
     } finally {
       setAddingItem(false);
     }
@@ -302,39 +257,20 @@ export default function RdPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ warehouseName: name }),
       });
-
-      if (!response.ok) {
-        throw await response.json();
-      }
-
+      if (!response.ok) throw await response.json();
       await fetchReferenceData();
       setSourceLocation(name);
-      toast({
-        title: "Warehouse added",
-        description: `${name} is now available in the warehouse master.`,
-        status: "success",
-      });
+      toast({ title: "Warehouse added", status: "success" });
     } catch (createError: unknown) {
-      toast({
-        title: "Could not add warehouse",
-        description: getErrorDetails(createError, "Unable to add the warehouse master."),
-        status: "error",
-      });
+      toast({ title: "Could not add warehouse", description: getErrorDetails(createError, "Unable to add warehouse."), status: "error" });
     } finally {
       setAddingWarehouse(false);
     }
   }
 
-  async function submitJobCreate(input?: {
-    overrideDuplicate?: boolean;
-    overrideReason?: string;
-  }) {
+  async function submitJobCreate(input?: { overrideDuplicate?: boolean; overrideReason?: string }) {
     if (!sourceName.trim() || !materialCategory.trim() || !materialType) {
-      toast({
-        title: "Missing fields",
-        description: "Customer, material, and material type are required.",
-        status: "warning",
-      });
+      toast({ title: "Missing fields", description: "Customer, material, and material type are required.", status: "warning" });
       return;
     }
 
@@ -355,85 +291,45 @@ export default function RdPage() {
 
       if (response.status === 409) {
         const warning = await response.json() as {
-          code?: string;
           details?: string;
           duplicateWindowHours?: number;
           canOverrideDuplicate?: boolean;
           duplicateCandidates?: DuplicateCandidate[];
         };
-        if (warning.code === "JOB_POTENTIAL_DUPLICATE") {
-          setDuplicateWarning({
-            code: warning.code,
-            details: warning.details ?? "Potential duplicate jobs found.",
-            duplicateWindowHours: warning.duplicateWindowHours ?? 24,
-            canOverrideDuplicate: warning.canOverrideDuplicate === true,
-            duplicateCandidates: Array.isArray(warning.duplicateCandidates) ? warning.duplicateCandidates : [],
-          });
-          setOverrideReason("");
-          toast({
-            title: "Potential duplicate detected",
-            description: warning.details ?? "Review duplicates before continuing.",
-            status: "warning",
-          });
-          return;
-        }
+        setDuplicateWarning({
+          details: warning.details ?? "Potential duplicate jobs found.",
+          duplicateWindowHours: warning.duplicateWindowHours ?? 24,
+          canOverrideDuplicate: warning.canOverrideDuplicate === true,
+          duplicateCandidates: Array.isArray(warning.duplicateCandidates) ? warning.duplicateCandidates : [],
+        });
+        setOverrideReason("");
+        toast({ title: "Potential duplicate detected", status: "warning" });
+        return;
       }
 
-      if (!response.ok) {
-        throw await response.json();
-      }
-
+      if (!response.ok) throw await response.json();
       const job = await response.json();
-      toast({
-        title: "Job created",
-        description: job.inspectionSerialNumber || job.jobReferenceNumber,
-        status: "success",
-      });
+      toast({ title: "Job created", description: job.inspectionSerialNumber || job.jobReferenceNumber, status: "success" });
       setSourceName("");
       setMaterialCategory("");
       setMaterialType("");
       setSourceLocation("");
       setDuplicateWarning(null);
       setOverrideReason("");
-      router.push(`/userinsp/job/${job.id}?view=${viewMode}`);
+      createDrawer.onClose();
+      await fetchJobs();
+      router.push(`/jobs/${job.id}/workflow`);
     } catch (createError: unknown) {
-      toast({
-        title: "Create job failed",
-        description: getErrorDetails(createError, "Unable to create the job."),
-        status: "error",
-      });
+      toast({ title: "Create job failed", description: getErrorDetails(createError, "Unable to create job."), status: "error" });
     } finally {
       setCreating(false);
     }
-  }
-
-  async function createJob() {
-    await submitJobCreate();
-  }
-
-  async function submitDuplicateOverride() {
-    if (!duplicateWarning?.canOverrideDuplicate) {
-      return;
-    }
-    if (!overrideReason.trim()) {
-      toast({
-        title: "Override reason required",
-        description: "Provide a short reason before overriding duplicate protection.",
-        status: "warning",
-      });
-      return;
-    }
-    await submitJobCreate({
-      overrideDuplicate: true,
-      overrideReason: overrideReason.trim(),
-    });
   }
 
   async function sendDuplicateEscalation() {
     if (!duplicateWarning) {
       return;
     }
-
     setSendingDuplicateEscalation(true);
     try {
       const response = await fetch("/api/workflow/escalations", {
@@ -453,284 +349,218 @@ export default function RdPage() {
           },
         }),
       });
-
-      if (!response.ok) {
-        throw await response.json();
-      }
-
-      toast({
-        title: "Escalation queued",
-        description: "Duplicate case was sent to the workflow escalation queue.",
-        status: "success",
-      });
+      if (!response.ok) throw await response.json();
+      toast({ title: "Escalation queued", status: "success" });
       setDuplicateWarning(null);
-      setOverrideReason("");
-    } catch (error: unknown) {
-      toast({
-        title: "Escalation failed",
-        description: getErrorDetails(error, "Unable to create escalation at this time."),
-        status: "error",
-      });
+    } catch (submitError: unknown) {
+      toast({ title: "Escalation failed", description: getErrorDetails(submitError, "Unable to create escalation."), status: "error" });
     } finally {
       setSendingDuplicateEscalation(false);
     }
   }
 
+  const stageOptions = useMemo(() => {
+    const labels = new Set<string>();
+    jobs.forEach((job) => labels.add(getJobWorkflowPresentation(job).label));
+    return ["All", ...Array.from(labels)];
+  }, [jobs]);
+
+  const filteredRows = useMemo(
+    () =>
+      jobs
+        .filter((job) => {
+          const presentation = getJobWorkflowPresentation(job);
+          const matchesStage = stage === "all" || presentation.label.toLowerCase() === stage;
+          const text = [job.inspectionSerialNumber, job.clientName, job.commodity, job.plantLocation ?? ""].join(" ").toLowerCase();
+          return matchesStage && (!search || text.includes(search.toLowerCase()));
+        })
+        .sort((a, b) => Number(new Date(b.updatedAt)) - Number(new Date(a.updatedAt))),
+    [jobs, search, stage],
+  );
+
   return (
     <>
       <ControlTowerLayout>
-      <VStack align="stretch" spacing={6}>
-        <Stack direction={{ base: "column", xl: "row" }} justify="space-between" spacing={4}>
-          <Box>
-            <HStack spacing={2} mb={2} flexWrap="wrap">
-              <Badge colorScheme="brand">JOB INTAKE</Badge>
-              <Badge colorScheme="gray" variant="subtle">
-                MASTER-LED
-              </Badge>
-            </HStack>
-            <Heading size="lg">Job Intake and Lot Traceability</Heading>
-          </Box>
+        <VStack align="stretch" spacing={4}>
+          <PageIdentityBar
+            title="Job Registry"
+            subtitle="Table-first job operations with explicit lot linkage."
+            status={<Badge colorScheme="brand" variant="subtle">{viewMode === "all" ? "Company View" : "My View"}</Badge>}
+          />
 
-          {nextJob ? (
-            <Card bg="bg.rail">
-              <VStack align="stretch" spacing={2} minW={{ xl: "320px" }}>
-                <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                  Continue pending job
-                </Text>
-                <Text fontWeight="bold">{nextJob.inspectionSerialNumber}</Text>
-                <Text color="text.secondary" fontSize="sm">
-                  {nextJob.clientName}
-                </Text>
-                <Button
-                  rightIcon={<ArrowRight size={16} />}
-                  onClick={() => router.push(`/userinsp/job/${nextJob.id}?view=${viewMode}`)}
-                >
-                  Continue
-                </Button>
-              </VStack>
-            </Card>
-          ) : null}
-        </Stack>
+          <PageActionBar
+            primaryAction={<Button onClick={createDrawer.onOpen}>Create Job</Button>}
+            secondaryActions={<Text fontSize="sm" color="text.secondary">Lot-centric enterprise registry</Text>}
+          />
 
-        <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={5}>
-          <Box gridColumn={{ xl: "span 1" }}>
-            <Card>
-              <VStack align="stretch" spacing={4}>
-                <HStack spacing={3}>
-                  <Box p={3} borderRadius="2xl" bg="brand.50" color="brand.600">
-                    <PackagePlus size={20} />
-                  </Box>
-                  <Box>
-                    <Heading size="md">Create job</Heading>
-                  </Box>
-                </HStack>
+          <FilterSearchStrip
+            filters={
+              <Select value={stage} onChange={(event) => setStage(event.target.value)} maxW="220px" size="sm">
+                {stageOptions.map((option) => (
+                  <option key={option} value={option.toLowerCase()}>
+                    {option === "All" ? "All stages" : option}
+                  </option>
+                ))}
+              </Select>
+            }
+            search={<Input size="sm" maxW={{ base: "full", lg: "320px" }} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search job, customer, source, material" />}
+            actions={<Button size="sm" variant="outline" onClick={() => { setSearch(""); setStage("all"); }}>Clear</Button>}
+          />
 
-                <MasterAutocomplete
-                  label="Customer"
-                  isRequired
-                  value={sourceName}
-                  options={clientOptions}
-                  placeholder="Type customer name"
-                  helperText={referenceError ? "Master list unavailable. You can still type and add new records." : "Type at least 3 characters to add a new customer if no match exists."}
-                  isAdding={addingClient}
-                  addLabel={(value) => `Add "${value}" as new customer`}
-                  onChange={setSourceName}
-                  onAdd={addClientMaster}
-                />
-
-                <MasterAutocomplete
-                  label="Material"
-                  isRequired
-                  value={materialCategory}
-                  options={itemOptions}
-                  placeholder="Type material name"
-                  helperText="Pick an existing material or add a new one after 3 characters."
-                  isAdding={addingItem}
-                  addLabel={(value) => `Add "${value}" as new material`}
-                  onChange={setMaterialCategory}
-                  onAdd={addItemMaster}
-                />
-
-                <FormControl isRequired>
-                  <FormLabel>Material type</FormLabel>
-                  <HStack spacing={3} flexWrap="wrap">
-                    {MATERIAL_TYPE_OPTIONS.map((option) => (
-                      <Button
-                        key={option.value}
-                        variant={materialType === option.value ? "solid" : "outline"}
-                        colorScheme={materialType === option.value ? "teal" : "gray"}
-                        onClick={() => setMaterialType(option.value)}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </HStack>
-                </FormControl>
-
-                <MasterAutocomplete
-                  label="Warehouse"
-                  value={sourceLocation}
-                  options={warehouseOptions}
-                  placeholder="Select or type warehouse"
-                  helperText="Location now comes from warehouse masters."
-                  isAdding={addingWarehouse}
-                  addLabel={(value) => `Add "${value}" as new warehouse`}
-                  onChange={setSourceLocation}
-                  onAdd={addWarehouseMaster}
-                />
-
-                <Button onClick={createJob} isLoading={creating}>
-                  Create job
-                </Button>
-              </VStack>
-            </Card>
-          </Box>
-
-          <Box gridColumn={{ xl: "span 2" }}>
-            {loading ? <PageSkeleton cards={4} rows={2} /> : null}
-            {!loading && error ? (
-              <InlineErrorState title="Intake feed unavailable" description={error} onRetry={() => void fetchJobs()} />
-            ) : null}
-
-            {!loading && !error ? (
-              jobs.length === 0 ? (
-                <EmptyWorkState
-                  title="No intake jobs yet"
-                  description="Create the first intake job to start building lots and traceability."
-                />
-              ) : (
-                <VStack align="stretch" spacing={4}>
-                  {jobs.map((job) => {
-                    const completedLots = countCompletedLots(job);
-                    const totalLots = job.lots?.length ?? 0;
-                    const presentation = getJobWorkflowPresentation(job);
-                    const targetHref = `/userinsp/job/${job.id}?view=${viewMode}`;
-
-                    return (
-                      <Card key={job.id}>
-                        <Stack direction={{ base: "column", md: "row" }} justify="space-between" spacing={4}>
-                          <Box flex="1">
-                            <HStack spacing={2} flexWrap="wrap">
-                              <Badge colorScheme="brand">{job.inspectionSerialNumber}</Badge>
-                              <Badge colorScheme={presentation.tone} variant="subtle">
-                                {presentation.label}
-                              </Badge>
-                              {job.materialType ? (
-                                <Badge colorScheme={job.materialType === "INHOUSE" ? "green" : "purple"} variant="subtle">
-                                  {formatMaterialTypeLabel(job.materialType)}
-                                </Badge>
-                              ) : null}
-                            </HStack>
-                            <Heading size="md" mt={3}>
-                              {job.clientName}
-                            </Heading>
-                            <Text color="text.secondary" mt={1}>
-                              {job.commodity}
-                            </Text>
-                          </Box>
-
-                          <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} minW={{ md: "380px" }}>
-                            <Box>
-                              <HStack spacing={2} color="text.secondary">
-                                <PackagePlus size={14} />
-                                <Text fontSize="xs" textTransform="uppercase" fontWeight="bold">Lots</Text>
-                              </HStack>
-                              <Text fontWeight="bold" mt={1}>{totalLots}</Text>
-                            </Box>
-                            <Box>
-                              <HStack spacing={2} color="text.secondary">
-                                <CheckCircle2 size={14} />
-                                <Text fontSize="xs" textTransform="uppercase" fontWeight="bold">Ready</Text>
-                              </HStack>
-                              <Text fontWeight="bold" mt={1}>{completedLots}</Text>
-                            </Box>
-                            <Box>
-                              <HStack spacing={2} color="text.secondary">
-                                <MapPin size={14} />
-                                <Text fontSize="xs" textTransform="uppercase" fontWeight="bold">Warehouse</Text>
-                              </HStack>
-                              <Text fontWeight="bold" mt={1}>{job.plantLocation || "Not set"}</Text>
-                            </Box>
-                            <Box>
-                              <HStack spacing={2} color="text.secondary">
-                                <Clock3 size={14} />
-                                <Text fontSize="xs" textTransform="uppercase" fontWeight="bold">Updated</Text>
-                              </HStack>
-                              <Text fontWeight="bold" mt={1}>{formatDate(job.updatedAt)}</Text>
-                            </Box>
-                          </SimpleGrid>
-                        </Stack>
-
-                        <HStack spacing={3} mt={5} flexWrap="wrap">
-                          <Button onClick={() => router.push(targetHref)}>Open job</Button>
-                          <Button variant="outline" onClick={() => router.push(targetHref)}>
-                            {totalLots === 0 ? "Add first lot" : "Continue intake"}
-                          </Button>
-                        </HStack>
-                      </Card>
-                    );
-                  })}
-                </VStack>
-              )
-            ) : null}
-          </Box>
-        </SimpleGrid>
-      </VStack>
-      </ControlTowerLayout>
-      <Modal isOpen={duplicateWarning !== null} onClose={() => setDuplicateWarning(null)} size="xl" isCentered>
-      <ModalOverlay />
-      <ModalContent>
-        <ModalHeader>Potential duplicate job</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          <VStack align="stretch" spacing={3}>
-            <Text color="text.secondary">
-              {duplicateWarning?.details}
-            </Text>
-            <Text fontSize="sm" color="text.secondary">
-              Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours.
-            </Text>
-            <OrderedList spacing={1} ml={4}>
-              {(duplicateWarning?.duplicateCandidates ?? []).map((candidate) => (
-                <ListItem key={candidate.id} fontSize="sm">
-                  {candidate.inspectionSerialNumber} ({candidate.status}){" "}
-                  <Text as="span" color="text.secondary">
-                    {formatDate(candidate.createdAt)}
-                  </Text>
-                </ListItem>
-              ))}
-            </OrderedList>
-            <FormControl isRequired={Boolean(duplicateWarning?.canOverrideDuplicate)}>
-              <FormLabel>Reason</FormLabel>
-              <Input
-                value={overrideReason}
-                onChange={(event) => setOverrideReason(event.target.value)}
-                placeholder={
-                  duplicateWarning?.canOverrideDuplicate
-                    ? "Required for override"
-                    : "Optional reason for escalation"
-                }
-              />
-            </FormControl>
-          </VStack>
-        </ModalBody>
-        <ModalFooter>
-          <HStack spacing={2}>
-            <Button variant="ghost" onClick={() => setDuplicateWarning(null)}>
-              Cancel
-            </Button>
-            {duplicateWarning?.canOverrideDuplicate ? (
-              <Button onClick={() => void submitDuplicateOverride()} isLoading={creating}>
-                Create with Override
-              </Button>
+          {loading ? <PageSkeleton cards={2} rows={2} /> : null}
+          {!loading && error ? <InlineErrorState title="Job registry unavailable" description={error} onRetry={() => void fetchJobs()} /> : null}
+          {!loading && !error ? (
+            filteredRows.length === 0 ? (
+              <EmptyWorkState title="No jobs found" description="Create a job or change filters." />
             ) : (
-              <Button onClick={() => void sendDuplicateEscalation()} isLoading={sendingDuplicateEscalation}>
-                Send Escalation
-              </Button>
-            )}
-          </HStack>
-        </ModalFooter>
-      </ModalContent>
+              <EnterpriseStickyTable>
+                <Box p={3}>
+                  <EnterpriseDataTable
+                    rows={filteredRows}
+                    rowKey={(row) => row.id}
+                    columns={[
+                      { id: "job-id", header: "Job ID", render: (row) => <Text fontWeight="semibold">{row.inspectionSerialNumber || row.jobReferenceNumber || "—"}</Text> },
+                      { id: "customer", header: "Customer / Source", render: (row) => row.plantLocation ? `${row.clientName} • ${row.plantLocation}` : row.clientName },
+                      { id: "lots", header: "Number of Lots", render: (row) => String(row.lots?.length ?? 0) },
+                      {
+                        id: "stage",
+                        header: "Current Stage",
+                        render: (row) => {
+                          const presentation = getJobWorkflowPresentation(row);
+                          return <Badge colorScheme={presentation.tone} variant="subtle">{presentation.label}</Badge>;
+                        },
+                      },
+                      {
+                        id: "pending-action",
+                        header: "Pending Action",
+                        render: (row) => getJobWorkflowPresentation(row).nextAction,
+                      },
+                      { id: "owner", header: "Owner", render: (row) => row.assignedTo?.profile?.displayName || "Unassigned" },
+                      { id: "updated", header: "Last Updated", render: (row) => formatDate(row.updatedAt) },
+                      { id: "aging", header: "Aging / SLA", render: (row) => getAging(row.updatedAt) },
+                    ]}
+                    rowActions={[
+                      { id: "open", label: "Open Job Workflow", onClick: (row) => router.push(`/jobs/${row.id}/workflow`) },
+                      {
+                        id: "open-inspection",
+                        label: "Open Inspection Queue",
+                        onClick: (row) => router.push(`/jobs/${row.id}/workflow?section=images`),
+                      },
+                    ]}
+                  />
+                </Box>
+              </EnterpriseStickyTable>
+            )
+          ) : null}
+        </VStack>
+      </ControlTowerLayout>
+
+      <QuickEditDrawer
+        isOpen={createDrawer.isOpen}
+        onClose={createDrawer.onClose}
+        title="Create Job"
+        onSave={() => void submitJobCreate()}
+        isSaving={creating}
+        saveLabel="Create Job"
+      >
+        <VStack align="stretch" spacing={4}>
+          <MasterAutocomplete
+            label="Customer"
+            isRequired
+            value={sourceName}
+            options={clientOptions}
+            placeholder="Type customer name"
+            helperText={referenceError ? "Master list unavailable. You can still type and add." : "Type at least 3 characters to add new customer."}
+            isAdding={addingClient}
+            addLabel={(value) => `Add "${value}" as new customer`}
+            onChange={setSourceName}
+            onAdd={addClientMaster}
+          />
+
+          <MasterAutocomplete
+            label="Material"
+            isRequired
+            value={materialCategory}
+            options={itemOptions}
+            placeholder="Type material name"
+            helperText="Pick existing material or add a new one."
+            isAdding={addingItem}
+            addLabel={(value) => `Add "${value}" as new material`}
+            onChange={setMaterialCategory}
+            onAdd={addItemMaster}
+          />
+
+          <FormControl isRequired>
+            <FormLabel>Material type</FormLabel>
+            <HStack spacing={2} flexWrap="wrap">
+              {MATERIAL_TYPE_OPTIONS.map((option) => (
+                <Button
+                  key={option.value}
+                  variant={materialType === option.value ? "solid" : "outline"}
+                  onClick={() => setMaterialType(option.value)}
+                  size="sm"
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </HStack>
+          </FormControl>
+
+          <MasterAutocomplete
+            label="Warehouse"
+            value={sourceLocation}
+            options={warehouseOptions}
+            placeholder="Select or type warehouse"
+            helperText="Location comes from warehouse masters."
+            isAdding={addingWarehouse}
+            addLabel={(value) => `Add "${value}" as new warehouse`}
+            onChange={setSourceLocation}
+            onAdd={addWarehouseMaster}
+          />
+        </VStack>
+      </QuickEditDrawer>
+
+      <Modal isOpen={duplicateWarning !== null} onClose={() => setDuplicateWarning(null)} size="xl" isCentered>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Potential duplicate job</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={3}>
+              <Text color="text.secondary">{duplicateWarning?.details}</Text>
+              <Text fontSize="sm" color="text.secondary">Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours.</Text>
+              <OrderedList spacing={1} ml={4}>
+                {(duplicateWarning?.duplicateCandidates ?? []).map((candidate) => (
+                  <ListItem key={candidate.id} fontSize="sm">
+                    {candidate.inspectionSerialNumber} ({candidate.status}) <Text as="span" color="text.secondary">{formatDate(candidate.createdAt)}</Text>
+                  </ListItem>
+                ))}
+              </OrderedList>
+              <FormControl isRequired={Boolean(duplicateWarning?.canOverrideDuplicate)}>
+                <FormLabel>Reason</FormLabel>
+                <Input
+                  value={overrideReason}
+                  onChange={(event) => setOverrideReason(event.target.value)}
+                  placeholder={duplicateWarning?.canOverrideDuplicate ? "Required for override" : "Optional reason for escalation"}
+                />
+              </FormControl>
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <HStack spacing={2}>
+              <Button variant="ghost" onClick={() => setDuplicateWarning(null)}>Cancel</Button>
+              {duplicateWarning?.canOverrideDuplicate ? (
+                <Button onClick={() => void submitJobCreate({ overrideDuplicate: true, overrideReason: overrideReason.trim() })} isLoading={creating}>
+                  Create with Override
+                </Button>
+              ) : (
+                <Button onClick={() => void sendDuplicateEscalation()} isLoading={sendingDuplicateEscalation}>
+                  Send Escalation
+                </Button>
+              )}
+            </HStack>
+          </ModalFooter>
+        </ModalContent>
       </Modal>
     </>
   );

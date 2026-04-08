@@ -54,7 +54,7 @@ export function MobileBottomNav({
       <Box
         as="nav"
         aria-label="Primary mobile navigation"
-        display={{ base: "block", md: "none" }}
+        display={{ base: "block", lg: "none" }}
         position="fixed"
         left={3}
         right={3}

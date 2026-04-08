@@ -2,11 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Accordion,
-  AccordionButton,
-  AccordionIcon,
-  AccordionItem,
-  AccordionPanel,
   Badge,
   Box,
   Button,
@@ -27,7 +22,8 @@ import { useParams, useRouter } from "next/navigation";
 
 import { Card } from "@/components/Card";
 import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
-import { WorkbenchPageTemplate } from "@/components/enterprise/PageTemplates";
+import { MobileActionRail, WorkbenchPageTemplate } from "@/components/enterprise/PageTemplates";
+import { DetailTabsLayout, HistoryTimeline, LinkedRecordsPanel } from "@/components/enterprise/EnterprisePatterns";
 import { WorkflowStepTracker } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { getStoredAuth } from "@/lib/auth-client";
@@ -196,7 +192,7 @@ export function JobIntakeWorkspace({
             </HStack>
           </HStack>
 
-          <SimpleGrid columns={{ base: 2, md: 5 }} spacing={3}>
+          <SimpleGrid columns={{ base: 2, lg: 4 }} spacing={3}>
             <Box>
               <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
                 Required proof
@@ -219,14 +215,6 @@ export function JobIntakeWorkspace({
               </Text>
               <Text fontWeight="semibold" mt={1}>
                 {lotStatus.label}
-              </Text>
-            </Box>
-            <Box>
-              <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                Updated
-              </Text>
-              <Text fontWeight="semibold" mt={1}>
-                {formatDate(lot.updatedAt ?? lot.createdAt)}
               </Text>
             </Box>
             <Box>
@@ -390,9 +378,6 @@ export function JobIntakeWorkspace({
                 <Badge colorScheme={presentation?.tone ?? "gray"} variant="subtle">
                   {presentation?.label ?? job.status}
                 </Badge>
-                <Badge colorScheme="gray" variant="subtle">
-                  {intakeSummary.ready}/{intakeSummary.total} ready for sampling
-                </Badge>
               </HStack>
               <Heading size="lg" mt={2}>
                 {job.clientName}
@@ -429,7 +414,7 @@ export function JobIntakeWorkspace({
               }))}
               compact
             />
-            <SimpleGrid columns={{ base: 2, lg: 6 }} spacing={4}>
+            <SimpleGrid display={{ base: "none", lg: "grid" }} columns={{ base: 2, lg: 6 }} spacing={4}>
               <SectionHint label="Total lots" value={String(intakeSummary.total)} />
               <SectionHint label="Ready now" value={String(intakeSummary.ready)} />
               <SectionHint label="In progress" value={String(intakeSummary.inProgress)} />
@@ -440,233 +425,271 @@ export function JobIntakeWorkspace({
           </VStack>
         </Card>
 
-        {job.lots?.length ? (
-          viewVariant === "queue" ? (
-            <VStack align="stretch" spacing={4}>
-              {orderedLots.map((lot) => renderQueueLotCard(lot))}
-            </VStack>
-          ) : (
-            <WorkbenchPageTemplate
-              rightLabel="Selected lot"
-              left={
-              <VStack align="stretch" spacing={4}>
-                {orderedLots.map((lot) => {
-                  const lotStatus = getLotInspectionStatusPresentation(lot);
-                  const photoCompletion = getLotPhotoCompletion(lot);
-                  const isSelected = selectedLot?.id === lot.id;
-
-                  return (
-                    <Card
-                      key={lot.id}
-                      bg={isSelected ? "brand.50" : undefined}
-                      borderColor={isSelected ? "brand.200" : undefined}
-                    >
-                      <VStack align="stretch" spacing={4}>
-                        <HStack justify="space-between" align="start">
-                          <Box>
-                            <HStack spacing={2} flexWrap="wrap">
-                              <Badge colorScheme="brand" variant={isSelected ? "solid" : "subtle"}>
-                                {lot.lotNumber}
-                              </Badge>
-                              <Badge colorScheme={lotStatus.tone} variant="subtle">
-                                {lotStatus.label}
-                              </Badge>
-                            </HStack>
-                            <Text fontWeight="semibold" color="text.primary" mt={3}>
-                              {lot.materialName || "Material pending"}
-                            </Text>
-                            <Text fontSize="sm" color="text.secondary" mt={1}>
-                              {getLotModeLabel(lot)} • {getLotQuantitySummary(lot)}
-                            </Text>
-                          </Box>
-                          <Button variant="ghost" size="sm" rightIcon={<ChevronRight size={14} />} onClick={() => setSelectedLotId(lot.id)}>
-                            View
-                          </Button>
-                        </HStack>
-
-                        <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                              Photos
-                            </Text>
-                            <Text fontWeight="semibold" mt={1}>
-                              {photoCompletion.requiredCompleted}/{photoCompletion.requiredTotal}
-                            </Text>
-                            <Text fontSize="sm" color="text.secondary">
-                              Required
-                            </Text>
-                          </Box>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                              Mode
-                            </Text>
-                            <Text fontWeight="semibold" mt={1}>
-                              {getLotModeLabel(lot)}
-                            </Text>
-                          </Box>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                              Inspection
-                            </Text>
-                            <Text fontWeight="semibold" mt={1}>
-                              {lotStatus.label}
-                            </Text>
-                          </Box>
-                          <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                              Updated
-                            </Text>
-                            <Text fontWeight="semibold" mt={1}>
-                              {formatDate(lot.updatedAt ?? lot.createdAt)}
-                            </Text>
-                          </Box>
-                        </SimpleGrid>
-
-                        <HStack spacing={3} flexWrap="wrap">
-                          <Button size="sm" onClick={() => router.push(lotHref(job.id, lot.id))}>
-                            Open inspection
-                          </Button>
-                          <Button size="sm" variant="outline" leftIcon={<Camera size={14} />} onClick={() => router.push(lotHref(job.id, lot.id))}>
-                            Review proof
-                          </Button>
-                          <Badge colorScheme={lotStatus.tone} px={3} py={1.5}>
-                            {lotStatus.label}
-                          </Badge>
-                        </HStack>
-                      </VStack>
-                    </Card>
-                  );
-                })}
-              </VStack>
-              }
-              right={
-                selectedLot ? (
+        <DetailTabsLayout
+          tabs={[
+            {
+              id: "overview",
+              label: "Overview",
+              content: job.lots?.length ? (
+                viewVariant === "queue" ? (
                   <VStack align="stretch" spacing={4}>
-                    <Card bg="bg.rail">
+                    {orderedLots.map((lot) => renderQueueLotCard(lot))}
+                  </VStack>
+                ) : (
+                  <WorkbenchPageTemplate
+                    rightLabel="Linked Lot View"
+                    left={
                       <VStack align="stretch" spacing={4}>
-                        <HStack justify="space-between" align="start">
-                          <Box>
-                            <HStack spacing={2} flexWrap="wrap">
-                              <Badge colorScheme="brand">{selectedLot.lotNumber}</Badge>
-                              <Badge colorScheme={getLotInspectionStatusPresentation(selectedLot).tone} variant="subtle">
-                                {getLotInspectionStatusPresentation(selectedLot).label}
-                              </Badge>
-                            </HStack>
-                            <Heading size="md" mt={3}>
-                              {selectedLot.materialName || "Material pending"}
-                            </Heading>
-                            <Text fontSize="sm" color="text.secondary" mt={1}>
-                              {getLotModeLabel(selectedLot)} • {getLotQuantitySummary(selectedLot)}
-                            </Text>
-                          </Box>
-                          <Button size="sm" variant="outline" onClick={() => router.push(lotHref(job.id, selectedLot.id))}>
-                            Open lot
-                          </Button>
-                        </HStack>
+                        {orderedLots.map((lot) => {
+                          const lotStatus = getLotInspectionStatusPresentation(lot);
+                          const photoCompletion = getLotPhotoCompletion(lot);
+                          const isSelected = selectedLot?.id === lot.id;
 
-                        <SimpleGrid columns={{ base: 2, md: 4, xl: 2 }} spacing={3}>
-                          <SectionHint label="Required photos" value={`${getLotPhotoCompletion(selectedLot).requiredCompleted}/${getLotPhotoCompletion(selectedLot).requiredTotal}`} />
-                          <SectionHint label="Optional photos" value={`${getLotPhotoCompletion(selectedLot).optionalCompleted}/${getLotPhotoCompletion(selectedLot).optionalTotal}`} />
-                          <SectionHint label="Created" value={formatDate(selectedLot.createdAt)} />
-                          <SectionHint label="Inspection" value={getLotInspectionStatusPresentation(selectedLot).summary} />
-                        </SimpleGrid>
-                      </VStack>
-                    </Card>
-
-                    <Card>
-                      <VStack align="stretch" spacing={3}>
-                        <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                          Lot evidence
-                        </Text>
-                        {REQUIRED_LOT_MEDIA_CATEGORIES.map((category) => {
-                          const media = selectedLotPhotos.find((item) => item.category === category) ?? null;
                           return (
-                            <Box key={category}>
-                              <HStack justify="space-between" align="center">
-                                <Text fontWeight="semibold">{category.replaceAll("_", " ")}</Text>
-                                <Badge colorScheme={media ? "green" : "orange"} variant="subtle">
-                                  {media ? "Done" : "Pending"}
-                                </Badge>
-                              </HStack>
-                              {media ? (
-                                <Image
-                                  src={media.storageKey}
-                                  alt={category}
-                                  borderRadius="xl"
-                                  mt={3}
-                                  objectFit="cover"
-                                  h="144px"
-                                  w="100%"
-                                  bg="bg.rail"
-                                />
-                              ) : (
-                                <Text fontSize="sm" color="text.secondary" mt={2}>
-                                  Capture still pending in the inspection flow.
-                                </Text>
-                              )}
-                              <Divider mt={4} />
-                            </Box>
+                            <Card
+                              key={lot.id}
+                              bg={isSelected ? "brand.50" : undefined}
+                              borderColor={isSelected ? "brand.200" : undefined}
+                            >
+                              <VStack align="stretch" spacing={4}>
+                                <HStack justify="space-between" align="start">
+                                  <Box>
+                                    <HStack spacing={2} flexWrap="wrap">
+                                      <Badge colorScheme="brand" variant={isSelected ? "solid" : "subtle"}>
+                                        {lot.lotNumber}
+                                      </Badge>
+                                      <Badge colorScheme={lotStatus.tone} variant="subtle">
+                                        {lotStatus.label}
+                                      </Badge>
+                                    </HStack>
+                                    <Text fontWeight="semibold" color="text.primary" mt={3}>
+                                      {lot.materialName || "Material pending"}
+                                    </Text>
+                                    <Text fontSize="sm" color="text.secondary" mt={1}>
+                                      {getLotModeLabel(lot)} • {getLotQuantitySummary(lot)}
+                                    </Text>
+                                  </Box>
+                                  <Button variant="ghost" size="sm" rightIcon={<ChevronRight size={14} />} onClick={() => setSelectedLotId(lot.id)}>
+                                    View
+                                  </Button>
+                                </HStack>
+
+                                <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
+                                  <Box>
+                                    <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                                      Photos
+                                    </Text>
+                                    <Text fontWeight="semibold" mt={1}>
+                                      {photoCompletion.requiredCompleted}/{photoCompletion.requiredTotal}
+                                    </Text>
+                                  </Box>
+                                  <Box>
+                                    <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                                      Mode
+                                    </Text>
+                                    <Text fontWeight="semibold" mt={1}>
+                                      {getLotModeLabel(lot)}
+                                    </Text>
+                                  </Box>
+                                  <Box>
+                                    <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                                      Inspection
+                                    </Text>
+                                    <Text fontWeight="semibold" mt={1}>
+                                      {lotStatus.label}
+                                    </Text>
+                                  </Box>
+                                  <Box>
+                                    <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                                      Updated
+                                    </Text>
+                                    <Text fontWeight="semibold" mt={1}>
+                                      {formatDate(lot.updatedAt ?? lot.createdAt)}
+                                    </Text>
+                                  </Box>
+                                </SimpleGrid>
+
+                                <HStack spacing={3} flexWrap="wrap">
+                                  <Button size="sm" onClick={() => router.push(lotHref(job.id, lot.id))}>
+                                    Open inspection
+                                  </Button>
+                                  <Button size="sm" variant="outline" leftIcon={<Camera size={14} />} onClick={() => router.push(lotHref(job.id, lot.id))}>
+                                    Review proof
+                                  </Button>
+                                  <Badge colorScheme={lotStatus.tone} px={3} py={1.5}>
+                                    {lotStatus.label}
+                                  </Badge>
+                                </HStack>
+                              </VStack>
+                            </Card>
                           );
                         })}
                       </VStack>
-                    </Card>
-
-                    {isAdmin ? (
-                      <Card>
-                        <Accordion allowToggle defaultIndex={[]}>
-                          <AccordionItem border="none">
-                            <AccordionButton px={0}>
-                              <Box flex="1" textAlign="left">
-                                <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                                  Audit trail
-                                </Text>
-                              </Box>
-                              <AccordionIcon />
-                            </AccordionButton>
-                            <AccordionPanel px={0} pb={0}>
-                              <AuditTrail logs={logs.slice(0, 8)} />
-                            </AccordionPanel>
-                          </AccordionItem>
-                        </Accordion>
-                      </Card>
-                    ) : null}
-                  </VStack>
-                ) : (
-                  <EmptyWorkState
-                    title="Select a lot"
-                    description="Choose a lot card to open its guided inspection workflow."
+                    }
+                    right={
+                      selectedLot ? (
+                        <LinkedRecordsPanel
+                          items={[
+                            { label: "Job Number", value: job.inspectionSerialNumber || job.jobReferenceNumber || "Job" },
+                            { label: "Lot Number", value: selectedLot.lotNumber, href: lotHref(job.id, selectedLot.id) },
+                            { label: "Sample", value: selectedLot.sample?.sampleCode || "Pending" },
+                            { label: "Packet", value: selectedLot.sample?.packets?.[0]?.packetCode || "Pending" },
+                            { label: "Documents", value: `${job.reportSnapshots?.length ?? 0}` },
+                            { label: "Traceability", value: "Open", href: `/traceability/lot/${selectedLot.id}` },
+                          ]}
+                        />
+                      ) : (
+                        <EmptyWorkState title="Select a lot" description="Choose a lot card to review its linked records." />
+                      )
+                    }
                   />
                 )
-              }
-            />
-          )
-        ) : (
-          <EmptyWorkState
-            title="No lots registered yet"
-            description="Create the first lot to start this inspection queue."
-            action={<Button onClick={onOpen}>Add first lot</Button>}
-          />
-        )}
-
-        {viewVariant === "queue" && isAdmin && logs.length > 0 ? (
-          <Card>
-            <Accordion allowToggle defaultIndex={[]}>
-              <AccordionItem border="none">
-                <AccordionButton px={0}>
-                  <Box flex="1" textAlign="left">
-                    <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                      Recent job activity
+              ) : (
+                <EmptyWorkState
+                  title="No lots registered yet"
+                  description="Create the first lot to start this inspection queue."
+                  action={<Button onClick={onOpen}>Add first lot</Button>}
+                />
+              ),
+            },
+            {
+              id: "sample-details",
+              label: "Sample Details",
+              content: (
+                <VStack align="stretch" spacing={3}>
+                  {orderedLots.map((lot) => {
+                    const sampleState = lot.sample?.sampleStatus ?? "PENDING";
+                    return (
+                      <Card key={lot.id}>
+                        <HStack justify="space-between" spacing={4} flexWrap="wrap">
+                          <VStack align="start" spacing={1}>
+                            <Text fontWeight="semibold">{lot.lotNumber}</Text>
+                            <Text fontSize="sm" color="text.secondary">{lot.materialName || "Material pending"}</Text>
+                          </VStack>
+                          <HStack spacing={2}>
+                            <Badge colorScheme="blue" variant="subtle">{sampleState.replaceAll("_", " ")}</Badge>
+                            <Badge colorScheme={getLotInspectionStatusPresentation(lot).tone} variant="subtle">
+                              {getLotInspectionStatusPresentation(lot).label}
+                            </Badge>
+                          </HStack>
+                        </HStack>
+                      </Card>
+                    );
+                  })}
+                </VStack>
+              ),
+            },
+            {
+              id: "photos-uploads",
+              label: "Photos / Uploads",
+              content: selectedLot ? (
+                <Card>
+                  <VStack align="stretch" spacing={3}>
+                    <Text fontSize="sm" color="text.secondary">
+                      {selectedLot.lotNumber} evidence status
                     </Text>
-                  </Box>
-                  <AccordionIcon />
-                </AccordionButton>
-                <AccordionPanel px={0} pb={0}>
-                  <AuditTrail logs={logs.slice(0, 6)} />
-                </AccordionPanel>
-              </AccordionItem>
-            </Accordion>
-          </Card>
-        ) : null}
+                    {REQUIRED_LOT_MEDIA_CATEGORIES.map((category) => {
+                      const media = selectedLotPhotos.find((item) => item.category === category);
+                      return (
+                        <HStack key={category} justify="space-between">
+                          <Text>{category.replaceAll("_", " ")}</Text>
+                          <Badge colorScheme={media ? "green" : "orange"}>{media ? "Uploaded" : "Missing"}</Badge>
+                        </HStack>
+                      );
+                    })}
+                  </VStack>
+                </Card>
+              ) : (
+                <EmptyWorkState title="No lot selected" description="Choose a lot from Overview to inspect uploads." />
+              ),
+            },
+            {
+              id: "linked-job",
+              label: "Linked Job",
+              content: (
+                <LinkedRecordsPanel
+                  items={[
+                    { label: "Job Number", value: job.inspectionSerialNumber || job.jobReferenceNumber || "Job" },
+                    { label: "Client", value: job.clientName },
+                    { label: "Lot Count", value: String(job.lots?.length ?? 0) },
+                    { label: "Current Step", value: presentation?.label ?? job.status },
+                  ]}
+                />
+              ),
+            },
+            {
+              id: "notes",
+              label: "Notes",
+              content: (
+                <VStack align="stretch" spacing={3}>
+                  {orderedLots.map((lot) => (
+                    <Card key={lot.id}>
+                      <Text fontWeight="semibold">{lot.lotNumber}</Text>
+                      <Text fontSize="sm" color="text.secondary" mt={1}>
+                        {lot.inspection?.overallRemark || lot.remarks || "No notes captured yet."}
+                      </Text>
+                    </Card>
+                  ))}
+                </VStack>
+              ),
+            },
+            {
+              id: "history",
+              label: "History",
+              content: (
+                <VStack align="stretch" spacing={4}>
+                  {isAdmin ? <AuditTrail logs={logs} /> : null}
+                  <HistoryTimeline
+                    events={logs.slice(0, 12).map((log) => ({
+                      id: log.id,
+                      title: log.entity ? `${log.entity} · ${log.action}` : log.action,
+                      subtitle: log.notes || "System trace entry",
+                      at: formatDate(log.createdAt),
+                    }))}
+                  />
+                </VStack>
+              ),
+            },
+          ]}
+          rightRail={
+            <VStack align="stretch" spacing={4}>
+              {selectedLot ? (
+                <LinkedRecordsPanel
+                  items={[
+                    { label: "Job Number", value: job.inspectionSerialNumber || job.jobReferenceNumber || "Job" },
+                    { label: "Lot Number", value: selectedLot.lotNumber, href: lotHref(job.id, selectedLot.id) },
+                    { label: "Current Step", value: presentation?.label ?? job.status },
+                    { label: "Sample", value: selectedLot.sample?.sampleCode || "Not Available" },
+                    { label: "Packet", value: selectedLot.sample?.packets?.[0]?.packetCode || "Not Available" },
+                    { label: "Traceability", value: "Open", href: `/traceability/lot/${selectedLot.id}` },
+                  ]}
+                />
+              ) : (
+                <EmptyWorkState title="Select a lot" description="Choose a lot to view linked records." />
+              )}
+              <HistoryTimeline
+                events={logs.slice(0, 5).map((log) => ({
+                  id: `rail-${log.id}`,
+                  title: log.entity ? `${log.entity} · ${log.action}` : log.action,
+                  subtitle: log.notes || "System trace entry",
+                  at: formatDate(log.createdAt),
+                }))}
+              />
+            </VStack>
+          }
+        />
+        <MobileActionRail>
+          <Button leftIcon={<PackagePlus size={16} />} onClick={onOpen}>
+            Add Lot
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => nextLot && router.push(lotHref(job.id, nextLot.id))}
+            isDisabled={!nextLot}
+          >
+            {nextLot ? "Open next inspection" : "Open first lot"}
+          </Button>
+        </MobileActionRail>
       </VStack>
 
       <LotIntakeWizard

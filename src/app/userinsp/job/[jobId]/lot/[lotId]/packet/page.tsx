@@ -1,7 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { PacketManagementWorkspace } from "@/components/inspection/PacketManagementWorkspace";
-
-export default function LotPacketPage() {
-  return <PacketManagementWorkspace />;
+export default async function LotPacketPage({
+  params,
+}: {
+  params: Promise<{ jobId: string; lotId: string }>;
+}) {
+  const { jobId, lotId } = await params;
+  redirect(`/jobs/${jobId}/workflow?lotId=${lotId}&section=packets`);
 }
