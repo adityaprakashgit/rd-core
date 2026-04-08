@@ -6,6 +6,12 @@ import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { buildPackingListHtml, renderHtmlToPdf } from "@/lib/traceability";
 import { sanitizeReportDocumentType, sanitizeReportPreferences } from "@/lib/report-preferences";
+import {
+  getExportPolicyBlockReason,
+  getReportExportStagePolicy,
+  isExportStageAllowed,
+} from "@/lib/report-export-policy";
+import { buildPackingPolicyBlockedEscalation, enqueueWorkflowEscalationSafe } from "@/lib/workflow-escalation";
 
 export const runtime = "nodejs";
 const WEIGHT_TOLERANCE = 0.01;
@@ -179,6 +185,7 @@ export async function POST(request: NextRequest) {
       where: { id: jobId },
       select: {
         companyId: true,
+        status: true,
         clientName: true,
         commodity: true,
         plantLocation: true,
@@ -193,6 +200,31 @@ export async function POST(request: NextRequest) {
 
     if (job.companyId !== currentUser.companyId) {
       return jsonError("Forbidden", "Cross-company access is not allowed.", 403);
+    }
+
+    const exportPolicy = getReportExportStagePolicy();
+    if (!isExportStageAllowed(exportPolicy, job.status)) {
+      const blocked = getExportPolicyBlockReason(exportPolicy);
+      await enqueueWorkflowEscalationSafe({
+        ...buildPackingPolicyBlockedEscalation({
+          companyId: currentUser.companyId,
+          raisedByUserId: currentUser.id,
+          jobId,
+          jobStatus: job.status,
+          policyCode: blocked.code,
+          policyDetails: blocked.details,
+        }),
+      });
+      return NextResponse.json(
+        {
+          error: "Export Policy Blocked",
+          details: blocked.details,
+          code: blocked.code,
+          policy: exportPolicy,
+          jobStatus: job.status,
+        },
+        { status: 422 },
+      );
     }
 
     const lots = await prisma.inspectionLot.findMany({

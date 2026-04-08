@@ -15,6 +15,29 @@ enum UserRole {
   VIEWER
 }
 
+enum WorkflowEscalationType {
+  DUPLICATE_JOB
+  LOT_CONFLICT
+  VALIDATION_ERROR
+  PACKING_POLICY_BLOCK
+  AUDIT_LOG_FAILURE
+  OPERATIONAL_BLOCK
+}
+
+enum WorkflowEscalationSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum WorkflowEscalationStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
 model User {
   id                  String    @id
   companyId           String
@@ -45,6 +68,8 @@ model User {
   inspections              Inspection[]    @relation("InspectionInspector")
   auditLogs                AuditLog[]
   loginAttempts            LoginAttempt[]
+  raisedEscalations        WorkflowEscalation[] @relation("WorkflowEscalationRaisedBy")
+  assignedEscalations      WorkflowEscalation[] @relation("WorkflowEscalationAssignedTo")
 }
 
 model LoginAttempt {
@@ -165,6 +190,7 @@ model InspectionJob {
   reportSnapshots    ReportSnapshot[]
   auditLogs          AuditLog[]
   packets            Packet[]
+  workflowEscalations WorkflowEscalation[]
 
   createdByUser User  @relation("InspectionJobCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   assignedTo    User? @relation("InspectionJobAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
@@ -244,11 +270,41 @@ model InspectionLot {
 
   bags     InspectionBag[]
   sampling Sampling[]
+  workflowEscalations WorkflowEscalation[]
 
   @@unique([jobId, lotNumber])
   @@index([companyId])
   @@index([companyId, assignedToId])
   @@index([companyId, sealNumber])
+}
+
+model WorkflowEscalation {
+  id             String                   @id @default(cuid())
+  companyId      String
+  type           WorkflowEscalationType
+  severity       WorkflowEscalationSeverity @default(MEDIUM)
+  status         WorkflowEscalationStatus @default(OPEN)
+  title          String
+  detailsJson    Json?
+  overrideReason String?
+  resolutionNote String?
+  jobId          String?
+  lotId          String?
+  raisedByUserId String?
+  assignedToUserId String?
+  resolvedAt     DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  job          InspectionJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  lot          InspectionLot? @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  raisedByUser User?          @relation("WorkflowEscalationRaisedBy", fields: [raisedByUserId], references: [id], onDelete: SetNull)
+  assignedToUser User?        @relation("WorkflowEscalationAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@index([companyId, type, createdAt(sort: Desc)])
+  @@index([jobId])
+  @@index([lotId])
 }
 
 model MediaFile {

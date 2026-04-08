@@ -25,7 +25,9 @@ import {
   ModalBody,
   ModalCloseButton,
   Collapse,
-  Container
+  Container,
+  ListItem,
+  OrderedList,
 } from "@chakra-ui/react";
 import { InspectionJob, InspectionLot, Sampling } from "@/types/inspection";
 
@@ -97,6 +99,22 @@ type Job = {
   status: string;
 };
 
+type DuplicateCandidate = {
+  id: string;
+  inspectionSerialNumber: string;
+  jobReferenceNumber: string | null;
+  status: string;
+  createdAt: string;
+};
+
+type DuplicateWarningPayload = {
+  code: string;
+  details: string;
+  duplicateWindowHours: number;
+  canOverrideDuplicate: boolean;
+  duplicateCandidates: DuplicateCandidate[];
+};
+
 export default function InspectorView() {
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
   const [clientName, setClientName] = useState("");
@@ -112,6 +130,9 @@ export default function InspectorView() {
   const [totalBags, setTotalBags] = useState("");
   const [isAddingLot, setIsAddingLot] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarningPayload | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [sendingDuplicateEscalation, setSendingDuplicateEscalation] = useState(false);
 
   
   const toast = useToast();
@@ -127,7 +148,10 @@ export default function InspectorView() {
     }
   }
 
-  async function createJob() {
+  async function submitCreateJob(input?: {
+    overrideDuplicate?: boolean;
+    overrideReason?: string;
+  }) {
     if (!clientName || !commodity) {
       toast({ title: "Please fill all fields", status: "warning", duration: 3000, position: "top" });
       return;
@@ -135,23 +159,122 @@ export default function InspectorView() {
     
     setIsCreatingJob(true);
     try {
-      await fetch("/api/jobs", {
+      const response = await fetch("/api/jobs", {
         method: "POST",
         body: JSON.stringify({
           clientName,
           commodity,
+          overrideDuplicate: input?.overrideDuplicate ?? false,
+          overrideReason: input?.overrideReason ?? undefined,
         }),
         headers: { "Content-Type": "application/json" },
       });
 
+      if (response.status === 409) {
+        const warning = await response.json() as {
+          code?: string;
+          details?: string;
+          duplicateWindowHours?: number;
+          canOverrideDuplicate?: boolean;
+          duplicateCandidates?: DuplicateCandidate[];
+        };
+
+        if (warning.code === "JOB_POTENTIAL_DUPLICATE") {
+          setDuplicateWarning({
+            code: warning.code,
+            details: warning.details ?? "Potential duplicate jobs found.",
+            duplicateWindowHours: warning.duplicateWindowHours ?? 24,
+            canOverrideDuplicate: warning.canOverrideDuplicate === true,
+            duplicateCandidates: Array.isArray(warning.duplicateCandidates) ? warning.duplicateCandidates : [],
+          });
+          setOverrideReason("");
+          toast({
+            title: "Potential duplicate detected",
+            description: warning.details ?? "Review duplicate candidates before continuing.",
+            status: "warning",
+            duration: 3500,
+            position: "top",
+          });
+          return;
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error("Failed to create job");
+      }
+
       toast({ title: "Job Created successfully!", status: "success", duration: 3000, position: "top" });
       setClientName("");
       setCommodity("");
-      fetchJobs();
+      setDuplicateWarning(null);
+      setOverrideReason("");
+      await fetchJobs();
     } catch {
       toast({ title: "Error creating job", status: "error", duration: 3000, position: "top" });
     } finally {
       setIsCreatingJob(false);
+    }
+  }
+
+  async function createJob() {
+    await submitCreateJob();
+  }
+
+  async function submitDuplicateOverride() {
+    if (!duplicateWarning?.canOverrideDuplicate) {
+      return;
+    }
+    if (!overrideReason.trim()) {
+      toast({ title: "Override reason required", status: "warning", duration: 2500, position: "top" });
+      return;
+    }
+    await submitCreateJob({
+      overrideDuplicate: true,
+      overrideReason: overrideReason.trim(),
+    });
+  }
+
+  async function sendDuplicateEscalation() {
+    if (!duplicateWarning) {
+      return;
+    }
+
+    setSendingDuplicateEscalation(true);
+    try {
+      const response = await fetch("/api/workflow/escalations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "DUPLICATE_JOB",
+          severity: "MEDIUM",
+          title: `Duplicate warning: ${clientName.trim()} / ${commodity.trim()}`,
+          overrideReason: overrideReason.trim() || undefined,
+          detailsJson: {
+            duplicateWindowHours: duplicateWarning.duplicateWindowHours,
+            duplicateCandidates: duplicateWarning.duplicateCandidates,
+            clientName: clientName.trim(),
+            commodity: commodity.trim(),
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to create escalation");
+      }
+
+      toast({
+        title: "Escalation queued",
+        description: "Duplicate case was sent to admin queue.",
+        status: "success",
+        duration: 3000,
+        position: "top",
+      });
+      setDuplicateWarning(null);
+      setOverrideReason("");
+    } catch {
+      toast({ title: "Escalation failed", status: "error", duration: 3000, position: "top" });
+    } finally {
+      setSendingDuplicateEscalation(false);
     }
   }
 
@@ -475,6 +598,55 @@ export default function InspectorView() {
           <ModalFooter>
             <Button variant="ghost" mr={3} onClick={() => setIsAddLotOpen(false)}>Cancel</Button>
             <Button colorScheme="blue" onClick={submitAddLot} isLoading={isAddingLot}>Add Lot</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={duplicateWarning !== null} onClose={() => setDuplicateWarning(null)} size="xl" isCentered>
+        <ModalOverlay />
+        <ModalContent borderRadius="xl">
+          <ModalHeader>Potential duplicate job</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={3}>
+              <Text color="gray.600">{duplicateWarning?.details}</Text>
+              <Text fontSize="sm" color="gray.500">
+                Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours
+              </Text>
+              <OrderedList spacing={1} ml={4}>
+                {(duplicateWarning?.duplicateCandidates ?? []).map((candidate) => (
+                  <ListItem key={candidate.id} fontSize="sm" color="gray.700">
+                    {candidate.inspectionSerialNumber} ({candidate.status})
+                  </ListItem>
+                ))}
+              </OrderedList>
+              <FormControl isRequired={Boolean(duplicateWarning?.canOverrideDuplicate)}>
+                <FormLabel>Reason</FormLabel>
+                <Input
+                  value={overrideReason}
+                  onChange={(event) => setOverrideReason(event.target.value)}
+                  placeholder={
+                    duplicateWarning?.canOverrideDuplicate
+                      ? "Required for override"
+                      : "Optional reason for escalation"
+                  }
+                />
+              </FormControl>
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={() => setDuplicateWarning(null)}>
+              Cancel
+            </Button>
+            {duplicateWarning?.canOverrideDuplicate ? (
+              <Button colorScheme="blue" onClick={() => void submitDuplicateOverride()} isLoading={isCreatingJob}>
+                Create with Override
+              </Button>
+            ) : (
+              <Button colorScheme="blue" onClick={() => void sendDuplicateEscalation()} isLoading={sendingDuplicateEscalation}>
+                Send Escalation
+              </Button>
+            )}
           </ModalFooter>
         </ModalContent>
       </Modal>

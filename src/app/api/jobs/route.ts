@@ -6,6 +6,8 @@ import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { workspaceJobSelect } from "@/lib/job-workspace";
 import { recordAuditLog } from "@/lib/audit";
+import { evaluateDuplicateOverrideDecision } from "@/lib/job-duplicate-policy";
+import { buildDuplicateJobEscalation, enqueueWorkflowEscalationSafe } from "@/lib/workflow-escalation";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,36 @@ function normalizeMaterialType(value: unknown): "INHOUSE" | "TRADED" | null {
 
   const normalized = value.trim().toUpperCase();
   return normalized === "INHOUSE" || normalized === "TRADED" ? normalized : null;
+}
+
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function toSerializableDuplicate(input: {
+  id: string;
+  inspectionSerialNumber: string;
+  jobReferenceNumber: string | null;
+  clientName: string;
+  commodity: string;
+  plantLocation: string | null;
+  status: string;
+  createdAt: Date;
+}) {
+  return {
+    id: input.id,
+    inspectionSerialNumber: input.inspectionSerialNumber,
+    jobReferenceNumber: input.jobReferenceNumber,
+    clientName: input.clientName,
+    commodity: input.commodity,
+    plantLocation: input.plantLocation,
+    status: input.status,
+    createdAt: input.createdAt.toISOString(),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -92,16 +124,24 @@ export async function POST(request: Request) {
       plantLocation?: unknown;
       sourceLocation?: unknown;
       materialType?: unknown;
+      overrideDuplicate?: unknown;
+      overrideReason?: unknown;
     };
 
     const sourceName = typeof payload.sourceName === "string" ? payload.sourceName : payload.clientName;
     const materialCategory = typeof payload.materialCategory === "string" ? payload.materialCategory : payload.commodity;
     const sourceLocation = typeof payload.sourceLocation === "string" ? payload.sourceLocation : payload.plantLocation;
     const materialType = normalizeMaterialType(payload.materialType);
+    const overrideDuplicate = payload.overrideDuplicate === true;
+    const overrideReason = normalizeText(payload.overrideReason);
 
     if (typeof sourceName !== "string" || typeof materialCategory !== "string") {
       return jsonError("Missing required fields", "sourceName/clientName and materialCategory/commodity are required.", 400);
     }
+
+    const normalizedSourceName = sourceName.trim();
+    const normalizedMaterialCategory = materialCategory.trim();
+    const normalizedSourceLocation = normalizeText(sourceLocation);
 
     if (payload.companyId !== undefined && payload.companyId !== currentUser.companyId) {
       return jsonError("Forbidden", "companyId mismatch for current user.", 403);
@@ -109,6 +149,87 @@ export async function POST(request: Request) {
 
     if (payload.userId !== undefined && payload.userId !== currentUser.id) {
       return jsonError("Forbidden", "userId mismatch for current user.", 403);
+    }
+
+    const duplicateWindowHoursRaw = Number(process.env.JOB_DUPLICATE_WINDOW_HOURS ?? "24");
+    const duplicateWindowHours = Number.isFinite(duplicateWindowHoursRaw) && duplicateWindowHoursRaw > 0
+      ? duplicateWindowHoursRaw
+      : 24;
+    const duplicateWindowStart = new Date(Date.now() - duplicateWindowHours * 60 * 60 * 1000);
+
+    const duplicateWhere: Prisma.InspectionJobWhereInput = {
+      companyId: currentUser.companyId,
+      status: { not: "ARCHIVED" },
+      createdAt: { gte: duplicateWindowStart },
+      clientName: { equals: normalizedSourceName, mode: "insensitive" },
+      commodity: { equals: normalizedMaterialCategory, mode: "insensitive" },
+      ...(normalizedSourceLocation
+        ? { plantLocation: { equals: normalizedSourceLocation, mode: "insensitive" } }
+        : { plantLocation: null }),
+    };
+
+    const duplicateCandidates = await prisma.inspectionJob.findMany({
+      where: duplicateWhere,
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        inspectionSerialNumber: true,
+        jobReferenceNumber: true,
+        clientName: true,
+        commodity: true,
+        plantLocation: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    const duplicateDecision = evaluateDuplicateOverrideDecision({
+      duplicates: duplicateCandidates,
+      duplicateWindowHours,
+      overrideDuplicate,
+      overrideReason,
+      userRole: currentUser.role,
+    });
+
+    if (duplicateDecision.kind === "BLOCK_DUPLICATE") {
+      await enqueueWorkflowEscalationSafe({
+        ...buildDuplicateJobEscalation({
+          companyId: currentUser.companyId,
+          raisedByUserId: currentUser.id,
+          sourceName: normalizedSourceName,
+          materialCategory: normalizedMaterialCategory,
+          sourceLocation: normalizedSourceLocation,
+          duplicateWindowHours,
+          duplicateCandidates,
+          overrideRequested: false,
+        }),
+      });
+
+      return NextResponse.json(
+        {
+          error: "Duplicate Warning",
+          details: "Potential duplicate jobs found for the same source/material in the recent window. Re-submit with overrideDuplicate=true to continue.",
+          code: "JOB_POTENTIAL_DUPLICATE",
+          duplicateWindowHours: duplicateDecision.duplicateWindowHours,
+          canOverrideDuplicate: duplicateDecision.canOverrideDuplicate,
+          duplicateCandidates: duplicateDecision.duplicates.map(toSerializableDuplicate),
+          duplicates: duplicateDecision.duplicates.map(toSerializableDuplicate),
+        },
+        { status: 409 },
+      );
+    }
+
+    if (duplicateDecision.kind === "VALIDATION_ERROR") {
+      return jsonError("Validation Error", duplicateDecision.message, 400);
+    }
+
+    if (duplicateDecision.kind === "FORBIDDEN_OVERRIDE") {
+      return jsonError("Forbidden", duplicateDecision.message, 403);
+    }
+
+    if (duplicateDecision.kind === "ALLOW_OVERRIDE") {
+      authorize(currentUser, "OVERRIDE_DUPLICATE_JOB");
     }
 
     const { generateInspectionSerial } = await import("@/lib/serial");
@@ -122,10 +243,10 @@ export async function POST(request: Request) {
           assignedToId: currentUser.id,
           assignedById: currentUser.id,
           assignedAt: new Date(),
-          clientName: sourceName.trim(),
-          commodity: materialCategory.trim(),
-          plantLocation: typeof sourceLocation === "string" && sourceLocation.trim().length > 0
-            ? sourceLocation.trim()
+          clientName: normalizedSourceName,
+          commodity: normalizedMaterialCategory,
+          plantLocation: normalizedSourceLocation
+            ? normalizedSourceLocation
             : null,
           inspectionSerialNumber: serial ?? "",
         },
@@ -142,8 +263,25 @@ export async function POST(request: Request) {
           sourceName: created.clientName,
           materialCategory: created.commodity,
           materialType,
+          ...duplicateDecision.auditMetadata,
         },
       });
+
+      if (duplicateDecision.kind === "ALLOW_OVERRIDE") {
+        await recordAuditLog(tx, {
+          jobId: created.id,
+          userId: currentUser.id,
+          entity: "JOB",
+          action: "JOB_DUPLICATE_OVERRIDE_USED",
+          to: "CREATED",
+          notes: duplicateDecision.overrideReason,
+          metadata: {
+            duplicateCandidateCount: duplicateCandidates.length,
+            duplicateCandidateIds: duplicateCandidates.map((candidate) => candidate.id),
+            duplicateWindowHours,
+          },
+        });
+      }
 
       return created;
     });

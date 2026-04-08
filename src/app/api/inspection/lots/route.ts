@@ -5,6 +5,8 @@ import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { recordAuditLog } from "@/lib/audit";
 import { normalizeQuantityMode } from "@/lib/intake-workflow";
+import { isLotVersionConflict, parseExpectedUpdatedAt } from "@/lib/lot-concurrency";
+import { buildLotConflictEscalation, enqueueWorkflowEscalationSafe } from "@/lib/workflow-escalation";
 
 function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
@@ -232,17 +234,45 @@ export async function PATCH(req: NextRequest) {
 
     const body = await req.json();
     const lotId = typeof body?.lotId === "string" ? body.lotId.trim() : "";
+    const expectedUpdatedAtRaw = typeof body?.expectedUpdatedAt === "string" ? body.expectedUpdatedAt.trim() : "";
     if (!lotId) {
       return jsonError("Validation Error", "lotId is required.", 400);
     }
+    if (!expectedUpdatedAtRaw) {
+      return jsonError("Validation Error", "expectedUpdatedAt is required.", 400);
+    }
+
+    const expectedUpdatedAtResult = parseExpectedUpdatedAt(expectedUpdatedAtRaw);
+    if (!expectedUpdatedAtResult.ok) {
+      return jsonError("Validation Error", expectedUpdatedAtResult.message, 400);
+    }
+    const expectedUpdatedAt = expectedUpdatedAtResult.value;
 
     const existing = await prisma.inspectionLot.findUnique({
       where: { id: lotId },
-      select: { id: true, jobId: true, companyId: true, status: true, quantityMode: true, materialName: true },
+      select: { id: true, jobId: true, companyId: true, status: true, quantityMode: true, materialName: true, updatedAt: true },
     });
 
     if (!existing || existing.companyId !== currentUser.companyId) {
       return jsonError("Forbidden", "Cross-company access is not allowed.", 403);
+    }
+
+    if (isLotVersionConflict(existing.updatedAt, expectedUpdatedAt)) {
+      await enqueueWorkflowEscalationSafe({
+        ...buildLotConflictEscalation({
+          companyId: currentUser.companyId,
+          raisedByUserId: currentUser.id,
+          jobId: existing.jobId,
+          lotId: existing.id,
+          expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+          actualUpdatedAt: new Date(existing.updatedAt).toISOString(),
+        }),
+      });
+      return jsonError(
+        "Conflict Action",
+        `Lot was updated by another action. Reload and retry with latest version (${new Date(existing.updatedAt).toISOString()}).`,
+        409,
+      );
     }
 
     const access = await validateJobAccess(existing.jobId, currentUser.companyId);
@@ -263,8 +293,11 @@ export async function PATCH(req: NextRequest) {
     const netWeight = body?.netWeight === undefined ? undefined : body.netWeight === null ? null : Number(body.netWeight);
 
     const lot = await prisma.$transaction(async (tx) => {
-      const updated = await tx.inspectionLot.update({
-        where: { id: lotId },
+      const conditionalUpdate = await tx.inspectionLot.updateMany({
+        where: {
+          id: lotId,
+          updatedAt: existing.updatedAt,
+        },
         data: {
           ...(materialName !== undefined ? { materialName } : {}),
           ...(typeof body?.materialCategory === "string" ? { materialCategory: body.materialCategory.trim() || null } : {}),
@@ -290,12 +323,41 @@ export async function PATCH(req: NextRequest) {
             }),
           ),
         },
+      });
+
+      if (conditionalUpdate.count === 0) {
+        const latestVersion = await tx.inspectionLot.findUnique({
+          where: { id: lotId },
+          select: { updatedAt: true },
+        });
+
+        await enqueueWorkflowEscalationSafe({
+          ...buildLotConflictEscalation({
+            companyId: currentUser.companyId,
+            raisedByUserId: currentUser.id,
+            jobId: existing.jobId,
+            lotId: existing.id,
+            expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+            actualUpdatedAt: latestVersion?.updatedAt
+              ? new Date(latestVersion.updatedAt).toISOString()
+              : new Date().toISOString(),
+          }),
+        }, tx);
+        throw new Error("LOT_CONFLICT");
+      }
+
+      const updated = await tx.inspectionLot.findUnique({
+        where: { id: lotId },
         include: {
           bags: true,
           mediaFiles: true,
           sampling: true,
         },
       });
+
+      if (!updated) {
+        throw new Error("LOT_NOT_FOUND_AFTER_UPDATE");
+      }
 
       await recordAuditLog(tx, {
         jobId: existing.jobId,
@@ -317,6 +379,10 @@ export async function PATCH(req: NextRequest) {
   } catch (error: unknown) {
     if (error instanceof AuthorizationError) {
       return jsonError("Forbidden", error.message, 403);
+    }
+
+    if (error instanceof Error && error.message === "LOT_CONFLICT") {
+      return jsonError("Conflict Action", "Lot was updated by another action. Reload and retry.", 409);
     }
 
     const message = error instanceof Error ? error.message : "Internal Server Error";

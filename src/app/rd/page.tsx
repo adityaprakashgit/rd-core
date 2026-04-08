@@ -9,6 +9,16 @@ import {
   FormLabel,
   Heading,
   HStack,
+  Input,
+  ListItem,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
+  OrderedList,
   SimpleGrid,
   Stack,
   Text,
@@ -44,6 +54,22 @@ type ItemMasterOption = {
 type WarehouseMasterOption = {
   warehouseName: string;
   description?: string | null;
+};
+
+type DuplicateCandidate = {
+  id: string;
+  inspectionSerialNumber: string;
+  jobReferenceNumber: string | null;
+  status: string;
+  createdAt: string;
+};
+
+type DuplicateWarningPayload = {
+  code: string;
+  details: string;
+  duplicateWindowHours: number;
+  canOverrideDuplicate: boolean;
+  duplicateCandidates: DuplicateCandidate[];
 };
 
 const MATERIAL_TYPE_OPTIONS = [
@@ -102,6 +128,9 @@ export default function RdPage() {
   const [addingClient, setAddingClient] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
   const [addingWarehouse, setAddingWarehouse] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarningPayload | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [sendingDuplicateEscalation, setSendingDuplicateEscalation] = useState(false);
 
   async function fetchJobs() {
     setLoading(true);
@@ -296,7 +325,10 @@ export default function RdPage() {
     }
   }
 
-  async function createJob() {
+  async function submitJobCreate(input?: {
+    overrideDuplicate?: boolean;
+    overrideReason?: string;
+  }) {
     if (!sourceName.trim() || !materialCategory.trim() || !materialType) {
       toast({
         title: "Missing fields",
@@ -316,8 +348,36 @@ export default function RdPage() {
           materialCategory: materialCategory.trim(),
           materialType,
           sourceLocation: sourceLocation.trim() || undefined,
+          overrideDuplicate: input?.overrideDuplicate ?? false,
+          overrideReason: input?.overrideReason ?? undefined,
         }),
       });
+
+      if (response.status === 409) {
+        const warning = await response.json() as {
+          code?: string;
+          details?: string;
+          duplicateWindowHours?: number;
+          canOverrideDuplicate?: boolean;
+          duplicateCandidates?: DuplicateCandidate[];
+        };
+        if (warning.code === "JOB_POTENTIAL_DUPLICATE") {
+          setDuplicateWarning({
+            code: warning.code,
+            details: warning.details ?? "Potential duplicate jobs found.",
+            duplicateWindowHours: warning.duplicateWindowHours ?? 24,
+            canOverrideDuplicate: warning.canOverrideDuplicate === true,
+            duplicateCandidates: Array.isArray(warning.duplicateCandidates) ? warning.duplicateCandidates : [],
+          });
+          setOverrideReason("");
+          toast({
+            title: "Potential duplicate detected",
+            description: warning.details ?? "Review duplicates before continuing.",
+            status: "warning",
+          });
+          return;
+        }
+      }
 
       if (!response.ok) {
         throw await response.json();
@@ -333,6 +393,8 @@ export default function RdPage() {
       setMaterialCategory("");
       setMaterialType("");
       setSourceLocation("");
+      setDuplicateWarning(null);
+      setOverrideReason("");
       router.push(`/userinsp/job/${job.id}?view=${viewMode}`);
     } catch (createError: unknown) {
       toast({
@@ -345,8 +407,78 @@ export default function RdPage() {
     }
   }
 
+  async function createJob() {
+    await submitJobCreate();
+  }
+
+  async function submitDuplicateOverride() {
+    if (!duplicateWarning?.canOverrideDuplicate) {
+      return;
+    }
+    if (!overrideReason.trim()) {
+      toast({
+        title: "Override reason required",
+        description: "Provide a short reason before overriding duplicate protection.",
+        status: "warning",
+      });
+      return;
+    }
+    await submitJobCreate({
+      overrideDuplicate: true,
+      overrideReason: overrideReason.trim(),
+    });
+  }
+
+  async function sendDuplicateEscalation() {
+    if (!duplicateWarning) {
+      return;
+    }
+
+    setSendingDuplicateEscalation(true);
+    try {
+      const response = await fetch("/api/workflow/escalations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "DUPLICATE_JOB",
+          severity: "MEDIUM",
+          title: `Duplicate warning: ${sourceName.trim()} / ${materialCategory.trim()}`,
+          overrideReason: overrideReason.trim() || undefined,
+          detailsJson: {
+            duplicateWindowHours: duplicateWarning.duplicateWindowHours,
+            duplicateCandidates: duplicateWarning.duplicateCandidates,
+            sourceName: sourceName.trim(),
+            materialCategory: materialCategory.trim(),
+            sourceLocation: sourceLocation.trim() || null,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw await response.json();
+      }
+
+      toast({
+        title: "Escalation queued",
+        description: "Duplicate case was sent to the workflow escalation queue.",
+        status: "success",
+      });
+      setDuplicateWarning(null);
+      setOverrideReason("");
+    } catch (error: unknown) {
+      toast({
+        title: "Escalation failed",
+        description: getErrorDetails(error, "Unable to create escalation at this time."),
+        status: "error",
+      });
+    } finally {
+      setSendingDuplicateEscalation(false);
+    }
+  }
+
   return (
-    <ControlTowerLayout>
+    <>
+      <ControlTowerLayout>
       <VStack align="stretch" spacing={6}>
         <Stack direction={{ base: "column", xl: "row" }} justify="space-between" spacing={4}>
           <Box>
@@ -544,6 +676,62 @@ export default function RdPage() {
           </Box>
         </SimpleGrid>
       </VStack>
-    </ControlTowerLayout>
+      </ControlTowerLayout>
+      <Modal isOpen={duplicateWarning !== null} onClose={() => setDuplicateWarning(null)} size="xl" isCentered>
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>Potential duplicate job</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <VStack align="stretch" spacing={3}>
+            <Text color="text.secondary">
+              {duplicateWarning?.details}
+            </Text>
+            <Text fontSize="sm" color="text.secondary">
+              Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours.
+            </Text>
+            <OrderedList spacing={1} ml={4}>
+              {(duplicateWarning?.duplicateCandidates ?? []).map((candidate) => (
+                <ListItem key={candidate.id} fontSize="sm">
+                  {candidate.inspectionSerialNumber} ({candidate.status}){" "}
+                  <Text as="span" color="text.secondary">
+                    {formatDate(candidate.createdAt)}
+                  </Text>
+                </ListItem>
+              ))}
+            </OrderedList>
+            <FormControl isRequired={Boolean(duplicateWarning?.canOverrideDuplicate)}>
+              <FormLabel>Reason</FormLabel>
+              <Input
+                value={overrideReason}
+                onChange={(event) => setOverrideReason(event.target.value)}
+                placeholder={
+                  duplicateWarning?.canOverrideDuplicate
+                    ? "Required for override"
+                    : "Optional reason for escalation"
+                }
+              />
+            </FormControl>
+          </VStack>
+        </ModalBody>
+        <ModalFooter>
+          <HStack spacing={2}>
+            <Button variant="ghost" onClick={() => setDuplicateWarning(null)}>
+              Cancel
+            </Button>
+            {duplicateWarning?.canOverrideDuplicate ? (
+              <Button onClick={() => void submitDuplicateOverride()} isLoading={creating}>
+                Create with Override
+              </Button>
+            ) : (
+              <Button onClick={() => void sendDuplicateEscalation()} isLoading={sendingDuplicateEscalation}>
+                Send Escalation
+              </Button>
+            )}
+          </HStack>
+        </ModalFooter>
+      </ModalContent>
+      </Modal>
+    </>
   );
 }
