@@ -12,6 +12,15 @@ function asNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function normalizeMaterialType(value: unknown): "INHOUSE" | "TRADED" | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return normalized === "INHOUSE" || normalized === "TRADED" ? normalized : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
@@ -30,6 +39,7 @@ export async function GET(request: NextRequest) {
       orderBy: { itemName: "asc" },
       select: {
         itemName: true,
+        materialType: true,
         description: true,
         uom: true,
       },
@@ -58,6 +68,7 @@ export async function POST(request: NextRequest) {
     const payload = typeof body === "object" && body !== null
       ? (body as {
           itemName?: unknown;
+          materialType?: unknown;
           description?: unknown;
           uom?: unknown;
           isActive?: unknown;
@@ -69,6 +80,11 @@ export async function POST(request: NextRequest) {
       return jsonError("Validation Error", "itemName is required.", 400);
     }
 
+    const materialType = normalizeMaterialType(payload.materialType);
+    if (payload.materialType !== undefined && !materialType) {
+      return jsonError("Validation Error", "materialType must be INHOUSE or TRADED.", 400);
+    }
+
     const record = await prisma.itemMaster.upsert({
       where: {
         companyId_itemName: {
@@ -77,6 +93,7 @@ export async function POST(request: NextRequest) {
         },
       },
       update: {
+        materialType,
         description: asNonEmptyString(payload.description),
         uom: asNonEmptyString(payload.uom),
         isActive: payload.isActive === false ? false : true,
@@ -84,12 +101,14 @@ export async function POST(request: NextRequest) {
       create: {
         companyId: currentUser.companyId,
         itemName,
+        materialType,
         description: asNonEmptyString(payload.description),
         uom: asNonEmptyString(payload.uom),
         isActive: payload.isActive === false ? false : true,
       },
       select: {
         itemName: true,
+        materialType: true,
         description: true,
         uom: true,
       },

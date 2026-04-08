@@ -8,6 +8,109 @@ import { buildPackingListHtml, renderHtmlToPdf } from "@/lib/traceability";
 import { sanitizeReportDocumentType, sanitizeReportPreferences } from "@/lib/report-preferences";
 
 export const runtime = "nodejs";
+const WEIGHT_TOLERANCE = 0.01;
+
+function toNumeric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value === "object" && value !== null && "toNumber" in value && typeof (value as { toNumber: unknown }).toNumber === "function") {
+    try {
+      const parsed = (value as { toNumber: () => number }).toNumber();
+      return Number.isFinite(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function resolveLotWeights(lot: {
+  lotNumber: string;
+  grossWeight: number | null;
+  tareWeight: number | null;
+  netWeight: number | null;
+  grossWeightKg?: unknown;
+  netWeightKg?: unknown;
+  bags: Array<{ grossWeight: number | null; netWeight: number | null }>;
+}) {
+  const grossLegacy = toNumeric(lot.grossWeight);
+  const tareLegacy = toNumeric(lot.tareWeight);
+  const netLegacy = toNumeric(lot.netWeight);
+  const grossKg = toNumeric(lot.grossWeightKg);
+  const netKg = toNumeric(lot.netWeightKg);
+
+  const hasBagRows = lot.bags.length > 0;
+  const bagGross = hasBagRows ? lot.bags.reduce((sum, bag) => sum + Number(bag.grossWeight ?? 0), 0) : null;
+  const bagNet = hasBagRows ? lot.bags.reduce((sum, bag) => sum + Number(bag.netWeight ?? 0), 0) : null;
+
+  const grossWeight = grossLegacy ?? grossKg ?? bagGross ?? netLegacy ?? netKg;
+  const netWeight = netLegacy ?? netKg ?? bagNet ?? grossLegacy ?? grossKg;
+  const tareWeight = tareLegacy ?? (
+    grossWeight !== null && netWeight !== null
+      ? Number((grossWeight - netWeight).toFixed(2))
+      : null
+  );
+
+  if (grossWeight === null || netWeight === null || tareWeight === null) {
+    throw new Error(`Lot ${lot.lotNumber}: Missing weights.`);
+  }
+
+  const delta = Math.abs(grossWeight - (netWeight + tareWeight));
+  if (delta > WEIGHT_TOLERANCE) {
+    throw new Error(`Lot ${lot.lotNumber}: Gross weight must equal net weight plus tare weight.`);
+  }
+
+  return { grossWeight, tareWeight, netWeight };
+}
+
+function hasRequiredDispatchEvidence(lot: {
+  bagPhotoUrl: string | null;
+  samplingPhotoUrl: string | null;
+  sealPhotoUrl: string | null;
+  sampling: Array<{
+    beforePhotoUrl: string | null;
+    duringPhotoUrl: string | null;
+    afterPhotoUrl: string | null;
+  }>;
+  mediaFiles: Array<{
+    category: string;
+  }>;
+}) {
+  const categories = new Set(lot.mediaFiles.map((entry) => entry.category));
+
+  const hasBagEvidence =
+    Boolean(lot.bagPhotoUrl) ||
+    categories.has("BAG_WITH_LOT_NO") ||
+    categories.has("BAG") ||
+    categories.has("BAG_CLOSEUP") ||
+    categories.has("MATERIAL_VISIBLE");
+
+  const samplingRecord = lot.sampling[0];
+  const hasSamplingEvidence =
+    Boolean(lot.samplingPhotoUrl) ||
+    Boolean(samplingRecord?.duringPhotoUrl || samplingRecord?.beforePhotoUrl || samplingRecord?.afterPhotoUrl) ||
+    categories.has("SAMPLING_IN_PROGRESS") ||
+    categories.has("DURING") ||
+    categories.has("BEFORE") ||
+    categories.has("AFTER");
+
+  const hasSealEvidence =
+    Boolean(lot.sealPhotoUrl) ||
+    categories.has("SEALED_BAG") ||
+    categories.has("SEAL") ||
+    categories.has("SEAL_CLOSEUP");
+
+  return {
+    hasBagEvidence,
+    hasSamplingEvidence,
+    hasSealEvidence,
+  };
+}
 
 function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
@@ -98,11 +201,31 @@ export async function POST(request: NextRequest) {
         lotNumber: true,
         sealNumber: true,
         grossWeight: true,
+        grossWeightKg: true,
         tareWeight: true,
         netWeight: true,
+        netWeightKg: true,
         bagPhotoUrl: true,
         samplingPhotoUrl: true,
         sealPhotoUrl: true,
+        sampling: {
+          select: {
+            beforePhotoUrl: true,
+            duringPhotoUrl: true,
+            afterPhotoUrl: true,
+          },
+        },
+        mediaFiles: {
+          select: {
+            category: true,
+          },
+        },
+        bags: {
+          select: {
+            grossWeight: true,
+            netWeight: true,
+          },
+        },
       },
       orderBy: { createdAt: "asc" },
     });
@@ -121,21 +244,33 @@ export async function POST(request: NextRequest) {
         return jsonError("Validation Error", `Lot ${lot.lotNumber}: Seal number must be exactly 16 digits.`, 422);
       }
 
-      if (lot.grossWeight === null || lot.tareWeight === null || lot.netWeight === null) {
-        return jsonError("Validation Error", `Lot ${lot.lotNumber}: Missing weights.`, 422);
+      let grossWeight = 0;
+      let tareWeight = 0;
+      let netWeight = 0;
+      try {
+        const resolved = resolveLotWeights(lot);
+        grossWeight = resolved.grossWeight;
+        tareWeight = resolved.tareWeight;
+        netWeight = resolved.netWeight;
+      } catch (error: unknown) {
+        return jsonError("Validation Error", error instanceof Error ? error.message : `Lot ${lot.lotNumber}: Missing weights.`, 422);
       }
 
-      const grossWeight = Number(lot.grossWeight);
-      const tareWeight = Number(lot.tareWeight);
-      const netWeight = Number(lot.netWeight);
-      if (Math.abs(grossWeight - (netWeight + tareWeight)) > 0.01) {
-        return jsonError("Validation Error", `Lot ${lot.lotNumber}: Gross weight must equal net weight plus tare weight.`, 422);
-      }
-
-      if (!lot.bagPhotoUrl || !lot.samplingPhotoUrl || !lot.sealPhotoUrl) {
+      const evidenceState = hasRequiredDispatchEvidence(lot);
+      if (!evidenceState.hasBagEvidence || !evidenceState.hasSamplingEvidence || !evidenceState.hasSealEvidence) {
+        const missing: string[] = [];
+        if (!evidenceState.hasBagEvidence) {
+          missing.push("bag photo");
+        }
+        if (!evidenceState.hasSamplingEvidence) {
+          missing.push("sampling photo");
+        }
+        if (!evidenceState.hasSealEvidence) {
+          missing.push("seal photo");
+        }
         return jsonError(
           "Validation Error",
-          `Lot ${lot.lotNumber}: Bag photo, sampling photo, and seal photo are required before dispatch.`,
+          `Lot ${lot.lotNumber}: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required before dispatch.`,
           422
         );
       }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
+import { createRandomId } from "@/lib/random-id";
 
 function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
       return jsonError("Conflict", "Admin email already exists.", 409);
     }
 
-    const userId = crypto.randomUUID();
+    const userId = createRandomId();
 
     await prisma.user.create({
       data: {

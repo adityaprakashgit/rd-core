@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { assertSealIsValid, assertWeightsAreBalanced, hasRequiredTraceabilityPhotos } from "@/lib/traceability";
+import { deriveSampleStatus, getSampleReadiness, mapSampleMediaByType } from "@/lib/sample-management";
+import type { SampleRecord } from "@/types/inspection";
 
 function isMissingAuditTableError(err: unknown) {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2021";
@@ -47,14 +49,23 @@ export async function POST(req: NextRequest) {
           const lots = await prisma.inspectionLot.findMany({
             where: { jobId, companyId: currentUser.companyId },
             select: {
+              id: true,
               lotNumber: true,
               sealNumber: true,
+              sealAuto: true,
               grossWeight: true,
               tareWeight: true,
               netWeight: true,
               bagPhotoUrl: true,
               samplingPhotoUrl: true,
               sealPhotoUrl: true,
+              sample: {
+                include: {
+                  media: true,
+                  sealLabel: true,
+                  events: true,
+                },
+              },
             },
           });
 
@@ -66,13 +77,48 @@ export async function POST(req: NextRequest) {
           }
 
           for (const lot of lots) {
-            assertSealIsValid({ lotNumber: lot.lotNumber, sealNumber: lot.sealNumber });
-            assertWeightsAreBalanced({
-              lotNumber: lot.lotNumber,
-              grossWeight: lot.grossWeight,
-              tareWeight: lot.tareWeight,
-              netWeight: lot.netWeight,
-            });
+            const sample = lot.sample as SampleRecord | null;
+            if (sample) {
+              const readiness = getSampleReadiness(sample);
+              if (deriveSampleStatus(sample) !== "READY_FOR_PACKETING" || !readiness.isReady) {
+                return NextResponse.json(
+                  {
+                    error: "Validation Error",
+                    details: `Lot ${lot.lotNumber}: sample is not ready for packeting. ${readiness.missing.join(", ")}`,
+                  },
+                  { status: 422 }
+                );
+              }
+
+              const mediaMap = mapSampleMediaByType(sample.media);
+              await prisma.inspectionLot.update({
+                where: { id: lot.id },
+                data: {
+                  bagPhotoUrl: mediaMap.SAMPLE_CONTAINER?.fileUrl ?? mediaMap.SAMPLE_CONDITION?.fileUrl ?? lot.bagPhotoUrl,
+                  samplingPhotoUrl:
+                    mediaMap.SAMPLING_IN_PROGRESS?.fileUrl ??
+                    mediaMap.SEALED_SAMPLE?.fileUrl ??
+                    mediaMap.SAMPLE_CONTAINER?.fileUrl ??
+                    lot.samplingPhotoUrl,
+                  sealPhotoUrl: mediaMap.SEALED_SAMPLE?.fileUrl ?? lot.sealPhotoUrl,
+                  ...(sample.sealLabel?.sealNo ? { sealNumber: sample.sealLabel.sealNo } : {}),
+                },
+              });
+              continue;
+            }
+
+            try {
+              assertSealIsValid({ lotNumber: lot.lotNumber, sealNumber: lot.sealNumber });
+              assertWeightsAreBalanced({
+                lotNumber: lot.lotNumber,
+                grossWeight: lot.grossWeight,
+                tareWeight: lot.tareWeight,
+                netWeight: lot.netWeight,
+              });
+            } catch (validationError) {
+              const details = validationError instanceof Error ? validationError.message : "Lot validation failed.";
+              return NextResponse.json({ error: "Validation Error", details }, { status: 422 });
+            }
 
             if (!hasRequiredTraceabilityPhotos(lot)) {
               return NextResponse.json(

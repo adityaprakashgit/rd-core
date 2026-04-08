@@ -3,16 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "db:check": "prisma migrate status",
+    "db:prepare": "npm run db:check && prisma generate",
+    "predev": "npm run db:prepare",
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "format": "prettier --write ."
+    "test": "vitest run",
+    "test:e2e:critical": "vitest run src/lib/process-critical.e2e.test.ts",
+    "format": "prettier --write .",
+    "seed:demo": "node src/scripts/reset-demo-data.mjs",
+    "telemetry:report:daily": "node src/scripts/evidence-funnel-daily-report.mjs"
   },
   "dependencies": {
     "@chakra-ui/react": "^2.10.9",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
     "bwip-js": "^4.8.0",
@@ -37,6 +46,7 @@
     "eslint-config-next": "16.2.1",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.2"
   }
 }

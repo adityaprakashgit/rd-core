@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { prisma } from "@/lib/prisma";
+import { evaluateSamplingWriteGate } from "@/lib/sampling-gate";
 import { getCurrentUserFromRequest } from "@/lib/session";
+import { recordEvidenceTelemetryEventInTx } from "@/lib/evidence-telemetry";
 
 function pickSamplingPhotoUrl(values: Array<string | null | undefined>): string | null {
   for (const value of values) {
@@ -11,64 +14,81 @@ function pickSamplingPhotoUrl(values: Array<string | null | undefined>): string 
   return null;
 }
 
+function jsonError(error: string, details: string, code: string, status: number) {
+  return NextResponse.json({ error, details, code }, { status });
+}
+
+function isSamplingStageComplete(input: {
+  beforePhotoUrl?: string | null;
+  duringPhotoUrl?: string | null;
+  afterPhotoUrl?: string | null;
+}) {
+  return Boolean(input.beforePhotoUrl && input.duringPhotoUrl && input.afterPhotoUrl);
+}
+
+async function resolveSamplingWriteGate(lotId: string, userCompanyId: string | null | undefined) {
+  const lot = await prisma.inspectionLot.findUnique({
+    where: { id: lotId },
+    select: {
+      id: true,
+      jobId: true,
+      companyId: true,
+      job: {
+        select: {
+          status: true,
+        },
+      },
+      inspection: {
+        select: {
+          inspectionStatus: true,
+          decisionStatus: true,
+        },
+      },
+    },
+  });
+
+  const gate = evaluateSamplingWriteGate({
+    lotExists: Boolean(lot),
+    lotCompanyId: lot?.companyId,
+    userCompanyId,
+    jobStatus: lot?.job?.status,
+    inspectionStatus: lot?.inspection?.inspectionStatus,
+    decisionStatus: lot?.inspection?.decisionStatus,
+  });
+
+  return { lot, gate };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(req);
     if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+      return jsonError("Unauthorized", "Current user could not be resolved.", "AUTH_UNAUTHORIZED", 401);
     }
 
     const body = await req.json();
     const { lotId, beforePhotoUrl, duringPhotoUrl, afterPhotoUrl } = body;
 
     if (!lotId) {
-      return NextResponse.json(
-        { error: "Validation Error", details: "lotId is strictly required to record a sample." },
-        { status: 400 }
-      );
+      return jsonError("Validation Error", "lotId is strictly required to record a sample.", "SAMPLING_LOT_ID_REQUIRED", 400);
     }
 
-    const lot = await prisma.inspectionLot.findUnique({
-      where: { id: lotId },
-      select: { id: true, jobId: true, companyId: true },
-    });
-
-    if (!lot) {
-      return NextResponse.json(
-        { error: "Not Found", details: "The specified Lot does not exist in the system." },
-        { status: 404 }
-      );
+    const { lot, gate } = await resolveSamplingWriteGate(lotId, currentUser.companyId);
+    if (gate) {
+      return jsonError(gate.error, gate.details, gate.code, gate.status);
     }
-
-    if (lot.companyId !== currentUser.companyId) {
-      return NextResponse.json(
-        { error: "Forbidden", details: "Cross-company access is not allowed." },
-        { status: 403 }
-      );
-    }
-
-    // --- STATUS GUARD ---
-    const job = await prisma.inspectionJob.findUnique({
-      where: { id: lot.jobId },
-      select: { status: true, companyId: true }
-    });
-
-    if (job?.status === "LOCKED") {
-      return NextResponse.json(
-        { error: "Access Forbidden", details: "This job is LOCKED for audit integrity. No modifications allowed." },
-        { status: 403 }
-      );
-    }
-    // ---------------------
 
     const existing = await prisma.sampling.findUnique({
       where: { lotId },
+      select: { lotId: true },
     });
 
     if (existing) {
-      return NextResponse.json(
-        { error: "Conflict Action", details: "A sampling process has already been recorded for this lot. Resampling is not permitted." },
-        { status: 409 }
+      return jsonError(
+        "Conflict Action",
+        "A sampling process has already been recorded for this lot. Resampling is not permitted.",
+        "SAMPLING_ALREADY_EXISTS",
+        409,
       );
     }
 
@@ -92,6 +112,19 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      if (isSamplingStageComplete(created)) {
+        await recordEvidenceTelemetryEventInTx(tx, {
+          event: "stage_complete",
+          userId: currentUser.id,
+          companyId: currentUser.companyId,
+          jobId: lot?.jobId,
+          lotId,
+          stage: "sampling",
+          route: "/api/inspection/sampling",
+          source: "sampling.route",
+        });
+      }
+
       return created;
     });
 
@@ -100,24 +133,16 @@ export async function POST(req: NextRequest) {
     const code = err && typeof err === "object" && "code" in err ? String((err as { code?: unknown }).code) : undefined;
     const message = err instanceof Error ? err.message : "Failed to create sampling record.";
 
-    if (message === "FORBIDDEN") {
-      return NextResponse.json(
-        { error: "Forbidden", details: "Cross-company access is not allowed." },
-        { status: 403 }
-      );
-    }
-
     if (code === "P2002") {
-      return NextResponse.json(
-        { error: "Conflict Action", details: "A sampling constraint violation occurred. Resampling is not permitted." },
-        { status: 409 }
+      return jsonError(
+        "Conflict Action",
+        "A sampling constraint violation occurred. Resampling is not permitted.",
+        "SAMPLING_ALREADY_EXISTS",
+        409,
       );
     }
 
-    return NextResponse.json(
-      { error: "System Error", details: message },
-      { status: 500 }
-    );
+    return jsonError("System Error", message, "SAMPLING_CREATE_FAILED", 500);
   }
 }
 
@@ -125,17 +150,14 @@ export async function GET(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(req);
     if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+      return jsonError("Unauthorized", "Current user could not be resolved.", "AUTH_UNAUTHORIZED", 401);
     }
 
     const { searchParams } = new URL(req.url);
     const lotId = searchParams.get("lotId");
 
     if (!lotId) {
-      return NextResponse.json(
-        { error: "Validation Error", details: "lotId is required." },
-        { status: 400 }
-      );
+      return jsonError("Validation Error", "lotId is required.", "SAMPLING_LOT_ID_REQUIRED", 400);
     }
 
     const sampling = await prisma.sampling.findUnique({
@@ -149,20 +171,14 @@ export async function GET(req: NextRequest) {
       });
 
       if (!lot || lot.companyId !== currentUser.companyId) {
-        return NextResponse.json(
-          { error: "Forbidden", details: "Cross-company access is not allowed." },
-          { status: 403 }
-        );
+        return jsonError("Forbidden", "Cross-company access is not allowed.", "SAMPLING_CROSS_COMPANY_FORBIDDEN", 403);
       }
     }
 
     return NextResponse.json(sampling);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to fetch sampling record.";
-    return NextResponse.json(
-      { error: "System Error", details: message },
-      { status: 500 }
-    );
+    return jsonError("System Error", message, "SAMPLING_FETCH_FAILED", 500);
   }
 }
 
@@ -170,35 +186,30 @@ export async function PATCH(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(req);
     if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized", details: "Current user could not be resolved." }, { status: 401 });
+      return jsonError("Unauthorized", "Current user could not be resolved.", "AUTH_UNAUTHORIZED", 401);
     }
 
     const body = await req.json();
     const { lotId, beforePhotoUrl, duringPhotoUrl, afterPhotoUrl } = body;
 
     if (!lotId) {
-      return NextResponse.json(
-        { error: "Validation Error", details: "lotId is strictly required to update a sample." },
-        { status: 400 }
-      );
+      return jsonError("Validation Error", "lotId is strictly required to update a sample.", "SAMPLING_LOT_ID_REQUIRED", 400);
+    }
+
+    const { lot, gate } = await resolveSamplingWriteGate(lotId, currentUser.companyId);
+    if (gate) {
+      return jsonError(gate.error, gate.details, gate.code, gate.status);
     }
 
     const existing = await prisma.sampling.findUnique({
       where: { lotId },
-      select: { lotId: true, companyId: true },
+      select: {
+        lotId: true,
+        beforePhotoUrl: true,
+        duringPhotoUrl: true,
+        afterPhotoUrl: true,
+      },
     });
-
-    const lot = await prisma.inspectionLot.findUnique({
-      where: { id: lotId },
-      select: { companyId: true },
-    });
-
-    if (!lot || lot.companyId !== currentUser.companyId || existing?.companyId !== currentUser.companyId) {
-      return NextResponse.json(
-        { error: "Forbidden", details: "Cross-company access is not allowed." },
-        { status: 403 }
-      );
-    }
 
     if (!existing) {
       const sampling = await prisma.$transaction(async (tx) => {
@@ -219,6 +230,19 @@ export async function PATCH(req: NextRequest) {
           },
         });
 
+        if (isSamplingStageComplete(created)) {
+          await recordEvidenceTelemetryEventInTx(tx, {
+            event: "stage_complete",
+            userId: currentUser.id,
+            companyId: currentUser.companyId,
+            jobId: lot?.jobId,
+            lotId,
+            stage: "sampling",
+            route: "/api/inspection/sampling",
+            source: "sampling.route",
+          });
+        }
+
         return created;
       });
 
@@ -226,6 +250,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const sampling = await prisma.$transaction(async (tx) => {
+      const wasComplete = isSamplingStageComplete(existing);
       const updated = await tx.sampling.update({
         where: { lotId },
         data: {
@@ -246,21 +271,25 @@ export async function PATCH(req: NextRequest) {
         },
       });
 
+      if (!wasComplete && isSamplingStageComplete(updated)) {
+        await recordEvidenceTelemetryEventInTx(tx, {
+          event: "stage_complete",
+          userId: currentUser.id,
+          companyId: currentUser.companyId,
+          jobId: lot?.jobId,
+          lotId,
+          stage: "sampling",
+          route: "/api/inspection/sampling",
+          source: "sampling.route",
+        });
+      }
+
       return updated;
     });
 
     return NextResponse.json(sampling);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to update sampling record.";
-    if (message === "FORBIDDEN") {
-      return NextResponse.json(
-        { error: "Forbidden", details: "Cross-company access is not allowed." },
-        { status: 403 }
-      );
-    }
-    return NextResponse.json(
-      { error: "System Error", details: message },
-      { status: 500 }
-    );
+    return jsonError("System Error", message, "SAMPLING_UPDATE_FAILED", 500);
   }
 }

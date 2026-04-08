@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { workspaceJobSummarySelect } from "@/lib/job-workspace";
+import { workspaceJobSelect } from "@/lib/job-workspace";
+import { recordAuditLog } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,15 @@ function jsonError(message: string, details: string, status: number) {
 
 function isAuthorizationError(error: unknown): error is AuthorizationError {
   return error instanceof AuthorizationError;
+}
+
+function normalizeMaterialType(value: unknown): "INHOUSE" | "TRADED" | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return normalized === "INHOUSE" || normalized === "TRADED" ? normalized : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -31,14 +41,20 @@ export async function GET(request: NextRequest) {
       return jsonError("Invalid view", "view must be either my or all.", 400);
     }
 
-    const where = view === "all"
+    const includeArchived = request.nextUrl.searchParams.get("includeArchived") === "true";
+
+    const where: Prisma.InspectionJobWhereInput = view === "all"
       ? { companyId: currentUser.companyId }
       : { companyId: currentUser.companyId, assignedToId: currentUser.id };
+
+    if (!includeArchived) {
+      where.status = { not: "ARCHIVED" };
+    }
 
     const jobs = await prisma.inspectionJob.findMany({
       where,
       orderBy: { updatedAt: "desc" },
-      select: workspaceJobSummarySelect,
+      select: workspaceJobSelect,
     });
 
     return NextResponse.json(jobs);
@@ -68,14 +84,23 @@ export async function POST(request: Request) {
 
     const payload = body as {
       clientName?: unknown;
+      sourceName?: unknown;
       commodity?: unknown;
+      materialCategory?: unknown;
       companyId?: unknown;
       userId?: unknown;
       plantLocation?: unknown;
+      sourceLocation?: unknown;
+      materialType?: unknown;
     };
 
-    if (typeof payload.clientName !== "string" || typeof payload.commodity !== "string") {
-      return jsonError("Missing required fields", "clientName and commodity are required.", 400);
+    const sourceName = typeof payload.sourceName === "string" ? payload.sourceName : payload.clientName;
+    const materialCategory = typeof payload.materialCategory === "string" ? payload.materialCategory : payload.commodity;
+    const sourceLocation = typeof payload.sourceLocation === "string" ? payload.sourceLocation : payload.plantLocation;
+    const materialType = normalizeMaterialType(payload.materialType);
+
+    if (typeof sourceName !== "string" || typeof materialCategory !== "string") {
+      return jsonError("Missing required fields", "sourceName/clientName and materialCategory/commodity are required.", 400);
     }
 
     if (payload.companyId !== undefined && payload.companyId !== currentUser.companyId) {
@@ -89,21 +114,38 @@ export async function POST(request: Request) {
     const { generateInspectionSerial } = await import("@/lib/serial");
     const serial = await generateInspectionSerial();
 
-    const job = await prisma.inspectionJob.create({
-      data: {
-        companyId: currentUser.companyId,
-        createdByUserId: currentUser.id,
-        assignedToId: currentUser.id,
-        assignedById: currentUser.id,
-        assignedAt: new Date(),
-        clientName: payload.clientName.trim(),
-        commodity: payload.commodity.trim(),
-        plantLocation: typeof payload.plantLocation === "string" && payload.plantLocation.trim().length > 0
-          ? payload.plantLocation.trim()
-          : null,
-        inspectionSerialNumber: serial ?? "",
-      },
-      select: workspaceJobSummarySelect,
+    const job = await prisma.$transaction(async (tx) => {
+      const created = await tx.inspectionJob.create({
+        data: {
+          companyId: currentUser.companyId,
+          createdByUserId: currentUser.id,
+          assignedToId: currentUser.id,
+          assignedById: currentUser.id,
+          assignedAt: new Date(),
+          clientName: sourceName.trim(),
+          commodity: materialCategory.trim(),
+          plantLocation: typeof sourceLocation === "string" && sourceLocation.trim().length > 0
+            ? sourceLocation.trim()
+            : null,
+          inspectionSerialNumber: serial ?? "",
+        },
+        select: workspaceJobSelect,
+      });
+
+      await recordAuditLog(tx, {
+        jobId: created.id,
+        userId: currentUser.id,
+        entity: "JOB",
+        action: "JOB_CREATED",
+        to: "CREATED",
+        metadata: {
+          sourceName: created.clientName,
+          materialCategory: created.commodity,
+          materialType,
+        },
+      });
+
+      return created;
     });
 
     return NextResponse.json(job);

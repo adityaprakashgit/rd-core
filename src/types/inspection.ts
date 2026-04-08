@@ -15,6 +15,7 @@ export type InspectionJob = {
   jobReferenceNumber: string | null;
   clientName: string;
   commodity: string;
+  materialType?: "INHOUSE" | "TRADED" | string | null;
   plantLocation?: string | null;
   status: string;
   createdByUserId: string;
@@ -29,6 +30,7 @@ export type InspectionJob = {
   lots?: InspectionLot[];
   auditLogs?: AuditLog[];
   reportSnapshots?: ReportSnapshot[];
+  mediaFiles?: InspectionMediaFile[];
 };
 
 
@@ -37,6 +39,13 @@ export type InspectionLot = {
   jobId: string;
   companyId?: string;
   lotNumber: string;
+  materialName?: string | null;
+  materialCategory?: string | null;
+  quantityMode?: "SINGLE_PIECE" | "MULTI_WEIGHT" | string | null;
+  bagCount?: number | null;
+  pieceCount?: number | null;
+  weightUnit?: string | null;
+  remarks?: string | null;
   totalBags: number;
   grossWeightKg?: number | null;
   netWeightKg?: number | null;
@@ -53,10 +62,113 @@ export type InspectionLot = {
   assignedById?: string | null;
   assignedAt?: string | Date | null;
   createdAt: string | Date;
+  updatedAt?: string | Date;
   assignedTo?: PublicUser | null;
   assignedBy?: PublicUser | null;
   sampling?: Sampling | Sampling[] | null;
+  sample?: SampleRecord | null;
   bags?: InspectionBag[];
+  mediaFiles?: InspectionMediaFile[];
+  inspection?: LotInspectionRecord | null;
+};
+
+export type InspectionMediaCategory =
+  | "BAG"
+  | "SEAL"
+  | "BEFORE"
+  | "DURING"
+  | "AFTER"
+  | "BAG_WITH_LOT_NO"
+  | "MATERIAL_VISIBLE"
+  | "SAMPLING_IN_PROGRESS"
+  | "SEALED_BAG"
+  | "SEAL_CLOSEUP"
+  | "BAG_CONDITION"
+  | "DAMAGE_PHOTO"
+  | "HOMOGENEOUS"
+  | "LOT_OVERVIEW"
+  | "BAG_CLOSEUP"
+  | "LABEL_CLOSEUP"
+  | "INSPECTION_IN_PROGRESS"
+  | "CONTAMINATION_PHOTO";
+
+export type InspectionMediaFile = {
+  id: string;
+  lotId?: string | null;
+  jobId?: string | null;
+  inspectionId?: string | null;
+  inspectionIssueId?: string | null;
+  category: InspectionMediaCategory | string;
+  storageKey: string;
+  fileName: string;
+  createdAt: string | Date;
+};
+
+export type InspectionDecisionStatus =
+  | "PENDING"
+  | "READY_FOR_SAMPLING"
+  | "ON_HOLD"
+  | "REJECTED";
+
+export type InspectionStatus = "IN_PROGRESS" | "COMPLETED";
+
+export type InspectionChecklistItem = {
+  id: string;
+  itemKey: string;
+  sectionName: string;
+  itemLabel: string;
+  responseType: string;
+  isRequired: boolean;
+  materialCategory?: string | null;
+  displayOrder: number;
+  isActive: boolean;
+};
+
+export type InspectionChecklistResponse = {
+  id: string;
+  inspectionId: string;
+  checklistItemMasterId: string;
+  sectionName: string;
+  itemLabel: string;
+  responseValue?: string | null;
+  responseText?: string | null;
+  isException: boolean;
+  displayOrder: number;
+  recordedAt: string | Date;
+  checklistItemMaster?: InspectionChecklistItem | null;
+};
+
+export type InspectionIssue = {
+  id: string;
+  inspectionId: string;
+  issueCategory: string;
+  severity: "MINOR" | "MODERATE" | "CRITICAL" | string;
+  description: string;
+  status: string;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+};
+
+export type LotInspectionRecord = {
+  id: string;
+  jobId: string;
+  lotId: string;
+  inspectorId: string;
+  inspectionStatus: InspectionStatus | string;
+  decisionStatus: InspectionDecisionStatus | string;
+  startedAt: string | Date;
+  completedAt?: string | Date | null;
+  overallRemark?: string | null;
+  identityRiskFlag: boolean;
+  packagingRiskFlag: boolean;
+  materialRiskFlag: boolean;
+  samplingBlockedFlag: boolean;
+  issueCount: number;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  responses?: InspectionChecklistResponse[];
+  issues?: InspectionIssue[];
+  mediaFiles?: InspectionMediaFile[];
 };
 
 export type InspectionBag = {
@@ -84,6 +196,85 @@ export type Sampling = {
   assignedBy?: PublicUser | null;
 };
 
+export type SampleEventType =
+  | "SAMPLE_CREATED"
+  | "SAMPLE_COLLECTED"
+  | "DETAILS_CAPTURED"
+  | "HOMOGENIZED"
+  | "SEALED"
+  | "LABELED"
+  | "READY_FOR_PACKETING";
+
+export type SampleMediaType =
+  | "SAMPLING_IN_PROGRESS"
+  | "SAMPLE_CONTAINER"
+  | "SAMPLE_LABEL"
+  | "SEALED_SAMPLE"
+  | "HOMOGENIZED_SAMPLE"
+  | "SAMPLE_CONDITION";
+
+export type SampleRecord = {
+  id: string;
+  companyId: string;
+  jobId: string;
+  lotId: string;
+  inspectionId: string;
+  sampleCode: string;
+  sampleStatus: string;
+  sampleType?: string | null;
+  samplingMethod?: string | null;
+  samplingDate?: string | Date | null;
+  sampleQuantity?: number | null;
+  sampleUnit?: string | null;
+  containerType?: string | null;
+  remarks?: string | null;
+  homogenizedAt?: string | Date | null;
+  readyForPacketingAt?: string | Date | null;
+  createdById: string;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+  events?: SampleEventRecord[];
+  media?: SampleMediaRecord[];
+  sealLabel?: SampleSealLabelRecord | null;
+  packets?: PacketRecord[];
+  createdBy?: PublicUser | null;
+};
+
+export type SampleEventRecord = {
+  id: string;
+  sampleId: string;
+  eventType: SampleEventType | string;
+  eventTime: string | Date;
+  performedById?: string | null;
+  remarks?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string | Date;
+  performedBy?: PublicUser | null;
+};
+
+export type SampleMediaRecord = {
+  id: string;
+  sampleId: string;
+  mediaType: SampleMediaType | string;
+  fileUrl: string;
+  capturedAt: string | Date;
+  capturedById?: string | null;
+  remarks?: string | null;
+  createdAt: string | Date;
+  capturedBy?: PublicUser | null;
+};
+
+export type SampleSealLabelRecord = {
+  id: string;
+  sampleId: string;
+  sealNo?: string | null;
+  labelText?: string | null;
+  sealStatus?: string | null;
+  labeledAt?: string | Date | null;
+  sealedAt?: string | Date | null;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+};
 
 export type HomogeneousSample = {
   id: string;
@@ -93,15 +284,104 @@ export type HomogeneousSample = {
   packets?: SamplePacket[];
 };
 
-export type SamplePacket = {
+export type PacketEventType =
+  | "PACKET_CREATED"
+  | "PACKET_LABELED"
+  | "PACKET_SEALED"
+  | "PACKET_VERIFIED"
+  | "PACKET_ASSIGNED_TO_TRIAL"
+  | "PACKET_RELEASED"
+  | "PACKET_MARKED_USED";
+
+export type PacketMediaType =
+  | "PACKET_LABEL"
+  | "PACKET_SEALED"
+  | "PACKET_CONDITION"
+  | "PACKET_GROUP_VIEW";
+
+export type PacketAllocationStatus = "AVAILABLE" | "RESERVED" | "ALLOCATED" | "USED" | "BLOCKED";
+
+export type PacketRecord = {
   id: string;
+  companyId?: string;
+  jobId?: string;
+  lotId?: string;
   sampleId: string;
-  packetNumber: number;
+  packetNo: number;
+  packetCode: string;
+  packetStatus: string;
+  packetQuantity?: number | null;
+  packetUnit?: string | null;
+  packetType?: string | null;
+  remarks?: string | null;
+  readyAt?: string | Date | null;
+  createdById?: string;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+  sealLabel?: PacketSealLabelRecord | null;
+  media?: PacketMediaRecord[];
+  events?: PacketEventRecord[];
+  allocation?: PacketAllocationRecord | null;
+  sample?: Pick<SampleRecord, "id" | "sampleCode" | "sampleQuantity" | "sampleUnit"> | null;
+  lot?: Pick<InspectionLot, "id" | "lotNumber" | "materialName"> | null;
+};
+
+export type SamplePacket = PacketRecord;
+
+export type PacketEventRecord = {
+  id: string;
+  packetId: string;
+  eventType: PacketEventType | string;
+  eventTime: string | Date;
+  performedById?: string | null;
+  remarks?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string | Date;
+  performedBy?: PublicUser | null;
+};
+
+export type PacketMediaRecord = {
+  id: string;
+  packetId: string;
+  mediaType: PacketMediaType | string;
+  fileUrl: string;
+  capturedAt: string | Date;
+  capturedById?: string | null;
+  remarks?: string | null;
+  createdAt: string | Date;
+  capturedBy?: PublicUser | null;
+};
+
+export type PacketSealLabelRecord = {
+  id: string;
+  packetId: string;
+  sealNo?: string | null;
+  labelText?: string | null;
+  labelCode?: string | null;
+  sealStatus?: string | null;
+  sealedAt?: string | Date | null;
+  labeledAt?: string | Date | null;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+};
+
+export type PacketAllocationRecord = {
+  id: string;
+  packetId: string;
+  allocationStatus: PacketAllocationStatus | string;
+  allocatedToType?: string | null;
+  allocatedToId?: string | null;
+  allocatedAt?: string | Date | null;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
 };
 
 export type RDTrial = {
   id: string;
   trialNumber: number;
+  lotId?: string | null;
+  packetId?: string | null;
+  packet?: SamplePacket | null;
   measurements: RDMeasurement[];
 };
 

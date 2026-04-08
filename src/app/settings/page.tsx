@@ -1,33 +1,28 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Badge,
   Box,
   Button,
   Card,
   CardBody,
-  Divider,
   FormControl,
   FormLabel,
   Heading,
   HStack,
   Input,
   Select,
+  SimpleGrid,
   Switch,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
   Text,
-  Th,
-  Thead,
-  Tr,
+  Textarea,
   VStack,
   useToast,
 } from "@chakra-ui/react";
-import { Building2, Save, ShieldCheck, UserCog, Workflow } from "lucide-react";
+import { Building2, Plus, Save, Settings2, ShieldCheck, Workflow } from "lucide-react";
 
+import { ConfigurationPageTemplate, MobileActionRail } from "@/components/enterprise/PageTemplates";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import {
   getDefaultReportPreferences,
@@ -37,29 +32,12 @@ import {
   sanitizeReportPreferences,
   type ReportPreferences,
 } from "@/lib/report-preferences";
+import type { InspectionChecklistItem } from "@/types/inspection";
 
-type MasterTab = "CLIENT" | "ITEM" | "TRANSPORTER";
-
-type ClientMasterOption = {
-  clientName: string;
-  billToAddress: string;
-  shipToAddress: string;
-  gstOrId: string | null;
-};
-
-type TransporterMasterOption = {
-  transporterName: string;
-  contactPerson: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  gstOrId: string | null;
-};
-
-type ItemMasterOption = {
-  itemName: string;
-  description: string | null;
-  uom: string | null;
+type ChecklistSettingsResponse = {
+  items: InspectionChecklistItem[];
+  sectionOptions: string[];
+  responseTypeOptions: string[];
 };
 
 export default function SettingsPageRoute() {
@@ -70,61 +48,30 @@ export default function SettingsPageRoute() {
   const [samplingRequired, setSamplingRequired] = useState(true);
   const [qaGateEnabled, setQaGateEnabled] = useState(true);
   const [lockStrictMode, setLockStrictMode] = useState(true);
-  const [activeMasterTab, setActiveMasterTab] = useState<MasterTab>("CLIENT");
-  const [masterLoading, setMasterLoading] = useState(false);
-  const [masterSaving, setMasterSaving] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<InspectionChecklistItem[]>([]);
+  const [sectionOptions, setSectionOptions] = useState<string[]>([]);
+  const [responseTypeOptions, setResponseTypeOptions] = useState<string[]>([]);
+  const [loadingChecklist, setLoadingChecklist] = useState(true);
+  const [savingChecklistId, setSavingChecklistId] = useState<string | null>(null);
+  const [creatingChecklistItem, setCreatingChecklistItem] = useState(false);
+  const [newChecklistItem, setNewChecklistItem] = useState({
+    itemLabel: "",
+    sectionName: "Lot Identity",
+    responseType: "YES_NO",
+    displayOrder: "999",
+    isRequired: true,
+    isActive: true,
+  });
   const [reportPreferences, setReportPreferences] = useState<ReportPreferences>(() =>
     getDefaultReportPreferences(companyName)
   );
-  const [clients, setClients] = useState<ClientMasterOption[]>([]);
-  const [transporters, setTransporters] = useState<TransporterMasterOption[]>([]);
-  const [items, setItems] = useState<ItemMasterOption[]>([]);
-  const [clientForm, setClientForm] = useState({
-    clientName: "",
-    billToAddress: "",
-    shipToAddress: "",
-    gstOrId: "",
-  });
-  const [transporterForm, setTransporterForm] = useState({
-    transporterName: "",
-    contactPerson: "",
-    phone: "",
-    email: "",
-    address: "",
-    gstOrId: "",
-  });
-  const [itemForm, setItemForm] = useState({
-    itemName: "",
-    description: "",
-    uom: "",
-  });
-
-  const loadMasters = useCallback(async () => {
-    setMasterLoading(true);
-    try {
-      const response = await fetch("/api/masters/dispatch-options");
-      if (!response.ok) {
-        throw new Error("Failed to load master data.");
-      }
-      const data: {
-        clients?: ClientMasterOption[];
-        transporters?: TransporterMasterOption[];
-        items?: ItemMasterOption[];
-      } = await response.json();
-      setClients(Array.isArray(data.clients) ? data.clients : []);
-      setTransporters(Array.isArray(data.transporters) ? data.transporters : []);
-      setItems(Array.isArray(data.items) ? data.items : []);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load master data.";
-      toast({ title: "Master load failed", description: message, status: "error" });
-    } finally {
-      setMasterLoading(false);
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    void loadMasters();
-  }, [loadMasters]);
+  const [activeSettingsSection, setActiveSettingsSection] = useState<
+    | "company-profile"
+    | "report-defaults"
+    | "workflow-guardrails"
+    | "inspection-checklist"
+    | "registry-navigation"
+  >("company-profile");
 
   useEffect(() => {
     const defaults = getDefaultReportPreferences(companyName);
@@ -141,88 +88,35 @@ export default function SettingsPageRoute() {
     }
   }, [companyName]);
 
-  const activeRows = useMemo(() => {
-    if (activeMasterTab === "CLIENT") return clients.length;
-    if (activeMasterTab === "TRANSPORTER") return transporters.length;
-    return items.length;
-  }, [activeMasterTab, clients.length, items.length, transporters.length]);
-
-  const saveActiveMaster = async () => {
-    setMasterSaving(true);
+  const fetchChecklistSettings = useCallback(async () => {
+    setLoadingChecklist(true);
     try {
-      if (activeMasterTab === "CLIENT") {
-        if (!clientForm.clientName.trim() || !clientForm.billToAddress.trim() || !clientForm.shipToAddress.trim()) {
-          throw new Error("Client name, bill-to, and ship-to are required.");
-        }
-        const response = await fetch("/api/masters/clients", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientName: clientForm.clientName.trim(),
-            billToAddress: clientForm.billToAddress.trim(),
-            shipToAddress: clientForm.shipToAddress.trim(),
-            gstOrId: clientForm.gstOrId.trim() || undefined,
-          }),
-        });
-        if (!response.ok) {
-          throw new Error("Failed to save client.");
-        }
-        setClientForm({ clientName: "", billToAddress: "", shipToAddress: "", gstOrId: "" });
-      } else if (activeMasterTab === "TRANSPORTER") {
-        if (!transporterForm.transporterName.trim()) {
-          throw new Error("Transporter name is required.");
-        }
-        const response = await fetch("/api/masters/transporters", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transporterName: transporterForm.transporterName.trim(),
-            contactPerson: transporterForm.contactPerson.trim() || undefined,
-            phone: transporterForm.phone.trim() || undefined,
-            email: transporterForm.email.trim() || undefined,
-            address: transporterForm.address.trim() || undefined,
-            gstOrId: transporterForm.gstOrId.trim() || undefined,
-          }),
-        });
-        if (!response.ok) {
-          throw new Error("Failed to save transporter.");
-        }
-        setTransporterForm({
-          transporterName: "",
-          contactPerson: "",
-          phone: "",
-          email: "",
-          address: "",
-          gstOrId: "",
-        });
-      } else {
-        if (!itemForm.itemName.trim()) {
-          throw new Error("Item name is required.");
-        }
-        const response = await fetch("/api/masters/items", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            itemName: itemForm.itemName.trim(),
-            description: itemForm.description.trim() || undefined,
-            uom: itemForm.uom.trim() || undefined,
-          }),
-        });
-        if (!response.ok) {
-          throw new Error("Failed to save item.");
-        }
-        setItemForm({ itemName: "", description: "", uom: "" });
+      const res = await fetch("/api/settings/inspection-checklist");
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { details?: string } | null;
+        throw new Error(payload?.details ?? "Failed to load inspection checklist settings.");
       }
 
-      toast({ title: "Master saved", status: "success" });
-      await loadMasters();
+      const payload = (await res.json()) as ChecklistSettingsResponse;
+      setChecklistItems(payload.items);
+      setSectionOptions(payload.sectionOptions);
+      setResponseTypeOptions(payload.responseTypeOptions);
+      setNewChecklistItem((prev) => ({
+        ...prev,
+        sectionName: payload.sectionOptions[0] ?? prev.sectionName,
+        responseType: payload.responseTypeOptions[0] ?? prev.responseType,
+      }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save master.";
-      toast({ title: "Save failed", description: message, status: "error" });
+      const message = error instanceof Error ? error.message : "Failed to load inspection checklist settings.";
+      toast({ title: "Checklist settings unavailable", description: message, status: "warning" });
     } finally {
-      setMasterSaving(false);
+      setLoadingChecklist(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    void fetchChecklistSettings();
+  }, [fetchChecklistSettings]);
 
   const saveBasics = () => {
     try {
@@ -230,421 +124,619 @@ export default function SettingsPageRoute() {
       window.localStorage.setItem(REPORT_PREFERENCES_STORAGE_KEY, JSON.stringify(normalized));
     } catch {
       toast({ title: "Report preferences could not be saved", status: "warning" });
+      return;
     }
+
     toast({ title: "Settings saved", status: "success" });
   };
 
+  async function saveChecklistItem(item: InspectionChecklistItem) {
+    setSavingChecklistId(item.id);
+    try {
+      const res = await fetch("/api/settings/inspection-checklist", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: item.id,
+          itemLabel: item.itemLabel,
+          sectionName: item.sectionName,
+          responseType: item.responseType,
+          displayOrder: item.displayOrder,
+          isRequired: item.isRequired,
+          isActive: item.isActive,
+        }),
+      });
+
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { details?: string } | null;
+        throw new Error(payload?.details ?? "Failed to save checklist item.");
+      }
+
+      const updated = (await res.json()) as InspectionChecklistItem;
+      setChecklistItems((prev) => prev.map((entry) => (entry.id === updated.id ? updated : entry)));
+      toast({ title: "Checklist item saved", status: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save checklist item.";
+      toast({ title: "Save failed", description: message, status: "error" });
+    } finally {
+      setSavingChecklistId(null);
+    }
+  }
+
+  async function createChecklistItem() {
+    setCreatingChecklistItem(true);
+    try {
+      const res = await fetch("/api/settings/inspection-checklist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newChecklistItem),
+      });
+
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { details?: string } | null;
+        throw new Error(payload?.details ?? "Failed to create checklist item.");
+      }
+
+      const created = (await res.json()) as InspectionChecklistItem;
+      setChecklistItems((prev) => [...prev, created].sort((left, right) => left.displayOrder - right.displayOrder));
+      setNewChecklistItem((prev) => ({ ...prev, itemLabel: "", displayOrder: String((created.displayOrder ?? 999) + 1) }));
+      toast({ title: "Checklist item added", status: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create checklist item.";
+      toast({ title: "Create failed", description: message, status: "error" });
+    } finally {
+      setCreatingChecklistItem(false);
+    }
+  }
+
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6}>
+      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
         <Box>
-          <HStack spacing={2}>
-            <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              SETTINGS
+          <HStack spacing={2} flexWrap="wrap">
+            <Badge colorScheme="brand" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              WORKSPACE PREFERENCES
             </Badge>
             <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              BASIC CONFIG
+              CLEANER IA
             </Badge>
           </HStack>
-          <Heading size="lg" color="gray.900" mt={2}>
-            Settings
+          <Heading size="lg" color="text.primary" mt={2}>
+            Workspace Configuration
           </Heading>
-          <Text color="gray.600" mt={2}>
-            Workspace configuration.
-          </Text>
         </Box>
 
-        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-          <CardBody p={6}>
-            <HStack mb={4}>
-              <Box p={2.5} bg="teal.50" color="teal.600" borderRadius="xl">
-                <Building2 size={18} />
-              </Box>
-              <Box>
-                <Heading size="sm" color="gray.900">
-                  Company Profile
-                </Heading>
-                <Text fontSize="sm" color="gray.600">
-                  Basic organization information used across dashboards and reports.
-                </Text>
-              </Box>
-            </HStack>
-
-            <VStack align="stretch" spacing={3}>
-              <FormControl>
-                <FormLabel>Company Name</FormLabel>
-                <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Primary Location</FormLabel>
-                <Input value={location} onChange={(e) => setLocation(e.target.value)} />
-              </FormControl>
-            </VStack>
-          </CardBody>
-        </Card>
-
-        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-          <CardBody p={6}>
-            <HStack mb={4}>
-              <Box p={2.5} bg="blue.50" color="blue.600" borderRadius="xl">
-                <ShieldCheck size={18} />
-              </Box>
-              <Box>
-                <Heading size="sm" color="gray.900">
-                  Report & Print Preferences
-                </Heading>
-                <Text fontSize="sm" color="gray.600">
-                  Set default print type and branding for PDF/XLSX generation.
-                </Text>
-              </Box>
-            </HStack>
-
-            <VStack align="stretch" spacing={3}>
-              <FormControl>
-                <FormLabel>Default Report Type</FormLabel>
-                <Select
-                  value={reportPreferences.defaultDocumentType}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      defaultDocumentType: event.target.value as ReportPreferences["defaultDocumentType"],
-                    }))
-                  }
-                >
-                  {REPORT_DOCUMENT_TYPES.map((documentType) => (
-                    <option key={documentType} value={documentType}>
-                      {getReportDocumentTypeLabel(documentType)}
-                    </option>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl>
-                <FormLabel>Brand Display Name</FormLabel>
-                <Input
-                  value={reportPreferences.branding.companyName}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, companyName: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Brand Address</FormLabel>
-                <Input
-                  value={reportPreferences.branding.companyAddress}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, companyAddress: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Contact Line</FormLabel>
-                <Input
-                  value={reportPreferences.branding.companyContact}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, companyContact: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel>GST / Tax ID</FormLabel>
-                <Input
-                  value={reportPreferences.branding.taxId}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, taxId: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Logo URL (optional)</FormLabel>
-                <Input
-                  value={reportPreferences.branding.logoUrl}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, logoUrl: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Footer Note (optional)</FormLabel>
-                <Input
-                  value={reportPreferences.branding.footerNote}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, footerNote: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Authorized Signatory Name</FormLabel>
-                <Input
-                  value={reportPreferences.branding.authorizedSignatoryName}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, authorizedSignatoryName: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Authorized Signatory Title</FormLabel>
-                <Input
-                  value={reportPreferences.branding.authorizedSignatoryTitle}
-                  onChange={(event) =>
-                    setReportPreferences((prev) => ({
-                      ...prev,
-                      branding: { ...prev.branding, authorizedSignatoryTitle: event.target.value },
-                    }))
-                  }
-                />
-              </FormControl>
-            </VStack>
-          </CardBody>
-        </Card>
-
-        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-          <CardBody p={6}>
-            <HStack mb={4}>
-              <Box p={2.5} bg="purple.50" color="purple.600" borderRadius="xl">
-                <UserCog size={18} />
-              </Box>
-              <Box>
-                <Heading size="sm" color="gray.900">
-                  User Defaults
-                </Heading>
-                <Text fontSize="sm" color="gray.600">
-                  Default view and basic preference configuration.
-                </Text>
-              </Box>
-            </HStack>
-
-            <VStack align="stretch" spacing={3}>
-              <FormControl>
-                <FormLabel>Default Inspection View</FormLabel>
-                <Select value={defaultView} onChange={(e) => setDefaultView(e.target.value)}>
-                  <option value="my">My Tasks</option>
-                  <option value="all">Company View</option>
-                </Select>
-              </FormControl>
-            </VStack>
-          </CardBody>
-        </Card>
-
-        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-          <CardBody p={6}>
-            <HStack mb={4}>
-              <Box p={2.5} bg="orange.50" color="orange.600" borderRadius="xl">
-                <Workflow size={18} />
-              </Box>
-              <Box>
-                <Heading size="sm" color="gray.900">
-                  Workflow Basics
-                </Heading>
-                <Text fontSize="sm" color="gray.600">
-                  Lightweight control toggles for inspection and R&D flow governance.
-                </Text>
-              </Box>
-            </HStack>
-
-            <VStack align="stretch" spacing={3}>
-              <HStack justify="space-between">
-                <Text color="gray.800">Sampling mandatory before homogeneous sample</Text>
-                <Switch colorScheme="teal" isChecked={samplingRequired} onChange={(e) => setSamplingRequired(e.target.checked)} />
-              </HStack>
-              <Divider />
-              <HStack justify="space-between">
-                <Text color="gray.800">QA gate required before lock</Text>
-                <Switch colorScheme="teal" isChecked={qaGateEnabled} onChange={(e) => setQaGateEnabled(e.target.checked)} />
-              </HStack>
-              <Divider />
-              <HStack justify="space-between">
-                <Text color="gray.800">Strict lock mode (no post-lock mutation)</Text>
-                <Switch colorScheme="teal" isChecked={lockStrictMode} onChange={(e) => setLockStrictMode(e.target.checked)} />
-              </HStack>
-            </VStack>
-          </CardBody>
-        </Card>
-
-        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-          <CardBody p={6}>
-            <HStack mb={3}>
-              <Box p={2.5} bg="green.50" color="green.600" borderRadius="xl">
-                <ShieldCheck size={18} />
-              </Box>
-              <Box>
-                <Heading size="sm" color="gray.900">
-                  Master Data Management
-                </Heading>
-                <Text fontSize="sm" color="gray.600">
-                  Client, transporter, and item records.
-                </Text>
-              </Box>
-            </HStack>
-
-            <HStack spacing={2} mb={4} flexWrap="wrap">
-              {(["CLIENT", "TRANSPORTER", "ITEM"] as MasterTab[]).map((tab) => (
-                <Button
-                  key={tab}
-                  size="sm"
-                  variant={activeMasterTab === tab ? "solid" : "outline"}
-                  colorScheme={activeMasterTab === tab ? "teal" : "gray"}
-                  onClick={() => setActiveMasterTab(tab)}
-                >
-                  {tab === "CLIENT" ? "Clients" : tab === "TRANSPORTER" ? "Transporters" : "Items"}
-                </Button>
-              ))}
-              <Button size="sm" variant="outline" onClick={() => void loadMasters()} isLoading={masterLoading}>
-                Refresh Data
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => (window.location.href = "/masterplayground")}>
-                Open Playground
-              </Button>
-            </HStack>
-
-            <VStack align="stretch" spacing={3}>
-              {activeMasterTab === "CLIENT" ? (
-                <>
-                  <FormControl isRequired>
-                    <FormLabel>Client Name</FormLabel>
-                    <Input value={clientForm.clientName} onChange={(e) => setClientForm((prev) => ({ ...prev, clientName: e.target.value }))} />
-                  </FormControl>
-                  <FormControl isRequired>
-                    <FormLabel>Bill To</FormLabel>
-                    <Input value={clientForm.billToAddress} onChange={(e) => setClientForm((prev) => ({ ...prev, billToAddress: e.target.value }))} />
-                  </FormControl>
-                  <FormControl isRequired>
-                    <FormLabel>Ship To</FormLabel>
-                    <Input value={clientForm.shipToAddress} onChange={(e) => setClientForm((prev) => ({ ...prev, shipToAddress: e.target.value }))} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>GST / ID</FormLabel>
-                    <Input value={clientForm.gstOrId} onChange={(e) => setClientForm((prev) => ({ ...prev, gstOrId: e.target.value }))} />
-                  </FormControl>
-                </>
-              ) : null}
-
-              {activeMasterTab === "TRANSPORTER" ? (
-                <>
-                  <FormControl isRequired>
-                    <FormLabel>Transporter Name</FormLabel>
-                    <Input value={transporterForm.transporterName} onChange={(e) => setTransporterForm((prev) => ({ ...prev, transporterName: e.target.value }))} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Contact Person</FormLabel>
-                    <Input value={transporterForm.contactPerson} onChange={(e) => setTransporterForm((prev) => ({ ...prev, contactPerson: e.target.value }))} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Phone</FormLabel>
-                    <Input value={transporterForm.phone} onChange={(e) => setTransporterForm((prev) => ({ ...prev, phone: e.target.value }))} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Email</FormLabel>
-                    <Input value={transporterForm.email} onChange={(e) => setTransporterForm((prev) => ({ ...prev, email: e.target.value }))} />
-                  </FormControl>
-                </>
-              ) : null}
-
-              {activeMasterTab === "ITEM" ? (
-                <>
-                  <FormControl isRequired>
-                    <FormLabel>Item Name</FormLabel>
-                    <Input value={itemForm.itemName} onChange={(e) => setItemForm((prev) => ({ ...prev, itemName: e.target.value }))} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Description</FormLabel>
-                    <Input value={itemForm.description} onChange={(e) => setItemForm((prev) => ({ ...prev, description: e.target.value }))} />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>UOM</FormLabel>
-                    <Input value={itemForm.uom} onChange={(e) => setItemForm((prev) => ({ ...prev, uom: e.target.value }))} />
-                  </FormControl>
-                </>
-              ) : null}
-            </VStack>
-
-            <HStack justify="space-between" mt={4}>
-              <Text fontSize="sm" color="gray.600">
-                {masterLoading ? "Loading..." : `${activeRows} record(s)`}
+        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+          <Card variant="outline" borderRadius="2xl">
+            <CardBody p={5}>
+              <Text fontSize="sm" color="text.muted">
+                Default queue view
               </Text>
-              <Button size="sm" colorScheme="teal" onClick={() => void saveActiveMaster()} isLoading={masterSaving}>
-                Save {activeMasterTab === "CLIENT" ? "Client" : activeMasterTab === "TRANSPORTER" ? "Transporter" : "Item"}
-              </Button>
-            </HStack>
+              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+                {defaultView === "my" ? "My tasks" : "Company view"}
+              </Text>
+            </CardBody>
+          </Card>
+          <Card variant="outline" borderRadius="2xl">
+            <CardBody p={5}>
+              <Text fontSize="sm" color="text.muted">
+                Default document
+              </Text>
+              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+                {getReportDocumentTypeLabel(reportPreferences.defaultDocumentType)}
+              </Text>
+            </CardBody>
+          </Card>
+          <Card variant="outline" borderRadius="2xl">
+            <CardBody p={5}>
+              <Text fontSize="sm" color="text.muted">
+                Guardrails enabled
+              </Text>
+              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+                {[samplingRequired, qaGateEnabled, lockStrictMode].filter(Boolean).length}/3
+              </Text>
+            </CardBody>
+          </Card>
+        </SimpleGrid>
 
-            <TableContainer mt={4} borderWidth="1px" borderColor="gray.200" borderRadius="xl">
-              <Table size="sm">
-                <Thead bg="gray.50">
-                  {activeMasterTab === "CLIENT" ? (
-                    <Tr>
-                      <Th>Client</Th>
-                      <Th>GST / ID</Th>
-                    </Tr>
-                  ) : null}
-                  {activeMasterTab === "TRANSPORTER" ? (
-                    <Tr>
-                      <Th>Transporter</Th>
-                      <Th>Phone</Th>
-                    </Tr>
-                  ) : null}
-                  {activeMasterTab === "ITEM" ? (
-                    <Tr>
-                      <Th>Item</Th>
-                      <Th>UOM</Th>
-                    </Tr>
-                  ) : null}
-                </Thead>
-                <Tbody>
-                  {activeMasterTab === "CLIENT"
-                    ? clients.map((row) => (
-                        <Tr key={row.clientName}>
-                          <Td>{row.clientName}</Td>
-                          <Td>{row.gstOrId ?? "—"}</Td>
-                        </Tr>
-                      ))
-                    : null}
-                  {activeMasterTab === "TRANSPORTER"
-                    ? transporters.map((row) => (
-                        <Tr key={row.transporterName}>
-                          <Td>{row.transporterName}</Td>
-                          <Td>{row.phone ?? "—"}</Td>
-                        </Tr>
-                      ))
-                    : null}
-                  {activeMasterTab === "ITEM"
-                    ? items.map((row) => (
-                        <Tr key={row.itemName}>
-                          <Td>{row.itemName}</Td>
-                          <Td>{row.uom ?? "—"}</Td>
-                        </Tr>
-                      ))
-                    : null}
-                </Tbody>
-              </Table>
-            </TableContainer>
-          </CardBody>
-        </Card>
+        <HStack spacing={3} flexWrap="wrap">
+          <Button variant={activeSettingsSection === "company-profile" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("company-profile")}>
+            Identity
+          </Button>
+          <Button variant={activeSettingsSection === "report-defaults" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("report-defaults")}>
+            Reports
+          </Button>
+          <Button variant={activeSettingsSection === "workflow-guardrails" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("workflow-guardrails")}>
+            Guardrails
+          </Button>
+          <Button variant={activeSettingsSection === "inspection-checklist" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("inspection-checklist")}>
+            Checklist
+          </Button>
+          <Button variant={activeSettingsSection === "registry-navigation" ? "solid" : "outline"} onClick={() => setActiveSettingsSection("registry-navigation")}>
+            Registry
+          </Button>
+        </HStack>
 
-        <HStack justify="end">
+        <ConfigurationPageTemplate
+          sections={[
+            {
+              id: "company-profile",
+              title: "Workspace Identity",
+              description: "Use concise company details that should appear across dashboards and generated documents.",
+              content: (
+                <VStack align="stretch" spacing={4}>
+                  <HStack spacing={3} align="start">
+                    <Box p={2.5} bg="teal.50" color="teal.600" borderRadius="xl">
+                      <Building2 size={18} />
+                    </Box>
+                    <Box>
+                      <Text fontWeight="semibold" color="text.primary">
+                        Company profile
+                      </Text>
+                      <Text fontSize="sm" color="text.secondary">
+                        Keep only the information that operators and customers actually see.
+                      </Text>
+                    </Box>
+                  </HStack>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                    <FormControl>
+                      <FormLabel>Company name</FormLabel>
+                      <Input value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Primary location</FormLabel>
+                      <Input value={location} onChange={(event) => setLocation(event.target.value)} />
+                    </FormControl>
+                  </SimpleGrid>
+                </VStack>
+              ),
+            },
+            {
+              id: "report-defaults",
+              title: "Report Defaults",
+              description: "Set stable branding and export defaults here. Job-specific commercial fields stay on the document workspace.",
+              content: (
+                <VStack align="stretch" spacing={4}>
+                  <HStack spacing={3} align="start">
+                    <Box p={2.5} bg="blue.50" color="blue.600" borderRadius="xl">
+                      <ShieldCheck size={18} />
+                    </Box>
+                    <Box>
+                      <Text fontWeight="semibold" color="text.primary">
+                        Print and branding
+                      </Text>
+                      <Text fontSize="sm" color="text.secondary">
+                        These values are reused by document generation and should rarely change.
+                      </Text>
+                    </Box>
+                  </HStack>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                    <FormControl>
+                      <FormLabel>Default report type</FormLabel>
+                      <Select
+                        value={reportPreferences.defaultDocumentType}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            defaultDocumentType: event.target.value as ReportPreferences["defaultDocumentType"],
+                          }))
+                        }
+                      >
+                        {REPORT_DOCUMENT_TYPES.map((documentType) => (
+                          <option key={documentType} value={documentType}>
+                            {getReportDocumentTypeLabel(documentType)}
+                          </option>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Brand display name</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.companyName}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, companyName: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Brand address</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.companyAddress}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, companyAddress: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Contact line</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.companyContact}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, companyContact: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>GST / tax ID</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.taxId}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, taxId: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Logo URL</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.logoUrl}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, logoUrl: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Footer note</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.footerNote}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, footerNote: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Authorized signatory name</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.authorizedSignatoryName}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, authorizedSignatoryName: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Authorized signatory title</FormLabel>
+                      <Input
+                        value={reportPreferences.branding.authorizedSignatoryTitle}
+                        onChange={(event) =>
+                          setReportPreferences((prev) => ({
+                            ...prev,
+                            branding: { ...prev.branding, authorizedSignatoryTitle: event.target.value },
+                          }))
+                        }
+                      />
+                    </FormControl>
+                  </SimpleGrid>
+                </VStack>
+              ),
+            },
+            {
+              id: "workflow-guardrails",
+              title: "Workflow Guardrails",
+              description: "Keep only the operational defaults that affect step gating. Registry CRUD has been removed from this page.",
+              content: (
+                <VStack align="stretch" spacing={4}>
+                  <HStack spacing={3} align="start">
+                    <Box p={2.5} bg="orange.50" color="orange.600" borderRadius="xl">
+                      <Workflow size={18} />
+                    </Box>
+                    <Box>
+                      <Text fontWeight="semibold" color="text.primary">
+                        Default behavior
+                      </Text>
+                      <Text fontSize="sm" color="text.secondary">
+                        These toggles should match your real operating policy, not individual exceptions.
+                      </Text>
+                    </Box>
+                  </HStack>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+                    <VStack align="stretch" spacing={4}>
+                      <FormControl>
+                        <FormLabel>Default inspection view</FormLabel>
+                        <Select value={defaultView} onChange={(event) => setDefaultView(event.target.value)}>
+                          <option value="my">My tasks</option>
+                          <option value="all">Company view</option>
+                        </Select>
+                      </FormControl>
+                      <HStack justify="space-between">
+                        <Box>
+                          <Text color="text.primary">Sampling mandatory before homogeneous sample</Text>
+                          <Text fontSize="sm" color="text.secondary">
+                            Prevents the R&D stage from starting too early.
+                          </Text>
+                        </Box>
+                        <Switch colorScheme="teal" isChecked={samplingRequired} onChange={(event) => setSamplingRequired(event.target.checked)} />
+                      </HStack>
+                    </VStack>
+                    <VStack align="stretch" spacing={4}>
+                      <HStack justify="space-between">
+                        <Box>
+                          <Text color="text.primary">QA gate required before lock</Text>
+                          <Text fontSize="sm" color="text.secondary">
+                            Keeps report release explicit.
+                          </Text>
+                        </Box>
+                        <Switch colorScheme="teal" isChecked={qaGateEnabled} onChange={(event) => setQaGateEnabled(event.target.checked)} />
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Box>
+                          <Text color="text.primary">Strict lock mode</Text>
+                          <Text fontSize="sm" color="text.secondary">
+                            Prevent post-lock edits without reopening the workflow.
+                          </Text>
+                        </Box>
+                        <Switch colorScheme="teal" isChecked={lockStrictMode} onChange={(event) => setLockStrictMode(event.target.checked)} />
+                      </HStack>
+                    </VStack>
+                  </SimpleGrid>
+                </VStack>
+              ),
+            },
+            {
+              id: "inspection-checklist",
+              title: "Inspection Checklist",
+              description: "Keep the default inspection flow lean. Add only the questions that matter for your real operation.",
+              content: (
+                <VStack align="stretch" spacing={5}>
+                  <HStack spacing={3} align="start">
+                    <Box p={2.5} bg="purple.50" color="purple.600" borderRadius="xl">
+                      <Workflow size={18} />
+                    </Box>
+                    <Box>
+                      <Text fontWeight="semibold" color="text.primary">
+                        Admin-managed inspection form
+                      </Text>
+                      <Text fontSize="sm" color="text.secondary">
+                        Questions added here appear in the inspection wizard. Keep the active set short so field teams can move quickly.
+                      </Text>
+                    </Box>
+                  </HStack>
+
+                  <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                    <Card variant="outline" borderRadius="xl">
+                      <CardBody p={4}>
+                        <Text fontSize="sm" color="text.muted">Active questions</Text>
+                        <Text fontSize="2xl" fontWeight="bold" mt={2}>{checklistItems.filter((item) => item.isActive).length}</Text>
+                      </CardBody>
+                    </Card>
+                    <Card variant="outline" borderRadius="xl">
+                      <CardBody p={4}>
+                        <Text fontSize="sm" color="text.muted">Required questions</Text>
+                        <Text fontSize="2xl" fontWeight="bold" mt={2}>{checklistItems.filter((item) => item.isActive && item.isRequired).length}</Text>
+                      </CardBody>
+                    </Card>
+                    <Card variant="outline" borderRadius="xl">
+                      <CardBody p={4}>
+                        <Text fontSize="sm" color="text.muted">Default inspection photos</Text>
+                        <Text fontSize="2xl" fontWeight="bold" mt={2}>2</Text>
+                      </CardBody>
+                    </Card>
+                  </SimpleGrid>
+
+                  <Card variant="outline" borderRadius="xl">
+                    <CardBody p={5}>
+                      <VStack align="stretch" spacing={4}>
+                        <Text fontWeight="semibold" color="text.primary">Add question</Text>
+                        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                          <FormControl gridColumn={{ md: "span 2" }}>
+                            <FormLabel>Question label</FormLabel>
+                            <Textarea
+                              value={newChecklistItem.itemLabel}
+                              onChange={(event) => setNewChecklistItem((prev) => ({ ...prev, itemLabel: event.target.value }))}
+                              placeholder="For example: Material condition acceptable for visual inspection"
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel>Section</FormLabel>
+                            <Select value={newChecklistItem.sectionName} onChange={(event) => setNewChecklistItem((prev) => ({ ...prev, sectionName: event.target.value }))}>
+                              {sectionOptions.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel>Response type</FormLabel>
+                            <Select value={newChecklistItem.responseType} onChange={(event) => setNewChecklistItem((prev) => ({ ...prev, responseType: event.target.value }))}>
+                              {responseTypeOptions.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel>Display order</FormLabel>
+                            <Input value={newChecklistItem.displayOrder} onChange={(event) => setNewChecklistItem((prev) => ({ ...prev, displayOrder: event.target.value }))} />
+                          </FormControl>
+                          <VStack align="stretch" spacing={4} justify="end">
+                            <HStack justify="space-between">
+                              <Text color="text.primary">Required</Text>
+                              <Switch isChecked={newChecklistItem.isRequired} onChange={(event) => setNewChecklistItem((prev) => ({ ...prev, isRequired: event.target.checked }))} />
+                            </HStack>
+                            <HStack justify="space-between">
+                              <Text color="text.primary">Active immediately</Text>
+                              <Switch isChecked={newChecklistItem.isActive} onChange={(event) => setNewChecklistItem((prev) => ({ ...prev, isActive: event.target.checked }))} />
+                            </HStack>
+                          </VStack>
+                        </SimpleGrid>
+                        <HStack justify="end">
+                          <Button leftIcon={<Plus size={16} />} colorScheme="purple" onClick={createChecklistItem} isLoading={creatingChecklistItem}>
+                            Add question
+                          </Button>
+                        </HStack>
+                      </VStack>
+                    </CardBody>
+                  </Card>
+
+                  <VStack align="stretch" spacing={3}>
+                    {loadingChecklist ? (
+                      <Text fontSize="sm" color="text.secondary">Loading checklist questions…</Text>
+                    ) : checklistItems.length === 0 ? (
+                      <Text fontSize="sm" color="text.secondary">No checklist questions configured.</Text>
+                    ) : (
+                      checklistItems
+                        .slice()
+                        .sort((left, right) => left.displayOrder - right.displayOrder)
+                        .map((item) => (
+                          <Card key={item.id} variant="outline" borderRadius="xl">
+                            <CardBody p={5}>
+                              <VStack align="stretch" spacing={4}>
+                                <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                                  <FormControl gridColumn={{ md: "span 2" }}>
+                                    <FormLabel>Question</FormLabel>
+                                    <Input
+                                      value={item.itemLabel}
+                                      onChange={(event) =>
+                                        setChecklistItems((prev) =>
+                                          prev.map((entry) => (entry.id === item.id ? { ...entry, itemLabel: event.target.value } : entry)),
+                                        )
+                                      }
+                                    />
+                                  </FormControl>
+                                  <FormControl>
+                                    <FormLabel>Section</FormLabel>
+                                    <Select
+                                      value={item.sectionName}
+                                      onChange={(event) =>
+                                        setChecklistItems((prev) =>
+                                          prev.map((entry) => (entry.id === item.id ? { ...entry, sectionName: event.target.value } : entry)),
+                                        )
+                                      }
+                                    >
+                                      {sectionOptions.map((option) => (
+                                        <option key={option} value={option}>{option}</option>
+                                      ))}
+                                    </Select>
+                                  </FormControl>
+                                  <FormControl>
+                                    <FormLabel>Response type</FormLabel>
+                                    <Select
+                                      value={item.responseType}
+                                      onChange={(event) =>
+                                        setChecklistItems((prev) =>
+                                          prev.map((entry) => (entry.id === item.id ? { ...entry, responseType: event.target.value } : entry)),
+                                        )
+                                      }
+                                    >
+                                      {responseTypeOptions.map((option) => (
+                                        <option key={option} value={option}>{option}</option>
+                                      ))}
+                                    </Select>
+                                  </FormControl>
+                                  <FormControl>
+                                    <FormLabel>Display order</FormLabel>
+                                    <Input
+                                      value={String(item.displayOrder)}
+                                      onChange={(event) =>
+                                        setChecklistItems((prev) =>
+                                          prev.map((entry) => (entry.id === item.id ? { ...entry, displayOrder: Number(event.target.value) || 0 } : entry)),
+                                        )
+                                      }
+                                    />
+                                  </FormControl>
+                                  <VStack align="stretch" spacing={4} justify="end">
+                                    <HStack justify="space-between">
+                                      <Text color="text.primary">Required</Text>
+                                      <Switch
+                                        isChecked={item.isRequired}
+                                        onChange={(event) =>
+                                          setChecklistItems((prev) =>
+                                            prev.map((entry) => (entry.id === item.id ? { ...entry, isRequired: event.target.checked } : entry)),
+                                          )
+                                        }
+                                      />
+                                    </HStack>
+                                    <HStack justify="space-between">
+                                      <Text color="text.primary">Active</Text>
+                                      <Switch
+                                        isChecked={item.isActive}
+                                        onChange={(event) =>
+                                          setChecklistItems((prev) =>
+                                            prev.map((entry) => (entry.id === item.id ? { ...entry, isActive: event.target.checked } : entry)),
+                                          )
+                                        }
+                                      />
+                                    </HStack>
+                                  </VStack>
+                                </SimpleGrid>
+                                <HStack justify="space-between" flexWrap="wrap">
+                                  <HStack spacing={2}>
+                                    <Badge colorScheme={item.isActive ? "green" : "gray"} variant="subtle">{item.isActive ? "Active" : "Inactive"}</Badge>
+                                    <Badge colorScheme={item.isRequired ? "red" : "gray"} variant="subtle">{item.isRequired ? "Required" : "Optional"}</Badge>
+                                  </HStack>
+                                  <Button size="sm" leftIcon={<Save size={14} />} onClick={() => void saveChecklistItem(item)} isLoading={savingChecklistId === item.id}>
+                                    Save question
+                                  </Button>
+                                </HStack>
+                              </VStack>
+                            </CardBody>
+                          </Card>
+                        ))
+                    )}
+                  </VStack>
+                </VStack>
+              ),
+            },
+            {
+              id: "registry-navigation",
+              title: "Registry Ownership",
+              description: "Client, transporter, and item records have been moved out of settings to reduce confusion and duplicate entry points.",
+              content: (
+                <HStack justify="space-between" align={{ base: "start", md: "center" }} flexDir={{ base: "column", md: "row" }} spacing={4}>
+                  <HStack spacing={3} align="start">
+                    <Box p={2.5} bg="gray.100" color="gray.700" borderRadius="xl">
+                      <Settings2 size={18} />
+                    </Box>
+                    <Box>
+                      <Text fontWeight="semibold" color="text.primary">
+                        Use the master registry for operational records
+                      </Text>
+                      <Text fontSize="sm" color="text.secondary">
+                        Create and maintain clients, transporters, items, and inactive records in one dedicated place.
+                      </Text>
+                    </Box>
+                  </HStack>
+                  <Button as="a" href="/master" variant="outline">
+                    Open master registry
+                  </Button>
+                </HStack>
+              ),
+            },
+          ].filter((section) => section.id === activeSettingsSection)}
+        />
+
+        <HStack justify="end" display={{ base: "none", md: "flex" }}>
           <Button leftIcon={<Save size={16} />} colorScheme="teal" onClick={saveBasics}>
             Save Settings
           </Button>
         </HStack>
+
+        <MobileActionRail>
+          <Button leftIcon={<Save size={16} />} flex="1" onClick={saveBasics}>
+            Save Settings
+          </Button>
+          <Button as="a" href="/master" flex="1" variant="outline">
+            Open Masters
+          </Button>
+        </MobileActionRail>
       </VStack>
     </ControlTowerLayout>
   );

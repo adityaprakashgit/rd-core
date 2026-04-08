@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Box, Center, Link, Stack, Text, useToast } from "@chakra-ui/react";
+import { Badge, Box, Center, Link, SimpleGrid, Stack, Text, useToast, VStack } from "@chakra-ui/react";
+import { ShieldCheck, Workflow } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/Button";
@@ -102,55 +103,92 @@ export default function LoginPage() {
 
   return (
     <Center minH="100vh" px={4} bg="bg.app">
-      <Card w="full" maxW="400px">
-        <Stack spacing={5}>
-          <Box>
-            <Text fontSize="xl" fontWeight="bold" color="text.primary">
-              Login
+      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} w="full" maxW="6xl">
+        <Card>
+          <VStack align="stretch" spacing={4}>
+            <Badge colorScheme="brand" variant="subtle" w="fit-content">
+              Enterprise Access
+            </Badge>
+            <Text fontSize={{ base: "2xl", md: "3xl" }} fontWeight="extrabold" color="text.primary">
+              Unified Operations Platform
             </Text>
-            <Text color="text.secondary" fontSize="sm">
-              Access your workspace.
+            <Text fontSize="md" color="text.secondary">
+              Secure entry to Control Center, Execution, Lab & Analysis, and formal reporting workflows.
             </Text>
-          </Box>
+            <Stack spacing={3} pt={2}>
+              <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={4} bg="bg.rail">
+                <Text fontWeight="bold" display="flex" alignItems="center" gap={2}>
+                  <ShieldCheck size={16} /> Enterprise Security
+                </Text>
+                <Text fontSize="sm" color="text.secondary" mt={1}>
+                  Role-based access control with company-level scoped authorization.
+                </Text>
+              </Box>
+              <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={4} bg="bg.rail">
+                <Text fontWeight="bold" display="flex" alignItems="center" gap={2}>
+                  <Workflow size={16} /> Lifecycle Governance
+                </Text>
+                <Text fontSize="sm" color="text.secondary" mt={1}>
+                  End-to-end operational visibility across inspection, execution, and analytics.
+                </Text>
+              </Box>
+            </Stack>
+          </VStack>
+        </Card>
 
-          <Input
-            label="Login Code"
-            value={form.loginCode}
-            onChange={(event) => setForm((prev) => ({ ...prev, loginCode: event.target.value }))}
-            error={errors.loginCode}
-            placeholder="Company code"
-          />
+        <Card>
+          <Stack spacing={5}>
+            <Box>
+              <Text fontSize="2xl" fontWeight="bold" color="text.primary">
+                Sign In
+              </Text>
+              <Text color="text.secondary" fontSize="sm">
+                Authenticate to continue to your enterprise workspace.
+              </Text>
+            </Box>
 
-          <Input
-            label="Email"
-            type="email"
-            value={form.email}
-            onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-            error={errors.email}
-            placeholder="name@company.com"
-          />
+            <Input
+              label="Login Code"
+              isRequired
+              value={form.loginCode}
+              onChange={(event) => setForm((prev) => ({ ...prev, loginCode: event.target.value }))}
+              error={errors.loginCode}
+              placeholder="Company code"
+            />
 
-          <Input
-            label="Password"
-            type="password"
-            value={form.password}
-            onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-            error={errors.password}
-            placeholder="Enter password"
-          />
+            <Input
+              label="Email"
+              isRequired
+              type="email"
+              value={form.email}
+              onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+              error={errors.email}
+              placeholder="name@company.com"
+            />
 
-          <Button onClick={onSubmit} isLoading={submitting} isDisabled={disabled}>
-            Login
-          </Button>
+            <Input
+              label="Password"
+              isRequired
+              type="password"
+              value={form.password}
+              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              error={errors.password}
+              placeholder="Enter password"
+            />
 
-          <Text fontSize="sm" color="text.secondary" textAlign="center">
-            New company?{" "}
-            <Link color="brand.600" onClick={() => router.push("/signup")}>
-              Create account
-            </Link>
-          </Text>
-        </Stack>
-      </Card>
+            <Button onClick={onSubmit} isLoading={submitting} isDisabled={disabled}>
+              Continue to Workspace
+            </Button>
+
+            <Text fontSize="sm" color="text.secondary" textAlign="center">
+              New company?{" "}
+              <Link color="brand.600" onClick={() => router.push("/signup")}>
+                Create account
+              </Link>
+            </Text>
+          </Stack>
+        </Card>
+      </SimpleGrid>
     </Center>
   );
 }

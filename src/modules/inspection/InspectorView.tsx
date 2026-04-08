@@ -118,7 +118,7 @@ export default function InspectorView() {
 
   async function fetchJobs() {
     try {
-      const res = await fetch("/api/inspection/jobs?view=all");
+      const res = await fetch("/api/jobs?view=all");
       const data = await res.json();
       setJobs(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -135,7 +135,7 @@ export default function InspectorView() {
     
     setIsCreatingJob(true);
     try {
-      await fetch("/api/inspection/jobs", {
+      await fetch("/api/jobs", {
         method: "POST",
         body: JSON.stringify({
           clientName,

@@ -3,6 +3,7 @@ import type { CurrentUser } from "@/lib/session";
 export type RbacAction =
   | "VIEW_MY_JOBS"
   | "VIEW_COMPANY_JOBS"
+  | "ARCHIVE_JOB"
   | "ASSIGN_JOB"
   | "ASSIGN_LOT"
   | "ASSIGN_SAMPLING"
@@ -25,6 +26,7 @@ export class AuthorizationError extends Error {
 const ACTION_MATRIX: Record<RbacAction, CurrentUser["role"][]> = {
   VIEW_MY_JOBS: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
   VIEW_COMPANY_JOBS: ["ADMIN"],
+  ARCHIVE_JOB: ["ADMIN", "OPERATIONS"],
   ASSIGN_JOB: ["ADMIN", "OPERATIONS"],
   ASSIGN_LOT: ["ADMIN", "OPERATIONS"],
   ASSIGN_SAMPLING: ["ADMIN", "OPERATIONS"],

@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
       : {};
 
     const clientName = asNonEmptyString(payload.clientName);
-    const billToAddress = asNonEmptyString(payload.billToAddress);
-    const shipToAddress = asNonEmptyString(payload.shipToAddress);
+    const billToAddress = asNonEmptyString(payload.billToAddress) ?? clientName;
+    const shipToAddress = asNonEmptyString(payload.shipToAddress) ?? clientName;
 
     if (!clientName || !billToAddress || !shipToAddress) {
       return jsonError("Validation Error", "clientName, billToAddress, and shipToAddress are required.", 400);

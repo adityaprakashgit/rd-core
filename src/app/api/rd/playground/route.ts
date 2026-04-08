@@ -74,14 +74,14 @@ export async function GET(req: NextRequest) {
     const experiment = await findOrCreateExperiment(job.id);
     const board = parseBoard(experiment.hypothesis);
 
-    const sample = await prisma.homogeneousSample.findFirst({
+    const packets = await prisma.packet.findMany({
       where: { jobId: job.id },
+      orderBy: [{ lot: { lotNumber: "asc" } }, { packetNo: "asc" }],
       select: {
         id: true,
-        packets: {
-          orderBy: { packetNumber: "asc" },
-          select: { id: true, packetNumber: true },
-        },
+        packetCode: true,
+        packetStatus: true,
+        packetQuantity: true,
       },
     });
 
@@ -90,10 +90,11 @@ export async function GET(req: NextRequest) {
       jobId: job.id,
       status: experiment.status,
       board,
-      packets: (sample?.packets ?? []).map((packet) => ({
+      packets: packets.map((packet) => ({
         id: packet.id,
-        code: `PKT-${String(packet.packetNumber).padStart(3, "0")}`,
-        quantity: 1,
+        code: packet.packetCode,
+        quantity: packet.packetQuantity ?? 1,
+        status: packet.packetStatus,
       })),
     });
   } catch (error: unknown) {

@@ -1,105 +1,24 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Accordion,
-  AccordionButton,
-  AccordionIcon,
-  AccordionItem,
-  AccordionPanel,
-  Badge,
-  Box,
-  Button,
-  Card,
-  CardBody,
-  Center,
-  Heading,
-  HStack,
-  Icon,
-  Progress,
-  SimpleGrid,
-  Spinner,
-  Text,
-  VStack,
-  useToast,
-} from "@chakra-ui/react";
-import {
-  ClipboardList,
-  FlaskConical,
-  FileDown,
-  Layers3,
-  Plus,
-  Puzzle,
-  Sparkles,
-  Workflow,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Badge, Box, Button, Heading, HStack, SimpleGrid, Stack, Text, VStack, useToast } from "@chakra-ui/react";
+import { FileDown, Puzzle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { Card } from "@/components/Card";
+import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
+import { WorkflowStepTracker } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
-import { InspectionJob } from "@/types/inspection";
-import { APP_TEXT } from "@/lib/ui-copy";
+import { getStoredAuth } from "@/lib/auth-client";
+import { buildWorkflowSteps, getJobWorkflowPresentation, getWorkflowStepRoute, summarizeLotProgress } from "@/lib/workflow-stage";
+import type { InspectionJob } from "@/types/inspection";
 
-type MetricCardProps = {
-  title: string;
-  value: string | number;
-  detail: string;
-  accent: string;
-};
-
-const workflowStages = [
-  { key: "CREATED", label: "CREATED", accent: "gray" },
-  { key: "LOTS_READY", label: "LOTS_READY", accent: "cyan" },
-  { key: "SAMPLING", label: "SAMPLING", accent: "orange" },
-  { key: "LAB", label: "LAB", accent: "purple" },
-  { key: "QA", label: "QA", accent: "blue" },
-  { key: "LOCKED", label: "LOCKED", accent: "green" },
-  { key: "DISPATCHED", label: "DISPATCHED", accent: "teal" },
-];
-
-function MetricCard({ title, value, detail, accent }: MetricCardProps) {
-  return (
-    <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-      <CardBody p={5}>
-        <HStack justify="space-between" align="start" mb={4}>
-          <Box w="2" h="10" borderRadius="full" bg={`${accent}.400`} />
-          <Badge variant="subtle" colorScheme={accent} borderRadius="full" px={2.5} py={1}>
-            KPI
-          </Badge>
-        </HStack>
-        <Text fontSize="sm" color="gray.500" fontWeight="medium">
-          {title}
-        </Text>
-        <Text fontSize="3xl" fontWeight="bold" color="gray.900" mt={1}>
-          {value}
-        </Text>
-        <Text fontSize="sm" color="gray.600" mt={1}>
-          {detail}
-        </Text>
-      </CardBody>
-    </Card>
-  );
-}
-
-function formatTime(value: string | Date) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
-}
-
-function getStatusColor(status: string) {
-  switch (status) {
-    case "LOCKED":
-      return "green";
-    case "QA":
-      return "blue";
-    case "DISPATCHED":
-      return "teal";
-    case "LAB":
-      return "purple";
-    case "SAMPLING":
-      return "orange";
-    default:
-      return "gray";
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) {
+    return "—";
   }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
 export default function UserRdDashboard() {
@@ -107,302 +26,307 @@ export default function UserRdDashboard() {
   const toast = useToast();
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sessionRole, setSessionRole] = useState<"ADMIN" | "OPERATIONS" | "RND" | "VIEWER" | null>(null);
+  const [archivingJobId, setArchivingJobId] = useState<string | null>(null);
+  const [jobsPage, setJobsPage] = useState(1);
+  const [activePanel, setActivePanel] = useState<"overview" | "jobs">("overview");
+
+  const canArchive = sessionRole === "ADMIN" || sessionRole === "OPERATIONS";
+  const jobsPerPage = 2;
 
   const fetchJobs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("/api/inspection/jobs?view=all");
-      if (!res.ok) throw new Error("Failed to fetch jobs");
+      const res = await fetch("/api/jobs?view=all");
+      if (!res.ok) {
+        throw new Error("The lab queue could not be loaded.");
+      }
       const data = await res.json();
       setJobs(Array.isArray(data) ? data : []);
-    } catch {
-      toast({ title: "Failed to load R&D jobs", status: "error" });
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "The lab queue could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
-    fetchJobs();
+    void fetchJobs();
   }, [fetchJobs]);
 
-  const metrics = useMemo(() => {
-    const total = jobs.length;
-    const sampled = jobs.filter((job) => (job.lots?.filter((lot) => Boolean(lot.sampling)).length ?? 0) > 0).length;
-    const pendingQA = jobs.filter((job) => job.status === "QA").length;
-    const locked = jobs.filter((job) => job.status === "LOCKED").length;
-    const reports = jobs.filter((job) => (job.reportSnapshots?.length ?? 0) > 0).length;
-    return { total, sampled, pendingQA, locked, reports };
+  useEffect(() => {
+    setSessionRole(getStoredAuth()?.role ?? null);
+  }, []);
+
+  const handleArchive = useCallback(
+    async (jobId: string) => {
+      if (!canArchive || archivingJobId) {
+        return;
+      }
+
+      setArchivingJobId(jobId);
+      try {
+        const response = await fetch(`/api/jobs/${jobId}/archive`, { method: "POST" });
+        const payload = await response.json().catch(() => null) as { details?: string } | null;
+        if (!response.ok) {
+          throw new Error(payload?.details ?? "Archive failed.");
+        }
+        toast({ title: "Job archived", status: "success" });
+        await fetchJobs();
+      } catch (archiveError) {
+        const message = archiveError instanceof Error ? archiveError.message : "Archive failed.";
+        toast({ title: "Archive failed", description: message, status: "error" });
+      } finally {
+        setArchivingJobId(null);
+      }
+    },
+    [archivingJobId, canArchive, fetchJobs, toast]
+  );
+
+  const summary = useMemo(() => {
+    const activeLab = jobs.filter((job) => ["RND_RUNNING", "QA"].includes(job.status)).length;
+    const reportReady = jobs.filter((job) => ["REPORT_READY", "LOCKED"].includes(job.status)).length;
+    const completed = jobs.filter((job) => ["COMPLETED", "DISPATCHED"].includes(job.status)).length;
+    return { total: jobs.length, activeLab, reportReady, completed };
   }, [jobs]);
 
-  const workflowCounts = useMemo(() => {
-    const counts = workflowStages.reduce<Record<string, number>>((acc, stage) => {
-      acc[stage.key] = 0;
-      return acc;
-    }, {});
-
-    jobs.forEach((job) => {
-      const totalLots = job.lots?.length ?? 0;
-      const sampledLots = job.lots?.filter((lot) => Boolean(lot.sampling)).length ?? 0;
-
-      if (job.status in counts) {
-        counts[job.status] += 1;
-        return;
-      }
-      if (sampledLots > 0 && sampledLots < totalLots) {
-        counts.SAMPLING += 1;
-        return;
-      }
-      if (sampledLots > 0 && sampledLots === totalLots && totalLots > 0) {
-        counts.LAB += 1;
-        return;
-      }
-      counts.CREATED += 1;
+  const queue = useMemo(() => {
+    return [...jobs].sort((left, right) => {
+      const leftPresentation = getJobWorkflowPresentation(left);
+      const rightPresentation = getJobWorkflowPresentation(right);
+      const order = ["lab", "reporting", "sampling", "lot_capture", "intake", "complete", "blocked"];
+      return order.indexOf(leftPresentation.stage) - order.indexOf(rightPresentation.stage);
     });
-
-    return counts;
   }, [jobs]);
 
-  if (loading) {
-    return (
-      <ControlTowerLayout>
-        <Center minH="40vh">
-          <Spinner size="xl" color="teal.500" />
-        </Center>
-      </ControlTowerLayout>
-    );
-  }
+  const focusJob = queue[0] ?? null;
+  const jobsPageCount = Math.max(Math.ceil(queue.length / jobsPerPage), 1);
+  const pagedQueue = useMemo(
+    () => queue.slice((jobsPage - 1) * jobsPerPage, jobsPage * jobsPerPage),
+    [jobsPage, queue]
+  );
+
+  useEffect(() => {
+    setJobsPage((current) => Math.min(current, jobsPageCount));
+  }, [jobsPageCount]);
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6}>
-        <HStack justify="space-between" align="start" flexWrap="wrap" spacing={4}>
-          <VStack align="start" spacing={1}>
-            <HStack spacing={2}>
-              <Badge colorScheme="purple" variant="subtle" borderRadius="full" px={2.5} py={1}>
-                R&D CONTROL
+      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
+        <Stack direction={{ base: "column", lg: "row" }} justify="space-between" spacing={4}>
+          <Box>
+            <HStack spacing={2} mb={2} flexWrap="wrap">
+              <Badge colorScheme="purple" borderRadius="full" px={2.5} py={1}>
+                LAB & ANALYSIS
               </Badge>
-              <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
-                LIVE
+              <Badge colorScheme="gray" borderRadius="full" px={2.5} py={1}>
+                ACTIVE WORK
               </Badge>
             </HStack>
-            <Heading size="lg" color="gray.900">
-              {APP_TEXT.dashboard}
+            <Heading size="lg" color="text.primary">
+              Lab Queue
             </Heading>
-            <Text color="gray.600" maxW="4xl">Jobs and workflow overview.</Text>
-          </VStack>
+          </Box>
 
-          <HStack spacing={3} wrap="wrap">
-            <Button leftIcon={<Plus size={16} />} colorScheme="teal" borderRadius="xl" onClick={() => router.push("/rd")}>
-              Create Job
+          <HStack spacing={3} flexWrap="wrap">
+            <Button minH="48px" variant="outline" leftIcon={<Puzzle size={16} />} onClick={() => router.push("/playground")}>
+              Open playground
             </Button>
-            <Button
-              leftIcon={<Puzzle size={16} />}
-              variant="outline"
-              borderRadius="xl"
-              onClick={() => router.push("/playground")}
-            >
-              Open Playground
+            <Button minH="48px" onClick={() => router.push("/rd")}>
+              Create job
             </Button>
-            <Badge colorScheme="purple" variant="subtle" borderRadius="full" px={3} py={1}>
-              ACTIVE
-            </Badge>
           </HStack>
-        </HStack>
+        </Stack>
 
-        <SimpleGrid
-          columns={{ base: 1, sm: 2, xl: 5 }}
-          spacing={4}
-          display={{ base: "none", md: "grid" }}
-        >
-          <MetricCard title="Assigned Jobs" value={metrics.total} detail="Inspection jobs in R&D scope." accent="purple" />
-          <MetricCard title="Sampling Live" value={metrics.sampled} detail="Jobs with active sampling records." accent="orange" />
-          <MetricCard title="Pending QA" value={metrics.pendingQA} detail="Jobs queued for quality review." accent="blue" />
-          <MetricCard title="Locked" value={metrics.locked} detail="Jobs sealed for downstream use." accent="green" />
-          <MetricCard title="Reports Generated" value={metrics.reports} detail="Jobs with generated report snapshots." accent="teal" />
-        </SimpleGrid>
+        {loading ? <PageSkeleton cards={4} rows={2} /> : null}
+        {!loading && error ? (
+          <InlineErrorState
+            title="Lab workspace unavailable"
+            description={error}
+            onRetry={() => void fetchJobs()}
+          />
+        ) : null}
 
-        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-          <CardBody p={6}>
-            <HStack justify="space-between" align="start" mb={4} flexWrap="wrap" spacing={4}>
-              <VStack align="start" spacing={1}>
-                <HStack>
-                  <Icon as={Workflow} color="teal.600" />
-                  <Text fontWeight="bold" color="gray.900">
-                    Workflow Engine
-                  </Text>
-                </HStack>
-                <Text fontSize="sm" color="gray.600">
-                  Current pipeline status.
-                </Text>
-              </VStack>
-              <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3} py={1}>
-                LIVE
-              </Badge>
+        {!loading && !error ? (
+          <>
+            <HStack spacing={3}>
+              <Button variant={activePanel === "overview" ? "solid" : "outline"} onClick={() => setActivePanel("overview")}>
+                Overview
+              </Button>
+              <Button variant={activePanel === "jobs" ? "solid" : "outline"} onClick={() => setActivePanel("jobs")}>
+                Jobs
+              </Button>
             </HStack>
 
-            <SimpleGrid columns={{ base: 2, md: 4, lg: 7 }} spacing={3}>
-              {workflowStages.map((stage) => (
-                <Box key={stage.key} p={4} borderWidth="1px" borderRadius="xl" borderColor="gray.200" bg="gray.50">
-                  <Text fontSize="xs" color="gray.500" fontWeight="semibold" textTransform="uppercase">
-                    {stage.label.replace("_", " ")}
-                  </Text>
-                  <HStack justify="space-between" mt={2}>
-                    <Text fontSize="2xl" fontWeight="bold" color={`${stage.accent}.600`}>
-                      {workflowCounts[stage.key] ?? 0}
-                    </Text>
-                    <Box w="2.5" h="2.5" borderRadius="full" bg={`${stage.accent}.400`} />
-                  </HStack>
-                </Box>
-              ))}
+            {activePanel === "overview" ? (
+            <VStack align="stretch" spacing={5}>
+            <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={4}>
+              <Card>
+                <Text fontSize="sm" color="text.secondary">Active lab reviews</Text>
+                <Text fontSize="3xl" fontWeight="bold" color="purple.600" mt={2}>{summary.activeLab}</Text>
+              </Card>
+              <Card>
+                <Text fontSize="sm" color="text.secondary">Ready for client documents</Text>
+                <Text fontSize="3xl" fontWeight="bold" color="teal.600" mt={2}>{summary.reportReady}</Text>
+              </Card>
+              <Card>
+                <Text fontSize="sm" color="text.secondary">Closed out</Text>
+                <Text fontSize="3xl" fontWeight="bold" color="green.600" mt={2}>{summary.completed}</Text>
+              </Card>
             </SimpleGrid>
-          </CardBody>
-        </Card>
 
-        <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={6}>
-          <Box gridColumn={{ xl: "span 2" }}>
-            <VStack align="stretch" spacing={4}>
-              <Box>
-                <Heading size="md" color="gray.900">
-                  {APP_TEXT.jobs}
-                </Heading>
-                <Text fontSize="sm" color="gray.600">Assigned jobs.</Text>
+            <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={5}>
+              <Box gridColumn={{ xl: "span 2" }}>
+                <Card>
+                  {focusJob ? (
+                    <Card bg="bg.rail">
+                      <Stack direction={{ base: "column", md: "row" }} justify="space-between" spacing={4}>
+                        <Box>
+                          <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                            Current analytical priority
+                          </Text>
+                          <Heading size="md" mt={1} color="text.primary">
+                            {focusJob.inspectionSerialNumber}
+                          </Heading>
+                          <Text color="text.secondary">{focusJob.clientName}</Text>
+                        </Box>
+                        <VStack align={{ base: "stretch", md: "end" }} spacing={2}>
+                          <Badge colorScheme={getJobWorkflowPresentation(focusJob).tone} borderRadius="full" px={3} py={1}>
+                            {getJobWorkflowPresentation(focusJob).label}
+                          </Badge>
+                          <Button minH="48px" onClick={() => router.push(`/userrd/job/${focusJob.id}`)}>
+                            {getJobWorkflowPresentation(focusJob).nextAction}
+                          </Button>
+                        </VStack>
+                      </Stack>
+                    </Card>
+                  ) : null}
+                </Card>
               </Box>
+              <Card>
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                    Lab rules
+                  </Text>
+                  <SectionHint label="Jobs in queue" value={String(summary.total)} />
+                  <SectionHint label="Primary action" value={focusJob ? getJobWorkflowPresentation(focusJob).nextAction : "Create first job"} />
+                  <SectionHint label="Reports waiting" value={`${summary.reportReady} jobs`} />
+                </VStack>
+              </Card>
+            </SimpleGrid>
+            </VStack>
+            ) : null}
 
+            {activePanel === "jobs" && queue.length === 0 ? (
+              <EmptyWorkState
+                title="No lab jobs yet"
+                description="There is nothing ready for analysis in this workspace right now."
+                action={<Button minH="48px" onClick={() => router.push("/rd")}>Create first job</Button>}
+              />
+            ) : activePanel === "jobs" ? (
               <VStack align="stretch" spacing={4}>
-                {jobs.map((job) => {
-                  const totalLots = job.lots?.length ?? 0;
-                  const sampledLots = job.lots?.filter((lot) => Boolean(lot.sampling)).length ?? 0;
-                  const progress = totalLots > 0 ? (sampledLots / totalLots) * 100 : 0;
+                {pagedQueue.map((job) => {
+                  const presentation = getJobWorkflowPresentation(job);
+                  const lotProgress = summarizeLotProgress(job);
+                  const reports = job.reportSnapshots?.length ?? 0;
+                  const actionHref = presentation.stage === "reporting" ? "/reports" : `/userrd/job/${job.id}`;
 
                   return (
-                    <Card key={job.id} variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-                      <CardBody p={5}>
-                        <SimpleGrid columns={{ base: 1, lg: 4 }} spacing={4} alignItems="center">
-                          <VStack align="start" spacing={1}>
-                            <HStack spacing={2} wrap="wrap">
-                              <Badge colorScheme="purple" variant="solid" borderRadius="full" px={3} py={1}>
-                                {job.inspectionSerialNumber || job.jobReferenceNumber || "JOB"}
+                    <Card key={job.id}>
+                      <VStack align="stretch" spacing={4}>
+                        <Stack direction={{ base: "column", xl: "row" }} spacing={5} justify="space-between">
+                          <Box>
+                            <HStack spacing={2} flexWrap="wrap">
+                              <Badge colorScheme="purple" borderRadius="full" px={3} py={1}>
+                                {job.inspectionSerialNumber || job.jobReferenceNumber}
                               </Badge>
-                              <Badge colorScheme={getStatusColor(job.status)} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                                {job.status}
+                              <Badge colorScheme={presentation.tone} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                                {presentation.label}
                               </Badge>
                             </HStack>
-                            <Text fontSize="lg" fontWeight="bold" color="gray.900">
+                            <Heading size="md" mt={3} color="text.primary">
                               {job.clientName}
-                            </Text>
-                            <Text fontSize="sm" color="gray.600">
+                            </Heading>
+                            <Text fontSize="sm" color="text.secondary" mt={1}>
                               {job.commodity}
                             </Text>
-                          </VStack>
-
-                          <VStack align="start" spacing={2}>
-                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
-                              Assay progress
-                            </Text>
-                            <Text fontSize="sm" fontWeight="semibold" color="gray.900">
-                              {sampledLots}/{totalLots || 0} lot(s) sampled
-                            </Text>
-                            <Progress value={progress} size="sm" borderRadius="full" colorScheme={sampledLots === totalLots && totalLots > 0 ? "green" : "purple"} w="full" />
-                          </VStack>
-
-                          <VStack align="start" spacing={2}>
-                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
-                              Reporting
-                            </Text>
-                            <HStack spacing={2}>
-                              <Icon as={ClipboardList} color="gray.400" boxSize={4} />
-                              <Text fontSize="sm" color="gray.700">
-                                {job.reportSnapshots?.length ?? 0} snapshot(s)
-                              </Text>
-                            </HStack>
-                            <HStack spacing={2}>
-                              <Icon as={Layers3} color="gray.400" boxSize={4} />
-                              <Text fontSize="sm" color="gray.700">
-                                {totalLots} lot(s) registered
-                              </Text>
-                            </HStack>
-                          </VStack>
-
-                          <VStack align="end" spacing={2}>
-                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
-                              Updated
-                            </Text>
-                            <Text fontSize="sm" color="gray.700">
-                              {formatTime(job.updatedAt || job.createdAt)}
-                            </Text>
-                            <HStack spacing={2} wrap="wrap" justify="end">
-                              <Button colorScheme="teal" borderRadius="xl" onClick={() => router.push(`/userrd/job/${job.id}`)}>
-                                Open Job
+                          </Box>
+                          <VStack align={{ base: "stretch", xl: "end" }} spacing={2}>
+                            <Button
+                              minH="48px"
+                              leftIcon={presentation.stage === "reporting" ? <FileDown size={16} /> : undefined}
+                              onClick={() => router.push(actionHref)}
+                            >
+                              {presentation.stage === "reporting" ? "Open reports" : presentation.nextAction}
+                            </Button>
+                            <Button minH="48px" variant="outline" onClick={() => router.push(`/userrd/job/${job.id}`)}>
+                              Open job
+                            </Button>
+                            {canArchive ? (
+                              <Button
+                                minH="48px"
+                                variant="outline"
+                                colorScheme="red"
+                                isLoading={archivingJobId === job.id}
+                                loadingText="Archiving"
+                                onClick={() => void handleArchive(job.id)}
+                              >
+                                Archive
                               </Button>
-                              <Button variant="outline" borderRadius="xl" leftIcon={<FileDown size={16} />} onClick={() => router.push("/reports")}>
-                                Open Reports
-                              </Button>
-                            </HStack>
+                            ) : null}
                           </VStack>
+                        </Stack>
+
+                        <WorkflowStepTracker
+                          title="Job flow"
+                          steps={buildWorkflowSteps(job).map((step) => ({
+                            ...step,
+                            onClick: () => router.push(getWorkflowStepRoute(job.id, step.id)),
+                          }))}
+                          compact
+                        />
+
+                        <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Lots sampled</Text>
+                            <Text fontSize="2xl" fontWeight="bold" color="purple.600" mt={1}>{lotProgress.completed}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Active lots</Text>
+                            <Text fontSize="2xl" fontWeight="bold" color="orange.600" mt={1}>{lotProgress.inProgress}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Snapshots</Text>
+                            <Text fontSize="2xl" fontWeight="bold" color="teal.600" mt={1}>{reports}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Updated</Text>
+                            <Text fontSize="sm" fontWeight="semibold" color="text.primary" mt={1}>{formatDate(job.updatedAt)}</Text>
+                          </Box>
                         </SimpleGrid>
-                      </CardBody>
+                      </VStack>
                     </Card>
                   );
                 })}
-
-                {jobs.length === 0 && (
-                  <Card variant="outline" borderRadius="2xl" bg="white">
-                    <CardBody>
-                      <Center py={14}>
-                        <VStack spacing={2}>
-                          <Icon as={FlaskConical} boxSize={8} color="gray.300" />
-                          <Text color="gray.500">No records.</Text>
-                        </VStack>
-                      </Center>
-                    </CardBody>
-                  </Card>
-                )}
+                {queue.length > jobsPerPage ? (
+                  <HStack justify="flex-end" spacing={3}>
+                    <Button size="sm" variant="outline" onClick={() => setJobsPage((current) => Math.max(1, current - 1))} isDisabled={jobsPage <= 1}>
+                      Prev
+                    </Button>
+                    <Text fontSize="xs" color="text.secondary">
+                      {jobsPage}/{jobsPageCount}
+                    </Text>
+                    <Button size="sm" variant="outline" onClick={() => setJobsPage((current) => Math.min(jobsPageCount, current + 1))} isDisabled={jobsPage >= jobsPageCount}>
+                      Next
+                    </Button>
+                  </HStack>
+                ) : null}
               </VStack>
-            </VStack>
-          </Box>
-
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm" h="full">
-            <CardBody p={6}>
-              <HStack justify="space-between" align="start" mb={4}>
-                <VStack align="start" spacing={1}>
-                  <Heading size="md" color="gray.900">
-                    {APP_TEXT.status}
-                  </Heading>
-                  <Text fontSize="sm" color="gray.600">Secondary status.</Text>
-                </VStack>
-                <Icon as={Sparkles} color="teal.600" />
-              </HStack>
-
-              <Accordion allowMultiple defaultIndex={[]}>
-                {[
-                  { title: "Capture", status: "ACTIVE", color: "green" },
-                  { title: "Trials", status: "READY", color: "blue" },
-                  { title: "Metrics", status: "CONTROLLED", color: "purple" },
-                  { title: "Audit", status: "READY", color: "teal" },
-                ].map((item) => (
-                  <AccordionItem key={item.title} border="none" mb={2}>
-                    <Card variant="outline" borderRadius="xl" bg={`${item.color}.50`} borderColor={`${item.color}.100`}>
-                      <AccordionButton px={4} py={3}>
-                        <HStack justify="space-between" w="full">
-                          <Text fontWeight="bold" color="gray.900">{item.title}</Text>
-                          <HStack>
-                            <Badge colorScheme={item.color} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                              {item.status}
-                            </Badge>
-                            <AccordionIcon />
-                          </HStack>
-                        </HStack>
-                      </AccordionButton>
-                      <AccordionPanel pt={0} pb={3}>
-                        <Text fontSize="sm" color="gray.600">Status panel</Text>
-                      </AccordionPanel>
-                    </Card>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-            </CardBody>
-          </Card>
-        </SimpleGrid>
+            ) : null}
+          </>
+        ) : null}
       </VStack>
     </ControlTowerLayout>
   );

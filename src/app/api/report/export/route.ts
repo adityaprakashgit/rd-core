@@ -6,11 +6,18 @@ import ExcelJS from "exceljs";
 import { readFile } from "fs/promises";
 import path from "path";
 import { renderHtmlToPdf } from "@/lib/traceability";
+import { buildReportValidation } from "@/lib/report-validation";
 import {
   getReportDocumentTypeLabel,
   sanitizeReportDocumentType,
   sanitizeReportPreferences,
 } from "@/lib/report-preferences";
+import {
+  getExportPolicyBlockReason,
+  getReportExportStagePolicy,
+  isExportStageAllowed,
+} from "@/lib/report-export-policy";
+import { getEvidenceCategoryLabel } from "@/lib/evidence-definition";
 
 function escapeHtml(value: string): string {
   return value
@@ -27,6 +34,19 @@ function guessMimeFromPath(imagePath: string): string {
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".webp") return "image/webp";
   return "application/octet-stream";
+}
+
+function formatDateValue(value: string | Date | null | undefined): string {
+  if (!value) {
+    return "N/A";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "N/A";
+  }
+
+  return date.toLocaleDateString("en-GB");
 }
 
 async function toDataUrl(imageUrl: string): Promise<string | null> {
@@ -72,6 +92,17 @@ function buildSamplingAssayReportHtml(input: {
   logoDataUrl: string | null;
   introText: string;
   rows: Array<{ label: string; value: string }>;
+  sampleRows: Array<{ label: string; value: string }>;
+  lotRegisterRows: Array<{
+    lotNumber: string;
+    bags: string;
+    netWeight: string;
+    sampleCode: string;
+    packets: string;
+    trials: string;
+    status: string;
+  }>;
+  analysisRows: Array<{ element: string; average: string; observations: string }>;
   operationNotes: string[];
   methodologyNotes: string[];
   visuals: Array<{
@@ -90,6 +121,46 @@ function buildSamplingAssayReportHtml(input: {
         <td class="k">${escapeHtml(row.label)}</td>
         <td class="colon">:</td>
         <td class="v">${escapeHtml(row.value)}</td>
+      </tr>
+    `
+    )
+    .join("");
+
+  const sampleRowsHtml = input.sampleRows
+    .map(
+      (row) => `
+      <tr>
+        <td class="k">${escapeHtml(row.label)}</td>
+        <td class="colon">:</td>
+        <td class="v">${escapeHtml(row.value)}</td>
+      </tr>
+    `
+    )
+    .join("");
+
+  const lotRegisterHtml = input.lotRegisterRows
+    .map(
+      (row) => `
+      <tr>
+        <td>${escapeHtml(row.lotNumber)}</td>
+        <td>${escapeHtml(row.bags)}</td>
+        <td>${escapeHtml(row.netWeight)}</td>
+        <td>${escapeHtml(row.sampleCode)}</td>
+        <td>${escapeHtml(row.packets)}</td>
+        <td>${escapeHtml(row.trials)}</td>
+        <td>${escapeHtml(row.status)}</td>
+      </tr>
+    `
+    )
+    .join("");
+
+  const analysisHtml = input.analysisRows
+    .map(
+      (row) => `
+      <tr>
+        <td>${escapeHtml(row.element)}</td>
+        <td>${escapeHtml(row.average)}</td>
+        <td>${escapeHtml(row.observations)}</td>
       </tr>
     `
     )
@@ -148,6 +219,9 @@ function buildSamplingAssayReportHtml(input: {
           .tbl .k { width: 34%; font-weight: 600; }
           .tbl .colon { width: 2%; text-align: center; font-weight: 700; }
           .tbl .v { width: 64%; }
+          .matrix { margin-top: 8px; width: 100%; border-collapse: collapse; font-size: 11px; }
+          .matrix th, .matrix td { border: 1px solid #8d8d8d; padding: 6px 7px; text-align: left; vertical-align: top; }
+          .matrix th { background: #f4f4f4; font-weight: 700; }
           .section { margin-top: 16px; }
           .section h3 { margin: 0 0 6px; font-size: 13px; font-weight: 700; text-decoration: underline; }
           .section p { margin: 0 0 6px; }
@@ -191,6 +265,63 @@ function buildSamplingAssayReportHtml(input: {
         <table class="tbl">
           <tbody>${rowsHtml}</tbody>
         </table>
+
+        ${
+          sampleRowsHtml
+            ? `
+          <div class="section">
+            <h3>SAMPLING & PACKET CONTROL</h3>
+            <table class="tbl">
+              <tbody>${sampleRowsHtml}</tbody>
+            </table>
+          </div>
+        `
+            : ""
+        }
+
+        ${
+          lotRegisterHtml
+            ? `
+          <div class="section">
+            <h3>LOT-WISE REGISTER</h3>
+            <table class="matrix">
+              <thead>
+                <tr>
+                  <th>Lot</th>
+                  <th>Bags</th>
+                  <th>Net Weight</th>
+                  <th>Sample Code</th>
+                  <th>Packets</th>
+                  <th>Trials</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>${lotRegisterHtml}</tbody>
+            </table>
+          </div>
+        `
+            : ""
+        }
+
+        ${
+          analysisHtml
+            ? `
+          <div class="section">
+            <h3>ASSAY SUMMARY</h3>
+            <table class="matrix">
+              <thead>
+                <tr>
+                  <th>Element</th>
+                  <th>Average</th>
+                  <th>Observations</th>
+                </tr>
+              </thead>
+              <tbody>${analysisHtml}</tbody>
+            </table>
+          </div>
+        `
+            : ""
+        }
 
         <div class="section">
           <h3>SUPERVISION OF WEIGHMENT:</h3>
@@ -309,7 +440,14 @@ export async function POST(req: NextRequest) {
         lots: {
           include: {
             bags: true,
-            sampling: true,
+            sample: {
+              include: {
+                media: true,
+                sealLabel: true,
+                events: true,
+                packets: true,
+              },
+            },
           },
         },
         experiments: {
@@ -321,7 +459,6 @@ export async function POST(req: NextRequest) {
             },
           },
         },
-        homogeneousSamples: true,
       },
     });
 
@@ -344,36 +481,38 @@ export async function POST(req: NextRequest) {
       .join(" | ");
     const filePrefix = `${documentType}_Report_${job.jobReferenceNumber}`;
 
-    // --- REUSE REPORT BUILDER LOGIC FOR SUMMARY ---
-    let totalNetWeight = 0;
-    let totalBagsFound = 0;
-    job.lots.forEach(lot => {
-      lot.bags.forEach(bag => {
-        totalNetWeight += bag.netWeight || 0;
-        totalBagsFound++;
-      });
-    });
+    const reportValidation = buildReportValidation(job);
+    const {
+      metrics: { totalNetWeight, totalBags, averageComposition },
+      validation,
+    } = reportValidation;
 
-    const elementTotals: Record<string, { sum: number; count: number }> = {};
-    job.experiments.forEach(exp => {
-      exp.trials.forEach(trial => {
-        trial.measurements.forEach(m => {
-          const el = m.element.toUpperCase().trim();
-          if (!elementTotals[el]) {
-            elementTotals[el] = { sum: 0, count: 0 };
-          }
-          elementTotals[el].sum += Number(m.value) || 0;
-          elementTotals[el].count += 1;
-        });
-      });
-    });
+    if (!validation.isValid) {
+      return NextResponse.json(
+        {
+          error: "Validation Error",
+          details: validation.errors.join(" "),
+          code: "REPORT_VALIDATION_FAILED",
+          validation,
+        },
+        { status: 422 },
+      );
+    }
 
-    const averageComposition = Object.entries(elementTotals).map(([element, data]) => ({
-      element,
-      average: data.count > 0 ? data.sum / data.count : 0,
-      count: data.count,
-    }));
-    // ----------------------------------------------
+    const exportPolicy = getReportExportStagePolicy();
+    if (!isExportStageAllowed(exportPolicy, job.status)) {
+      const blocked = getExportPolicyBlockReason(exportPolicy);
+      return NextResponse.json(
+        {
+          error: "Export Policy Blocked",
+          details: blocked.details,
+          code: blocked.code,
+          policy: exportPolicy,
+          jobStatus: job.status,
+        },
+        { status: 422 },
+      );
+    }
 
     if (format === "excel") {
       const workbook = new ExcelJS.Workbook();
@@ -403,7 +542,7 @@ export async function POST(req: NextRequest) {
       ];
       analysisSheet.addRow({ metric: "Client Name", value: job.clientName });
       analysisSheet.addRow({ metric: "Reference #", value: job.jobReferenceNumber });
-      analysisSheet.addRow({ metric: "Total Bags", value: totalBagsFound });
+      analysisSheet.addRow({ metric: "Total Bags", value: totalBags });
       analysisSheet.addRow({ metric: "Total Net Weight", value: `${totalNetWeight.toFixed(2)} kg` });
       analysisSheet.addRow({}); // spacer
       analysisSheet.addRow({ metric: "AVERAGE COMPOSITION" });
@@ -455,9 +594,31 @@ export async function POST(req: NextRequest) {
         })
       );
 
+      const allTrials = job.experiments.flatMap((experiment) => experiment.trials);
+      const sampleRecords = job.lots
+        .map((lot) => ({ lot, sample: lot.sample }))
+        .filter(
+          (
+            entry,
+          ): entry is typeof entry & {
+            sample: NonNullable<typeof entry.sample>;
+          } => Boolean(entry.sample)
+        );
+      const managedPacketCount = sampleRecords.reduce((sum, entry) => sum + (entry.sample.packets?.length ?? 0), 0);
+      const sampleCodes = sampleRecords.map((entry) => entry.sample.sampleCode).filter(Boolean);
+      const samplingMethods = Array.from(
+        new Set(sampleRecords.map((entry) => entry.sample.samplingMethod?.trim()).filter(Boolean))
+      );
+      const sampleDates = sampleRecords
+        .map((entry) => entry.sample.samplingDate)
+        .filter((value) => value != null);
+
       const operationNotes = [
-        `Total lots reviewed: ${job.lots.length}. Total recorded bags: ${totalBagsFound}.`,
+        `Total lots reviewed: ${job.lots.length}. Total recorded bags: ${totalBags}.`,
         `All lots were verified against sealed identity and weight records for ${documentTypeLabel.toLowerCase()} dispatch.`,
+        sampleRecords.length > 0
+          ? `Managed samples finalized: ${sampleRecords.length}. Packetized units recorded: ${managedPacketCount}.`
+          : "Managed sample records are pending completion.",
         trialRows.length > 0 ? `Sampling instances recorded: ${trialRows.length}.` : "Sampling instances are pending entry.",
       ];
 
@@ -471,32 +632,83 @@ export async function POST(req: NextRequest) {
 
       const rows = [
         { label: "Job Reference No.", value: job.jobReferenceNumber },
+        { label: "Inspection Serial No.", value: job.inspectionSerialNumber },
         { label: "Certificate No.", value: `${brandName.toUpperCase().slice(0, 12)}/${job.jobReferenceNumber}` },
+        { label: "Document Type", value: documentTypeLabel },
         { label: "Client Name", value: job.clientName },
         { label: "Place Of Work", value: job.plantLocation || "N/A" },
         { label: "Location Details", value: job.plantLocation || "N/A" },
         { label: "Commodity", value: job.commodity },
+        { label: "Job Status", value: job.status },
+        { label: "Total Lots", value: String(job.lots.length) },
         { label: "Total Quantity as per Weighment at plant", value: `${totalNetWeight.toFixed(2)} KG` },
-        { label: "Material Stowed in", value: `${totalBagsFound} bag(s) / lot-wise sealed consignments` },
+        { label: "Material Stowed in", value: `${totalBags} bag(s) / lot-wise sealed consignments` },
         { label: "General appearance of the cargo", value: "Material condition appears as per sampling visuals and inspection notes." },
         { label: "Remarks", value: trialRows.length > 0 ? trialRows.join(" | ") : "No additional remarks." },
       ];
 
-      const homogeneousSample = job.homogeneousSamples?.[0]?.photoUrl
-        ? await toDataUrl(job.homogeneousSamples[0].photoUrl)
+      const sampleRows = [
+        { label: "Managed Sample Records", value: String(sampleRecords.length) },
+        { label: "Sample Codes", value: sampleCodes.length > 0 ? sampleCodes.join(", ") : "N/A" },
+        { label: "Sampling Method", value: samplingMethods.length > 0 ? samplingMethods.join(", ") : "N/A" },
+        {
+          label: "Sampling Date",
+          value:
+            sampleDates.length > 0
+              ? sampleDates.map((value) => formatDateValue(value)).join(", ")
+              : "N/A",
+        },
+        { label: "Ready Packets", value: String(managedPacketCount) },
+        { label: "Trials Recorded", value: String(allTrials.length) },
+      ];
+
+      const lotRegisterRows = job.lots.map((lot) => {
+        const sample = lot.sample;
+        const lotTrials = allTrials.filter((trial) => trial.lotId === lot.id);
+        const lotNetWeight =
+          typeof lot.netWeightKg === "number"
+            ? lot.netWeightKg
+            : typeof lot.netWeight === "number"
+              ? lot.netWeight
+              : lot.bags.reduce((sum, bag) => sum + (bag.netWeight || 0), 0);
+        const lotStatus = sample?.sampleStatus
+          ? sample.sampleStatus.replace(/_/g, " ")
+          : "PENDING";
+
+        return {
+          lotNumber: lot.lotNumber,
+          bags: String(lot.totalBags || lot.bags.length || 0),
+          netWeight: `${Number(lotNetWeight || 0).toFixed(2)} KG`,
+          sampleCode: sample?.sampleCode ?? "N/A",
+          packets: String(sample?.packets?.length ?? 0),
+          trials: String(lotTrials.length),
+          status: lotStatus,
+        };
+      });
+
+      const analysisRows =
+        averageComposition.length > 0
+          ? averageComposition.map((composition) => ({
+              element: composition.element,
+              average: composition.average.toFixed(4),
+              observations: `${composition.count} reading(s)`,
+            }))
+          : [{ element: "N/A", average: "N/A", observations: "No analytical measurements recorded." }];
+
+      const managedHomogeneousMedia = job.lots
+        .flatMap((lot) => lot.sample?.media ?? [])
+        .find((media) => media.mediaType === "HOMOGENIZED_SAMPLE" && media.fileUrl);
+      const homogeneousSample = managedHomogeneousMedia?.fileUrl
+        ? await toDataUrl(managedHomogeneousMedia.fileUrl)
         : null;
 
       const visuals = await Promise.all(
         job.lots.map(async (lot) => {
-          const lotSamplingRecord = Array.isArray(lot.sampling) ? lot.sampling[0] : null;
           const cards = await Promise.all(
             [
-              lot.bagPhotoUrl ? { label: "Bag Photo", url: lot.bagPhotoUrl } : null,
-              lot.samplingPhotoUrl ? { label: "Lot Sampling Photo", url: lot.samplingPhotoUrl } : null,
-              lot.sealPhotoUrl ? { label: "Seal Photo", url: lot.sealPhotoUrl } : null,
-              lotSamplingRecord?.beforePhotoUrl ? { label: "Sampling Before", url: lotSamplingRecord.beforePhotoUrl } : null,
-              lotSamplingRecord?.duringPhotoUrl ? { label: "Sampling During", url: lotSamplingRecord.duringPhotoUrl } : null,
-              lotSamplingRecord?.afterPhotoUrl ? { label: "Sampling After", url: lotSamplingRecord.afterPhotoUrl } : null,
+              lot.bagPhotoUrl ? { label: getEvidenceCategoryLabel("BAG"), url: lot.bagPhotoUrl } : null,
+              lot.samplingPhotoUrl ? { label: getEvidenceCategoryLabel("SAMPLING_IN_PROGRESS"), url: lot.samplingPhotoUrl } : null,
+              lot.sealPhotoUrl ? { label: getEvidenceCategoryLabel("SEAL"), url: lot.sealPhotoUrl } : null,
             ]
               .filter((item): item is { label: string; url: string } => Boolean(item))
               .map(async (item) => ({ label: item.label, dataUrl: await toDataUrl(item.url) }))
@@ -518,6 +730,9 @@ export async function POST(req: NextRequest) {
         logoDataUrl,
         introText: `We hereby certify that, on request of ${job.clientName}, the consignment was inspected for weighment supervision, sampling, and assay verification. The findings for ${documentTypeLabel.toLowerCase()} workflow are detailed below.`,
         rows,
+        sampleRows,
+        lotRegisterRows,
+        analysisRows,
         operationNotes,
         methodologyNotes,
         visuals,
@@ -537,16 +752,19 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ error: "Invalid Format", details: "Supported formats: pdf, excel" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid Format", details: "Supported formats: pdf, excel", code: "REPORT_EXPORT_FORMAT_INVALID" },
+      { status: 400 },
+    );
 
   } catch (err: unknown) {
     if (err instanceof AuthorizationError) {
-      return NextResponse.json({ error: "Forbidden", details: err.message }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden", details: err.message, code: "REPORT_EXPORT_FORBIDDEN" }, { status: 403 });
     }
 
     const error = err instanceof Error ? err : new Error("Unknown error");
     return NextResponse.json(
-      { error: "System Error", details: error.message },
+      { error: "System Error", details: error.message, code: "REPORT_EXPORT_FAILED" },
       { status: 500 }
     );
   }

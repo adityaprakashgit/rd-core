@@ -11,68 +11,87 @@ import {
   Tooltip,
   VStack,
 } from "@chakra-ui/react";
-import {
-  FlaskConical,
-  LayoutDashboard,
-  LogOut,
-  ReceiptText,
-  Settings,
-  Shield,
-  User,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { normalizeRole, type NormalizedRole } from "@/lib/role";
-
-type ModuleItem = {
-  label: string;
-  href: string;
-  icon: React.ElementType;
-  roles: NormalizedRole[];
-  activeMatch?: RegExp;
-};
-
-const modules: ModuleItem[] = [
-  { label: "Dashboard", href: "/userinsp", icon: LayoutDashboard, roles: ["ADMIN", "OPERATIONS", "VIEWER"] },
-  { label: "Operations", href: "/userinsp", icon: Shield, roles: ["ADMIN", "OPERATIONS", "VIEWER"], activeMatch: /^\/userinsp/ },
-  { label: "R&D", href: "/userrd", icon: FlaskConical, roles: ["ADMIN", "RND", "VIEWER"], activeMatch: /^\/userrd/ },
-  { label: "Reports", href: "/reports", icon: ReceiptText, roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"], activeMatch: /^\/reports/ },
-  { label: "Admin", href: "/admin", icon: User, roles: ["ADMIN"], activeMatch: /^\/admin/ },
-  { label: "Masters", href: "/master", icon: User, roles: ["ADMIN", "OPERATIONS"], activeMatch: /^\/master/ },
-  { label: "Settings", href: "/settings", icon: Settings, roles: ["ADMIN"] , activeMatch: /^\/settings/},
-];
+import { MODULE_DEFINITIONS } from "@/lib/ui-navigation";
 
 export type SidebarProps = {
   role: string | null | undefined;
   companyName: string;
   displayName: string;
   onLogout: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 };
 
-export function Sidebar({ role, companyName, displayName, onLogout }: SidebarProps) {
+export function Sidebar({
+  role,
+  companyName,
+  displayName,
+  onLogout,
+  collapsed = false,
+  onToggleCollapse,
+}: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
   const normalizedRole = normalizeRole(role);
-  const visibleModules = modules.filter((item) => (normalizedRole ? item.roles.includes(normalizedRole) : false));
+  const visibleModules = MODULE_DEFINITIONS.filter((item) =>
+    normalizedRole ? item.roles.includes(normalizedRole as NormalizedRole) : false
+  );
 
   return (
-    <Box bg="bg.surface" borderRightWidth="1px" borderColor="border.default" w={{ base: "full", md: 72 }} h="full" px={4} py={4}>
+    <Box
+      bg="bg.surface"
+      borderRightWidth="1px"
+      borderColor="border.default"
+      w={{ base: "full", md: collapsed ? 24 : 80 }}
+      transition="width 180ms ease"
+      h="full"
+      px={collapsed ? 2.5 : 4}
+      py={4}
+    >
       <VStack align="stretch" spacing={6} h="full">
-        <VStack align="start" spacing={0} px={1}>
-          <Text fontSize="sm" fontWeight="bold" color="text.primary">
-            Inspection ERP
-          </Text>
-          <Text fontSize="xs" color="text.secondary" noOfLines={1}>
-            {companyName}
-          </Text>
-        </VStack>
+        <HStack justify="space-between" px={1}>
+          <VStack align="start" spacing={0} minW={0}>
+            <Text fontSize={collapsed ? "xs" : "sm"} fontWeight="bold" color="text.primary" noOfLines={1}>
+              Enterprise Ops
+            </Text>
+            {!collapsed ? (
+              <Text fontSize="xs" color="text.secondary" noOfLines={1}>
+                {companyName}
+              </Text>
+            ) : null}
+          </VStack>
+          {onToggleCollapse ? (
+            <IconButton
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              size="xs"
+              variant="ghost"
+              icon={collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+              onClick={onToggleCollapse}
+              display={{ base: "none", md: "inline-flex" }}
+            />
+          ) : null}
+        </HStack>
 
         <Divider borderColor="border.default" />
 
         <VStack align="stretch" spacing={1.5} flex={1}>
           {visibleModules.map((item) => {
-            const active = item.activeMatch ? item.activeMatch.test(pathname) : pathname === item.href;
+            const active = item.activeMatch.test(pathname);
+            const content = (
+              <HStack spacing={3} justify={collapsed ? "center" : "start"}>
+                <Icon as={item.icon} boxSize={4} />
+                {!collapsed ? (
+                  <Text fontSize="sm" fontWeight={active ? "semibold" : "medium"}>
+                    {item.label}
+                  </Text>
+                ) : null}
+              </HStack>
+            );
             return (
               <Box
                 key={item.label}
@@ -94,12 +113,13 @@ export function Sidebar({ role, companyName, displayName, onLogout }: SidebarPro
                 color={active ? "brand.700" : "text.primary"}
                 _hover={{ bg: active ? "brand.50" : "neutral.100" }}
               >
-                <HStack spacing={3}>
-                  <Icon as={item.icon} boxSize={4} />
-                  <Text fontSize="sm" fontWeight={active ? "semibold" : "medium"}>
-                    {item.label}
-                  </Text>
-                </HStack>
+                {collapsed ? (
+                  <Tooltip label={item.label} placement="right">
+                    <Box>{content}</Box>
+                  </Tooltip>
+                ) : (
+                  content
+                )}
               </Box>
             );
           })}
@@ -108,14 +128,16 @@ export function Sidebar({ role, companyName, displayName, onLogout }: SidebarPro
         <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="neutral.50">
           <HStack spacing={3}>
             <Avatar size="sm" name={displayName} bg="brand.500" />
-            <VStack align="start" spacing={0} flex={1} minW={0}>
-              <Text fontSize="sm" fontWeight="semibold" color="text.primary" noOfLines={1}>
-                {displayName}
-              </Text>
-              <Text fontSize="xs" color="text.secondary" textTransform="uppercase">
-                {normalizedRole ?? "VIEWER"}
-              </Text>
-            </VStack>
+            {!collapsed ? (
+              <VStack align="start" spacing={0} flex={1} minW={0}>
+                <Text fontSize="sm" fontWeight="semibold" color="text.primary" noOfLines={1}>
+                  {displayName}
+                </Text>
+                <Text fontSize="xs" color="text.secondary" textTransform="uppercase">
+                  {normalizedRole ?? "VIEWER"}
+                </Text>
+              </VStack>
+            ) : null}
             <Tooltip label="Logout" placement="top">
               <IconButton aria-label="Logout" variant="ghost" size="sm" icon={<LogOut size={16} />} onClick={onLogout} />
             </Tooltip>

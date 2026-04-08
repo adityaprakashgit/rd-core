@@ -5,9 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, assertCompanyScope, AuthorizationError } from "@/lib/rbac";
 import { generateUniqueSealNumber, isValidSealNumber } from "@/lib/traceability";
+import { evaluateSealAssignmentPrerequisites, getSealAssignmentPolicy } from "@/lib/seal-policy";
 
-function jsonError(error: string, details: string, status: number) {
-  return NextResponse.json({ error, details }, { status });
+function jsonError(error: string, details: string, code: string, status: number) {
+  return NextResponse.json({ error, details, code }, { status });
 }
 
 async function createAuditSafe(tx: Prisma.TransactionClient, input: {
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {
-      return jsonError("Unauthorized", "Current user could not be resolved.", 401);
+      return jsonError("Unauthorized", "Current user could not be resolved.", "AUTH_UNAUTHORIZED", 401);
     }
 
     authorize(currentUser, "ASSIGN_LOT");
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
     const { id } = await context.params;
     const body: unknown = await request.json();
     if (typeof body !== "object" || body === null) {
-      return jsonError("Invalid payload", "Request body must be a JSON object.", 400);
+      return jsonError("Invalid payload", "Request body must be a JSON object.", "SEAL_INVALID_PAYLOAD", 400);
     }
 
     const payload = body as {
@@ -66,17 +67,43 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
         companyId: true,
         lotNumber: true,
         sealNumber: true,
+        bagPhotoUrl: true,
+        samplingPhotoUrl: true,
+        job: {
+          select: {
+            status: true,
+          },
+        },
+        inspection: {
+          select: {
+            inspectionStatus: true,
+            decisionStatus: true,
+          },
+        },
       },
     });
 
     if (!lot) {
-      return jsonError("Not found", "Lot not found.", 404);
+      return jsonError("Not found", "Lot not found.", "SEAL_LOT_NOT_FOUND", 404);
     }
 
     assertCompanyScope(currentUser.companyId, lot.companyId);
 
     if (lot.sealNumber) {
-      return jsonError("Conflict", "This seal number is immutable once assigned.", 409);
+      return jsonError("Conflict", "This seal number is immutable once assigned.", "SEAL_ALREADY_ASSIGNED", 409);
+    }
+
+    const sealPolicy = getSealAssignmentPolicy();
+    const prerequisiteBlock = evaluateSealAssignmentPrerequisites({
+      policy: sealPolicy,
+      jobStatus: lot.job?.status,
+      inspectionStatus: lot.inspection?.inspectionStatus,
+      decisionStatus: lot.inspection?.decisionStatus,
+      bagPhotoUrl: lot.bagPhotoUrl,
+      samplingPhotoUrl: lot.samplingPhotoUrl,
+    });
+    if (prerequisiteBlock) {
+      return jsonError("Validation Error", prerequisiteBlock.details, prerequisiteBlock.code, prerequisiteBlock.status);
     }
 
     const useAuto = payload.auto === true;
@@ -84,7 +111,7 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
     const sealNumber = useAuto ? await generateUniqueSealNumber() : manualSeal;
 
     if (!isValidSealNumber(sealNumber)) {
-      return jsonError("Validation Error", "Seal number must be exactly 16 numeric digits.", 400);
+      return jsonError("Validation Error", "Seal number must be exactly 16 numeric digits.", "SEAL_FORMAT_INVALID", 400);
     }
 
     const duplicateSeal = await prisma.inspectionLot.findFirst({
@@ -93,7 +120,7 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
     });
 
     if (duplicateSeal) {
-      return jsonError("Conflict", "Seal number already exists.", 409);
+      return jsonError("Conflict", "Seal number already exists.", "SEAL_DUPLICATE", 409);
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -136,16 +163,16 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
     return NextResponse.json(updated);
   } catch (error: unknown) {
     if (error instanceof AuthorizationError) {
-      return jsonError("Forbidden", error.message, 403);
+      return jsonError("Forbidden", error.message, "SEAL_CROSS_COMPANY_FORBIDDEN", 403);
     }
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === "P2002") {
-        return jsonError("Conflict", "Seal number already exists.", 409);
+        return jsonError("Conflict", "Seal number already exists.", "SEAL_DUPLICATE", 409);
       }
     }
 
     const message = error instanceof Error ? error.message : "Failed to assign seal.";
-    return jsonError("System Error", message, 500);
+    return jsonError("System Error", message, "SEAL_ASSIGN_FAILED", 500);
   }
 }

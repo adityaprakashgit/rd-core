@@ -16,28 +16,35 @@ enum UserRole {
 }
 
 model User {
-  id         String    @id
-  companyId  String
-  email      String?   @unique
-  passwordHash String?
-  failedLoginAttempts Int @default(0)
-  lockedUntil DateTime?
-  role       UserRole   @default(VIEWER)
-  isActive   Boolean    @default(true)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id                  String    @id
+  companyId           String
+  email               String?   @unique
+  passwordHash        String?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  role                UserRole  @default(VIEWER)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  profile    UserProfile?
+  profile UserProfile?
 
-  createdJobs      InspectionJob[] @relation("InspectionJobCreatedBy")
-  assignedJobs      InspectionJob[] @relation("InspectionJobAssignedTo")
-  assignedJobsAuthored InspectionJob[] @relation("InspectionJobAssignedBy")
-  assignedLots      InspectionLot[] @relation("InspectionLotAssignedTo")
-  assignedLotsAuthored InspectionLot[] @relation("InspectionLotAssignedBy")
-  assignedSampling   Sampling[] @relation("SamplingAssignedTo")
-  assignedSamplingAuthored Sampling[] @relation("SamplingAssignedBy")
-  auditLogs          AuditLog[]
-  loginAttempts      LoginAttempt[]
+  createdJobs              InspectionJob[] @relation("InspectionJobCreatedBy")
+  assignedJobs             InspectionJob[] @relation("InspectionJobAssignedTo")
+  assignedJobsAuthored     InspectionJob[] @relation("InspectionJobAssignedBy")
+  assignedLots             InspectionLot[] @relation("InspectionLotAssignedTo")
+  assignedLotsAuthored     InspectionLot[] @relation("InspectionLotAssignedBy")
+  assignedSampling         Sampling[]      @relation("SamplingAssignedTo")
+  assignedSamplingAuthored Sampling[]      @relation("SamplingAssignedBy")
+  samplesCreated           Sample[]        @relation("SampleCreatedBy")
+  sampleEventsPerformed    SampleEvent[]   @relation("SampleEventPerformedBy")
+  sampleMediaCaptured      SampleMedia[]   @relation("SampleMediaCapturedBy")
+  packetsCreated           Packet[]        @relation("PacketCreatedBy")
+  packetEventsPerformed    PacketEvent[]   @relation("PacketEventPerformedBy")
+  packetMediaCaptured      PacketMedia[]   @relation("PacketMediaCapturedBy")
+  inspections              Inspection[]    @relation("InspectionInspector")
+  auditLogs                AuditLog[]
+  loginAttempts            LoginAttempt[]
 }
 
 model LoginAttempt {
@@ -50,7 +57,7 @@ model LoginAttempt {
   outcome   String
   createdAt DateTime @default(now())
 
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([companyId, email, createdAt])
   @@index([ipAddress, createdAt])
@@ -66,7 +73,7 @@ model UserProfile {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ClientMaster {
@@ -85,17 +92,17 @@ model ClientMaster {
 }
 
 model TransporterMaster {
-  id            String   @id @default(cuid())
-  companyId     String
+  id              String   @id @default(cuid())
+  companyId       String
   transporterName String
-  contactPerson String?
-  phone         String?
-  email         String?
-  address       String?
-  gstOrId       String?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  contactPerson   String?
+  phone           String?
+  email           String?
+  address         String?
+  gstOrId         String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@unique([companyId, transporterName])
   @@index([companyId])
@@ -105,6 +112,7 @@ model ItemMaster {
   id          String   @id @default(cuid())
   companyId   String
   itemName    String
+  materialType String?
   description String?
   uom         String?
   isActive    Boolean  @default(true)
@@ -115,35 +123,52 @@ model ItemMaster {
   @@index([companyId])
 }
 
+model WarehouseMaster {
+  id            String   @id @default(cuid())
+  companyId     String
+  warehouseName String
+  description   String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([companyId, warehouseName])
+  @@index([companyId])
+}
+
 model InspectionJob {
   inspectionSerialNumber String @unique
-  id                 String   @id @default(cuid())
-  companyId          String
-  jobReferenceNumber String   @unique @default(uuid())
+  id                     String @id @default(cuid())
+  companyId              String
+  jobReferenceNumber     String @unique @default(uuid())
 
-  clientName         String
-  commodity          String
-  plantLocation      String?
+  clientName    String
+  commodity     String
+  materialType  String?
+  plantLocation String?
 
-  status             String   @default("PENDING")
+  status String @default("PENDING")
 
-  createdByUserId    String
-  assignedToId       String?
-  assignedById       String?
-  assignedAt         DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdByUserId String
+  assignedToId    String?
+  assignedById    String?
+  assignedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   lots               InspectionLot[]
+  inspections        Inspection[]
   experiments        RDExperiment[]
-  mediaFiles         MediaFile[] @relation("JobMediaFiles")
+  mediaFiles         MediaFile[]         @relation("JobMediaFiles")
+  samples            Sample[]
   homogeneousSamples HomogeneousSample[]
   reportSnapshots    ReportSnapshot[]
   auditLogs          AuditLog[]
+  packets            Packet[]
 
-  createdByUser      User @relation("InspectionJobCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  assignedTo         User? @relation("InspectionJobAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  assignedBy         User? @relation("InspectionJobAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdByUser User  @relation("InspectionJobCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignedTo    User? @relation("InspectionJobAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy    User? @relation("InspectionJobAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([companyId, assignedToId])
@@ -155,137 +180,240 @@ model AuditLog {
   jobId     String
   userId    String
   entity    String   @default("JOB")
-  action    String   // e.g. "STATUS_CHANGE"
+  action    String // e.g. "STATUS_CHANGE"
   from      String?
   to        String?
   notes     String?
   metadata  Json?
   createdAt DateTime @default(now())
 
-  job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  user      User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  job  InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Restrict)
 }
 
 model ReportSnapshot {
-
   id        String   @id @default(cuid())
   jobId     String
   data      Json
   createdAt DateTime @default(now())
 
-  job       InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 }
 
 model InspectionLot {
-  id           String   @id @default(cuid())
-  jobId        String
-  companyId    String
-  lotNumber    String
+  id               String  @id @default(cuid())
+  jobId            String
+  companyId        String
+  lotNumber        String
+  materialName     String?
+  materialCategory String?
+  quantityMode     String  @default("SINGLE_PIECE")
+  bagCount         Int?
+  pieceCount       Int?
+  weightUnit       String?
+  remarks          String?
 
-  totalBags    Int      @default(1)
+  totalBags Int @default(1)
 
-  grossWeightKg Decimal?
-  netWeightKg   Decimal?
-  sealNumber    String?  @unique
-  sealAuto      Boolean  @default(false)
-  grossWeight   Float?
-  tareWeight    Float?
-  netWeight     Float?
-  bagPhotoUrl   String?
+  grossWeightKg    Decimal?
+  netWeightKg      Decimal?
+  sealNumber       String?  @unique
+  sealAuto         Boolean  @default(false)
+  grossWeight      Float?
+  tareWeight       Float?
+  netWeight        Float?
+  bagPhotoUrl      String?
   samplingPhotoUrl String?
-  sealPhotoUrl  String?
+  sealPhotoUrl     String?
 
-  status       String   @default("PENDING")
+  status       String    @default("PENDING")
   assignedToId String?
   assignedById String?
   assignedAt   DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  job          InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  mediaFiles   MediaFile[] @relation("LotMediaFiles")
-  trials       RDTrial[] @relation("LotTrials")
-  assignedTo   User? @relation("InspectionLotAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  assignedBy   User? @relation("InspectionLotAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  job        InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  mediaFiles MediaFile[]   @relation("LotMediaFiles")
+  inspection Inspection?
+  sample     Sample?
+  trials     RDTrial[]     @relation("LotTrials")
+  packets    Packet[]
+  assignedTo User?         @relation("InspectionLotAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy User?         @relation("InspectionLotAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  bags     InspectionBag[]
+  sampling Sampling[]
 
   @@unique([jobId, lotNumber])
   @@index([companyId])
   @@index([companyId, assignedToId])
   @@index([companyId, sealNumber])
-
-  bags        InspectionBag[]
-  sampling    Sampling[]
 }
 
 model MediaFile {
-  id          String   @id @default(cuid())
-  companyId   String
+  id        String @id @default(cuid())
+  companyId String
 
-  jobId       String?
-  lotId       String?
+  jobId             String?
+  lotId             String?
+  inspectionId      String?
+  inspectionIssueId String?
 
-  category    String
-  storageKey  String
-  fileName    String
+  category   String
+  storageKey String
+  fileName   String
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  job         InspectionJob? @relation("JobMediaFiles", fields: [jobId], references: [id], onDelete: Cascade)
-  lot         InspectionLot? @relation("LotMediaFiles", fields: [lotId], references: [id], onDelete: Cascade)
+  job             InspectionJob?   @relation("JobMediaFiles", fields: [jobId], references: [id], onDelete: Cascade)
+  lot             InspectionLot?   @relation("LotMediaFiles", fields: [lotId], references: [id], onDelete: Cascade)
+  inspection      Inspection?      @relation("InspectionMediaFiles", fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionIssue InspectionIssue? @relation("InspectionIssueMediaFiles", fields: [inspectionIssueId], references: [id], onDelete: SetNull)
+
+  @@index([inspectionId, createdAt])
+  @@index([inspectionIssueId, createdAt])
+}
+
+model Inspection {
+  id                  String    @id @default(cuid())
+  jobId               String
+  lotId               String    @unique
+  inspectorId         String
+  inspectionStatus    String    @default("IN_PROGRESS")
+  decisionStatus      String    @default("PENDING")
+  startedAt           DateTime  @default(now())
+  completedAt         DateTime?
+  overallRemark       String?
+  identityRiskFlag    Boolean   @default(false)
+  packagingRiskFlag   Boolean   @default(false)
+  materialRiskFlag    Boolean   @default(false)
+  samplingBlockedFlag Boolean   @default(true)
+  issueCount          Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  job        InspectionJob                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  lot        InspectionLot                 @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  inspector  User                          @relation("InspectionInspector", fields: [inspectorId], references: [id], onDelete: Restrict)
+  responses  InspectionChecklistResponse[]
+  issues     InspectionIssue[]
+  mediaFiles MediaFile[]                   @relation("InspectionMediaFiles")
+  sample     Sample?
+
+  @@index([jobId, createdAt])
+  @@index([inspectorId, createdAt])
+}
+
+model InspectionChecklistItemMaster {
+  id               String   @id @default(cuid())
+  itemKey          String   @unique
+  sectionName      String
+  itemLabel        String
+  responseType     String
+  isRequired       Boolean  @default(true)
+  materialCategory String?
+  displayOrder     Int
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  responses InspectionChecklistResponse[]
+
+  @@index([isActive, displayOrder])
+}
+
+model InspectionChecklistResponse {
+  id                    String   @id @default(cuid())
+  inspectionId          String
+  checklistItemMasterId String
+  sectionName           String
+  itemLabel             String
+  responseValue         String?
+  responseText          String?
+  isException           Boolean  @default(false)
+  displayOrder          Int
+  recordedAt            DateTime @default(now())
+
+  inspection          Inspection                    @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  checklistItemMaster InspectionChecklistItemMaster @relation(fields: [checklistItemMasterId], references: [id], onDelete: Restrict)
+
+  @@unique([inspectionId, checklistItemMasterId])
+  @@index([inspectionId, displayOrder])
+}
+
+model InspectionIssue {
+  id            String   @id @default(cuid())
+  inspectionId  String
+  issueCategory String
+  severity      String
+  description   String
+  status        String   @default("OPEN")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  inspection Inspection  @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  mediaFiles MediaFile[] @relation("InspectionIssueMediaFiles")
+
+  @@index([inspectionId, createdAt])
+  @@index([inspectionId, status])
 }
 
 model RDExperiment {
-  id          String   @id @default(cuid())
-  jobId       String
+  id    String @id @default(cuid())
+  jobId String
 
-  title       String
-  hypothesis  String?
-  status      String   @default("DRAFT")
+  title      String
+  hypothesis String?
+  status     String  @default("DRAFT")
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  job         InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  trials      RDTrial[]
+  job    InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  trials RDTrial[]
 }
 
 model RDTrial {
-  id            String   @id @default(cuid())
-  experimentId  String
+  id           String @id @default(cuid())
+  experimentId String
 
-  lotId         String?
+  lotId String?
+  packetId String? @unique
 
-  trialNumber   Int
-  notes         String?
+  trialNumber Int
+  notes       String?
 
   grossWeightKg Decimal?
   netWeightKg   Decimal?
 
-  createdAt     DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  experiment    RDExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-  lot           InspectionLot? @relation("LotTrials", fields: [lotId], references: [id], onDelete: Cascade)
+  experiment RDExperiment   @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  lot        InspectionLot? @relation("LotTrials", fields: [lotId], references: [id], onDelete: Cascade)
+  packet     Packet?        @relation(fields: [packetId], references: [id], onDelete: SetNull)
 
-  measurements  RDMeasurement[]
+  measurements RDMeasurement[]
 }
 
 model RDMeasurement {
-  id        String   @id @default(cuid())
-  trialId   String
+  id      String @id @default(cuid())
+  trialId String
 
-  element   String
-  value     Decimal
+  element String
+  value   Decimal
 
   createdAt DateTime @default(now())
 
-  trial     RDTrial @relation(fields: [trialId], references: [id], onDelete: Cascade)
+  trial RDTrial @relation(fields: [trialId], references: [id], onDelete: Cascade)
 
   @@unique([trialId, element])
 }
 
 model InspectionBag {
-  id      String @id @default(cuid())
-  lotId   String
+  id    String @id @default(cuid())
+  lotId String
 
-  bagNumber Int
+  bagNumber   Int
   grossWeight Float?
   netWeight   Float?
 
@@ -302,8 +430,188 @@ model SerialCounter {
   counter Int
 }
 
+model Sample {
+  id                  String    @id @default(cuid())
+  companyId           String
+  jobId               String
+  lotId               String    @unique
+  inspectionId        String    @unique
+  sampleCode          String    @unique
+  sampleStatus        String    @default("CREATED")
+  sampleType          String?
+  samplingMethod      String?
+  samplingDate        DateTime?
+  sampleQuantity      Float?
+  sampleUnit          String?
+  containerType       String?
+  remarks             String?
+  homogenizedAt       DateTime?
+  readyForPacketingAt DateTime?
+  createdById         String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  job        InspectionJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  lot        InspectionLot    @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  inspection Inspection       @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  createdBy  User             @relation("SampleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  events     SampleEvent[]
+  media      SampleMedia[]
+  sealLabel  SampleSealLabel?
+  packets    Packet[]
+
+  @@index([companyId, sampleStatus])
+  @@index([jobId, createdAt])
+}
+
+model Packet {
+  id             String    @id @default(cuid())
+  companyId      String
+  jobId          String
+  lotId          String
+  sampleId       String
+  packetCode     String    @unique
+  packetNo       Int
+  packetStatus   String    @default("CREATED")
+  packetQuantity Float?
+  packetUnit     String?
+  packetType     String?
+  remarks        String?
+  readyAt        DateTime?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  job        InspectionJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  lot        InspectionLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  sample     Sample         @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  createdBy  User           @relation("PacketCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  events     PacketEvent[]
+  media      PacketMedia[]
+  sealLabel  PacketSealLabel?
+  allocation PacketAllocation?
+  trial      RDTrial?
+
+  @@unique([sampleId, packetNo])
+  @@index([companyId, packetStatus])
+  @@index([jobId, createdAt])
+  @@index([sampleId, packetStatus])
+}
+
+model PacketEvent {
+  id            String   @id @default(cuid())
+  packetId       String
+  eventType      String
+  eventTime      DateTime @default(now())
+  performedById  String?
+  remarks        String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  packet      Packet @relation(fields: [packetId], references: [id], onDelete: Cascade)
+  performedBy User?  @relation("PacketEventPerformedBy", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([packetId, eventTime])
+  @@index([eventType, eventTime])
+}
+
+model PacketMedia {
+  id           String   @id @default(cuid())
+  packetId      String
+  mediaType     String
+  fileUrl       String
+  capturedAt    DateTime @default(now())
+  capturedById  String?
+  remarks       String?
+  createdAt     DateTime @default(now())
+
+  packet     Packet @relation(fields: [packetId], references: [id], onDelete: Cascade)
+  capturedBy User?  @relation("PacketMediaCapturedBy", fields: [capturedById], references: [id], onDelete: SetNull)
+
+  @@index([packetId, capturedAt])
+  @@index([packetId, mediaType])
+}
+
+model PacketSealLabel {
+  id         String    @id @default(cuid())
+  packetId    String    @unique
+  sealNo      String?
+  labelText   String?
+  labelCode   String?
+  sealStatus  String?   @default("PENDING")
+  sealedAt    DateTime?
+  labeledAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  packet Packet @relation(fields: [packetId], references: [id], onDelete: Cascade)
+}
+
+model PacketAllocation {
+  id                String    @id @default(cuid())
+  packetId          String    @unique
+  allocationStatus  String    @default("BLOCKED")
+  allocatedToType   String?
+  allocatedToId     String?
+  allocatedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  packet Packet @relation(fields: [packetId], references: [id], onDelete: Cascade)
+
+  @@index([allocationStatus, allocatedAt])
+}
+
+model SampleEvent {
+  id            String   @id @default(cuid())
+  sampleId      String
+  eventType     String
+  eventTime     DateTime @default(now())
+  performedById String?
+  remarks       String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  sample      Sample @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  performedBy User?  @relation("SampleEventPerformedBy", fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([sampleId, eventTime])
+  @@index([eventType, eventTime])
+}
+
+model SampleMedia {
+  id           String   @id @default(cuid())
+  sampleId     String
+  mediaType    String
+  fileUrl      String
+  capturedAt   DateTime @default(now())
+  capturedById String?
+  remarks      String?
+  createdAt    DateTime @default(now())
+
+  sample     Sample @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  capturedBy User?  @relation("SampleMediaCapturedBy", fields: [capturedById], references: [id], onDelete: SetNull)
+
+  @@index([sampleId, capturedAt])
+  @@index([sampleId, mediaType])
+}
+
+model SampleSealLabel {
+  id         String    @id @default(cuid())
+  sampleId   String    @unique
+  sealNo     String?
+  labelText  String?
+  sealStatus String?   @default("PENDING")
+  labeledAt  DateTime?
+  sealedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  sample Sample @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+}
+
 model Sampling {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   lotId     String @unique
   companyId String
 
@@ -311,28 +619,28 @@ model Sampling {
   duringPhotoUrl String?
   afterPhotoUrl  String?
 
-  status       String   @default("PENDING")
+  status       String    @default("PENDING")
   assignedToId String?
   assignedById String?
   assignedAt   DateTime?
-  createdAt DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
-  lot InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  assignedTo User? @relation("SamplingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  assignedBy User? @relation("SamplingAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  lot        InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  assignedTo User?         @relation("SamplingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy User?         @relation("SamplingAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([companyId, assignedToId])
 }
 
 model HomogeneousSample {
-  id        String   @id @default(cuid())
-  jobId     String
+  id    String @id @default(cuid())
+  jobId String
 
   createdAt DateTime @default(now())
   photoUrl  String?
 
-  job InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job     InspectionJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
   packets SamplePacket[]
 
   @@unique([jobId])
@@ -343,6 +651,10 @@ model SamplePacket {
   sampleId String
 
   packetNumber Int
+  packetCode   String    @unique
+  packetStatus String    @default("READY")
+  generatedAt  DateTime  @default(now())
+  usedAt       DateTime?
 
   sample HomogeneousSample @relation(fields: [sampleId], references: [id], onDelete: Cascade)
 

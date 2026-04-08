@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
+import { deriveSampleStatus } from "@/lib/sample-management";
+import type { SampleRecord } from "@/types/inspection";
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,7 +29,13 @@ export async function POST(req: NextRequest) {
       include: {
         lots: {
           include: {
-            sampling: true
+            sample: {
+              include: {
+                media: true,
+                sealLabel: true,
+                events: true,
+              },
+            },
           }
         }
       }
@@ -55,20 +63,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validation #3: All lots must be strictly sampled
+    // Validation #3: All lots must have a sample ready for packeting.
     const incompleteLots = job.lots.filter(lot => {
-      // Prismas 1-to-M mapped relation generates an Array, pull uniquely bound index 0
-      const s = Array.isArray(lot.sampling) ? lot.sampling[0] : lot.sampling;
-      if (!s) return true;
-      if (!s.beforePhotoUrl || !s.duringPhotoUrl || !s.afterPhotoUrl) return true;
-      return false;
+      const managedSample = lot.sample as SampleRecord | null;
+      return !managedSample || deriveSampleStatus(managedSample) !== "READY_FOR_PACKETING";
     });
 
     if (incompleteLots.length > 0) {
       return NextResponse.json(
         { 
           error: "Workflow Error", 
-          details: `Operations incomplete. ${incompleteLots.length} lot(s) are missing finalized sampling states or photos.`
+          details: `Operations incomplete. ${incompleteLots.length} lot(s) are missing managed sample readiness.`
         },
         { status: 400 }
       );

@@ -1,416 +1,279 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Accordion,
-  AccordionButton,
-  AccordionIcon,
-  AccordionItem,
-  AccordionPanel,
-  Badge,
-  Box,
-  Button,
-  Card,
-  CardBody,
-  Center,
-  Heading,
-  HStack,
-  Icon,
-  Progress,
-  SimpleGrid,
-  Spinner,
-  Text,
-  VStack,
-  useToast,
-} from "@chakra-ui/react";
-import {
-  FileDown,
-  Layers3,
-  PackageSearch,
-  ScanFace,
-  ShieldCheck,
-  Sparkles,
-  Workflow,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Badge, Box, Button, Heading, HStack, SimpleGrid, Stack, Text, VStack } from "@chakra-ui/react";
+import { FileDown, ScanFace } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { Card } from "@/components/Card";
+import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
+import { WorkflowStepTracker } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
-import { InspectionJob, InspectionLot, Sampling } from "@/types/inspection";
-import { APP_TEXT } from "@/lib/ui-copy";
+import { buildWorkflowSteps, getJobWorkflowPresentation, getWorkflowStepRoute, summarizeLotProgress } from "@/lib/workflow-stage";
+import type { InspectionJob } from "@/types/inspection";
 
-type MetricCardProps = {
-  title: string;
-  value: string | number;
-  detail: string;
-  accent: string;
-};
-
-const workflowStages = [
-  { key: "CREATED", label: "CREATED", accent: "gray" },
-  { key: "LOTS_READY", label: "LOTS_READY", accent: "cyan" },
-  { key: "SAMPLING", label: "SAMPLING", accent: "orange" },
-  { key: "QA", label: "QA", accent: "blue" },
-  { key: "LOCKED", label: "LOCKED", accent: "green" },
-  { key: "DISPATCHED", label: "DISPATCHED", accent: "teal" },
-];
-
-function MetricCard({ title, value, detail, accent }: MetricCardProps) {
-  return (
-    <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-      <CardBody p={5}>
-        <HStack justify="space-between" align="start" mb={4}>
-          <Box w="2" h="10" borderRadius="full" bg={`${accent}.400`} />
-          <Badge variant="subtle" colorScheme={accent} borderRadius="full" px={2.5} py={1}>
-            KPI
-          </Badge>
-        </HStack>
-        <Text fontSize="sm" color="gray.500" fontWeight="medium">
-          {title}
-        </Text>
-        <Text fontSize="3xl" fontWeight="bold" color="gray.900" mt={1}>
-          {value}
-        </Text>
-        <Text fontSize="sm" color="gray.600" mt={1}>
-          {detail}
-        </Text>
-      </CardBody>
-    </Card>
-  );
-}
-
-function formatTime(value: string | Date) {
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) {
+    return "—";
+  }
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
-}
-
-function getStatusColor(status: string) {
-  switch (status) {
-    case "LOCKED":
-      return "green";
-    case "QA":
-      return "blue";
-    case "DISPATCHED":
-      return "teal";
-    case "SAMPLING":
-      return "orange";
-    case "LOTS_READY":
-      return "cyan";
-    default:
-      return "gray";
-  }
-}
-
-function getSamplingRecord(lot: InspectionLot): Sampling | null {
-  const samplingValue = lot.sampling as Sampling | Sampling[] | null | undefined;
-  if (!samplingValue) {
-    return null;
-  }
-  return Array.isArray(samplingValue) ? samplingValue[0] ?? null : samplingValue;
-}
-
-function isLotSamplingCompleted(lot: InspectionLot): boolean {
-  const sampling = getSamplingRecord(lot);
-  return Boolean(sampling?.beforePhotoUrl && sampling?.duringPhotoUrl && sampling?.afterPhotoUrl);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
 export default function OperationsPage() {
   const router = useRouter();
-  const toast = useToast();
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [jobsPage, setJobsPage] = useState(1);
+  const [activePanel, setActivePanel] = useState<"overview" | "jobs">("overview");
+  const jobsPerPage = 2;
 
   const fetchJobs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("/api/inspection/jobs?view=all");
-      if (!res.ok) throw new Error("Failed to fetch jobs");
+      const res = await fetch("/api/jobs?view=all");
+      if (!res.ok) {
+        throw new Error("The execution queue could not be loaded.");
+      }
       const data = await res.json();
       setJobs(Array.isArray(data) ? data : []);
-    } catch {
-      toast({ title: "Failed to load operations jobs", status: "error" });
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "The execution queue could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
-    fetchJobs();
+    void fetchJobs();
   }, [fetchJobs]);
 
-  const metrics = useMemo(() => {
-    const total = jobs.length;
-    const lotsReady = jobs.filter((job) => (job.lots?.length ?? 0) > 0).length;
-    const samplingActive = jobs.filter((job) => {
-      const totalLots = job.lots?.length ?? 0;
-      const sampledLots = job.lots?.filter((lot) => isLotSamplingCompleted(lot)).length ?? 0;
-      return totalLots > 0 && sampledLots > 0 && sampledLots < totalLots;
-    }).length;
-    const locked = jobs.filter((job) => job.status === "LOCKED").length;
-    const dispatched = jobs.filter((job) => job.status === "DISPATCHED").length;
-    return { total, lotsReady, samplingActive, locked, dispatched };
+  const summary = useMemo(() => {
+    const executionNow = jobs.filter((job) => ["IN_PROGRESS", "SAMPLING_PENDING"].includes(job.status)).length;
+    const blockedOnLab = jobs.filter((job) => ["RND_RUNNING", "QA"].includes(job.status)).length;
+    const complete = jobs.filter((job) => ["REPORT_READY", "LOCKED", "COMPLETED", "DISPATCHED"].includes(job.status)).length;
+    return { total: jobs.length, executionNow, blockedOnLab, complete };
   }, [jobs]);
 
-  const workflowCounts = useMemo(() => {
-    const counts = workflowStages.reduce<Record<string, number>>((acc, stage) => {
-      acc[stage.key] = 0;
-      return acc;
-    }, {});
-
-    jobs.forEach((job) => {
-      const totalLots = job.lots?.length ?? 0;
-      const sampledLots = job.lots?.filter((lot) => isLotSamplingCompleted(lot)).length ?? 0;
-
-      if (job.status in counts) {
-        counts[job.status] += 1;
-        return;
-      }
-      if (sampledLots > 0 && sampledLots < totalLots) {
-        counts.SAMPLING += 1;
-        return;
-      }
-      if (totalLots > 0) {
-        counts.LOTS_READY += 1;
-        return;
-      }
-      counts.CREATED += 1;
+  const queue = useMemo(() => {
+    return [...jobs].sort((left, right) => {
+      const leftPresentation = getJobWorkflowPresentation(left);
+      const rightPresentation = getJobWorkflowPresentation(right);
+      const order = ["sampling", "lot_capture", "intake", "lab", "reporting", "complete", "blocked"];
+      return order.indexOf(leftPresentation.stage) - order.indexOf(rightPresentation.stage);
     });
-
-    return counts;
   }, [jobs]);
 
-  if (loading) {
-    return (
-      <ControlTowerLayout>
-        <Center minH="40vh">
-          <Spinner size="xl" color="teal.500" />
-        </Center>
-      </ControlTowerLayout>
-    );
-  }
+  const focusJob = queue[0] ?? null;
+  const jobsPageCount = Math.max(Math.ceil(queue.length / jobsPerPage), 1);
+  const pagedQueue = useMemo(
+    () => queue.slice((jobsPage - 1) * jobsPerPage, jobsPage * jobsPerPage),
+    [jobsPage, queue]
+  );
+
+  useEffect(() => {
+    setJobsPage((current) => Math.min(current, jobsPageCount));
+  }, [jobsPageCount]);
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6}>
-        <HStack justify="space-between" align="start" flexWrap="wrap" spacing={4}>
-          <VStack align="start" spacing={1}>
-            <HStack spacing={2}>
-              <Badge colorScheme="teal" variant="subtle" borderRadius="full" px={2.5} py={1}>
+      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
+        <Stack direction={{ base: "column", lg: "row" }} justify="space-between" spacing={4}>
+          <Box>
+            <HStack spacing={2} mb={2} flexWrap="wrap">
+              <Badge colorScheme="brand" borderRadius="full" px={2.5} py={1}>
                 OPERATIONS
               </Badge>
-              <Badge colorScheme="gray" variant="subtle" borderRadius="full" px={2.5} py={1}>
-                LIVE
+              <Badge colorScheme="gray" borderRadius="full" px={2.5} py={1}>
+                LIVE EXECUTION
               </Badge>
             </HStack>
-            <Heading size="lg" color="gray.900">
-              {APP_TEXT.dashboard}
+            <Heading size="lg" color="text.primary">
+              Execution Queue
             </Heading>
-            <Text color="gray.600" maxW="4xl">Jobs and workflow overview.</Text>
-          </VStack>
+          </Box>
 
-          <HStack spacing={3} wrap="wrap">
-            <Button colorScheme="teal" borderRadius="xl" onClick={() => router.push("/rd")}>
-              Create Job
-            </Button>
-            <Badge colorScheme="green" variant="subtle" borderRadius="full" px={3} py={1}>
-              ACTIVE
-            </Badge>
-          </HStack>
-        </HStack>
+          <Button minH="48px" onClick={() => router.push("/rd")}>
+            Create job
+          </Button>
+        </Stack>
 
-        <SimpleGrid columns={{ base: 1, sm: 2, xl: 5 }} spacing={4} display={{ base: "none", md: "grid" }}>
-          <MetricCard title="Total Jobs" value={metrics.total} detail="Inspection jobs in the registry." accent="teal" />
-          <MetricCard title="Lots Ready" value={metrics.lotsReady} detail="Jobs with at least one lot onboarded." accent="cyan" />
-          <MetricCard title="Sampling Active" value={metrics.samplingActive} detail="Jobs with partial sampling progress." accent="orange" />
-          <MetricCard title="Locked" value={metrics.locked} detail="Jobs sealed for governance review." accent="green" />
-          <MetricCard title="Dispatched" value={metrics.dispatched} detail="Jobs released to downstream operations." accent="purple" />
-        </SimpleGrid>
+        {loading ? <PageSkeleton cards={4} rows={2} /> : null}
+        {!loading && error ? (
+          <InlineErrorState
+            title="Execution workspace unavailable"
+            description={error}
+            onRetry={() => void fetchJobs()}
+          />
+        ) : null}
 
-        <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-          <CardBody p={6}>
-            <HStack justify="space-between" align="start" mb={4} flexWrap="wrap" spacing={4}>
-              <VStack align="start" spacing={1}>
-                <HStack>
-                  <Icon as={Workflow} color="teal.600" />
-                  <Text fontWeight="bold" color="gray.900">
-                    Workflow Engine
-                  </Text>
-                </HStack>
-                <Text fontSize="sm" color="gray.600">
-                  Current pipeline status.
-                </Text>
-              </VStack>
-              <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3} py={1}>
-                LIVE
-              </Badge>
+        {!loading && !error ? (
+          <>
+            <HStack spacing={3}>
+              <Button variant={activePanel === "overview" ? "solid" : "outline"} onClick={() => setActivePanel("overview")}>
+                Overview
+              </Button>
+              <Button variant={activePanel === "jobs" ? "solid" : "outline"} onClick={() => setActivePanel("jobs")}>
+                Jobs
+              </Button>
             </HStack>
 
-            <SimpleGrid columns={{ base: 2, md: 4, lg: 6 }} spacing={3}>
-              {workflowStages.map((stage) => (
-                <Box key={stage.key} p={4} borderWidth="1px" borderRadius="xl" borderColor="gray.200" bg="gray.50">
-                  <Text fontSize="xs" color="gray.500" fontWeight="semibold" textTransform="uppercase">
-                    {stage.label.replace("_", " ")}
-                  </Text>
-                  <HStack justify="space-between" mt={2}>
-                    <Text fontSize="2xl" fontWeight="bold" color={`${stage.accent}.600`}>
-                      {workflowCounts[stage.key] ?? 0}
-                    </Text>
-                    <Box w="2.5" h="2.5" borderRadius="full" bg={`${stage.accent}.400`} />
-                  </HStack>
-                </Box>
-              ))}
+            {activePanel === "overview" ? (
+            <VStack align="stretch" spacing={5}>
+            <SimpleGrid columns={{ base: 1, lg: 3 }} spacing={4}>
+              <Card>
+                <Text fontSize="sm" color="text.secondary">Need execution now</Text>
+                <Text fontSize="3xl" fontWeight="bold" color="orange.600" mt={2}>{summary.executionNow}</Text>
+              </Card>
+              <Card>
+                <Text fontSize="sm" color="text.secondary">Blocked on lab or QA</Text>
+                <Text fontSize="3xl" fontWeight="bold" color="blue.600" mt={2}>{summary.blockedOnLab}</Text>
+              </Card>
+              <Card>
+                <Text fontSize="sm" color="text.secondary">Operationally complete</Text>
+                <Text fontSize="3xl" fontWeight="bold" color="green.600" mt={2}>{summary.complete}</Text>
+              </Card>
             </SimpleGrid>
-          </CardBody>
-        </Card>
 
-        <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={6}>
-          <Box gridColumn={{ xl: "span 2" }}>
-            <VStack align="stretch" spacing={4}>
-              <Box>
-                <Heading size="md" color="gray.900">
-                  {APP_TEXT.jobs}
-                </Heading>
-                <Text fontSize="sm" color="gray.600">Assigned jobs.</Text>
+            <SimpleGrid columns={{ base: 1, xl: 3 }} spacing={5}>
+              <Box gridColumn={{ xl: "span 2" }}>
+                <Card>
+                  {focusJob ? (
+                    <Card bg="bg.rail">
+                      <Stack direction={{ base: "column", md: "row" }} justify="space-between" spacing={4}>
+                        <Box>
+                          <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                            Current bottleneck
+                          </Text>
+                          <Heading size="md" mt={1} color="text.primary">
+                            {focusJob.inspectionSerialNumber}
+                          </Heading>
+                          <Text color="text.secondary">{focusJob.clientName}</Text>
+                        </Box>
+                        <VStack align={{ base: "stretch", md: "end" }} spacing={2}>
+                          <Badge colorScheme={getJobWorkflowPresentation(focusJob).tone} borderRadius="full" px={3} py={1}>
+                            {getJobWorkflowPresentation(focusJob).label}
+                          </Badge>
+                          <Button minH="48px" onClick={() => router.push(`/operations/job/${focusJob.id}`)}>
+                            {getJobWorkflowPresentation(focusJob).nextAction}
+                          </Button>
+                        </VStack>
+                      </Stack>
+                    </Card>
+                  ) : null}
+                </Card>
               </Box>
+              <Card>
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                    Execution rules
+                  </Text>
+                  <SectionHint label="Jobs in registry" value={String(summary.total)} />
+                  <SectionHint label="Primary queue" value={focusJob ? "Continue the next incomplete lot" : "Create first job"} />
+                  <SectionHint label="Reports handoff" value={`${summary.complete} jobs`} />
+                </VStack>
+              </Card>
+            </SimpleGrid>
+            </VStack>
+            ) : null}
 
+            {activePanel === "jobs" && queue.length === 0 ? (
+              <EmptyWorkState
+                title="No execution jobs yet"
+                description="There is nothing in the operations queue. Create a job to start lot intake."
+                action={<Button minH="48px" onClick={() => router.push("/rd")}>Create first job</Button>}
+              />
+            ) : activePanel === "jobs" ? (
               <VStack align="stretch" spacing={4}>
-                {jobs.map((job) => {
-                  const totalLots = job.lots?.length ?? 0;
-                  const sampledLots = job.lots?.filter((lot) => isLotSamplingCompleted(lot)).length ?? 0;
-                  const progress = totalLots > 0 ? (sampledLots / totalLots) * 100 : 0;
+                {pagedQueue.map((job) => {
+                  const presentation = getJobWorkflowPresentation(job);
+                  const lotProgress = summarizeLotProgress(job);
+                  const primaryAction = presentation.stage === "reporting" ? "Open reports" : presentation.nextAction;
 
                   return (
-                    <Card key={job.id} variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-                      <CardBody p={5}>
-                        <SimpleGrid columns={{ base: 1, lg: 4 }} spacing={4} alignItems="center">
-                          <VStack align="start" spacing={1}>
-                            <HStack spacing={2} wrap="wrap">
-                              <Badge colorScheme="teal" variant="solid" borderRadius="full" px={3} py={1}>
-                                {job.inspectionSerialNumber || job.jobReferenceNumber || "JOB"}
+                    <Card key={job.id}>
+                      <VStack align="stretch" spacing={4}>
+                        <Stack direction={{ base: "column", xl: "row" }} spacing={5} justify="space-between">
+                          <Box>
+                            <HStack spacing={2} flexWrap="wrap">
+                              <Badge colorScheme="teal" borderRadius="full" px={3} py={1}>
+                                {job.inspectionSerialNumber || job.jobReferenceNumber}
                               </Badge>
-                              <Badge colorScheme={getStatusColor(job.status)} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                                {job.status}
+                              <Badge colorScheme={presentation.tone} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                                {presentation.label}
                               </Badge>
                             </HStack>
-                            <Text fontSize="lg" fontWeight="bold" color="gray.900">
+                            <Heading size="md" mt={3} color="text.primary">
                               {job.clientName}
-                            </Text>
-                            <Text fontSize="sm" color="gray.600">
+                            </Heading>
+                            <Text fontSize="sm" color="text.secondary" mt={1}>
                               {job.commodity}
                             </Text>
+                          </Box>
+                          <VStack align={{ base: "stretch", xl: "end" }} spacing={2}>
+                            <Button
+                              minH="48px"
+                              leftIcon={presentation.stage === "reporting" ? <FileDown size={16} /> : <ScanFace size={16} />}
+                              onClick={() => router.push(presentation.stage === "reporting" ? "/reports" : `/operations/job/${job.id}`)}
+                            >
+                              {primaryAction}
+                            </Button>
+                            <Button minH="48px" variant="outline" onClick={() => router.push(`/operations/job/${job.id}`)}>
+                              Open job
+                            </Button>
                           </VStack>
+                        </Stack>
 
-                          <VStack align="start" spacing={2}>
-                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
-                              Sampling
-                            </Text>
-                            <Text fontSize="sm" fontWeight="semibold" color="gray.900">
-                              {sampledLots}/{totalLots || 0} lot(s) sampled
-                            </Text>
-                            <Progress value={progress} size="sm" borderRadius="full" colorScheme={sampledLots === totalLots && totalLots > 0 ? "green" : "teal"} w="full" />
-                          </VStack>
+                        <WorkflowStepTracker
+                          title="Job flow"
+                          steps={buildWorkflowSteps(job).map((step) => ({
+                            ...step,
+                            onClick: () => router.push(getWorkflowStepRoute(job.id, step.id)),
+                          }))}
+                          compact
+                        />
 
-                          <VStack align="start" spacing={2}>
-                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
-                              State
-                            </Text>
-                            <HStack spacing={2}>
-                              <Icon as={Layers3} color="gray.400" boxSize={4} />
-                              <Text fontSize="sm" color="gray.700">
-                                {totalLots} lot(s) registered
-                              </Text>
-                            </HStack>
-                            <HStack spacing={2}>
-                              <Icon as={ShieldCheck} color="gray.400" boxSize={4} />
-                              <Text fontSize="sm" color="gray.700">
-                                Last updated {formatTime(job.updatedAt || job.createdAt)}
-                              </Text>
-                            </HStack>
-                          </VStack>
-
-                          <VStack align="end" spacing={2}>
-                            <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
-                              Actions
-                            </Text>
-                            <HStack spacing={2} wrap="wrap" justify="end">
-                              <Button colorScheme="teal" borderRadius="xl" onClick={() => router.push(`/operations/job/${job.id}`)}>
-                                Open Job
-                              </Button>
-                              <Button variant="outline" borderRadius="xl" leftIcon={<ScanFace size={16} />} onClick={() => router.push(`/operations/job/${job.id}`)}>
-                                Open Lots
-                              </Button>
-                              <Button
-                                variant="outline"
-                                borderRadius="xl"
-                                leftIcon={<FileDown size={16} />}
-                                onClick={() => router.push("/reports")}
-                              >
-                                Open Reports
-                              </Button>
-                            </HStack>
-                          </VStack>
+                        <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Lots</Text>
+                            <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={1}>{lotProgress.total}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Sampling live</Text>
+                            <Text fontSize="2xl" fontWeight="bold" color="orange.600" mt={1}>{lotProgress.inProgress}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Ready</Text>
+                            <Text fontSize="2xl" fontWeight="bold" color="green.600" mt={1}>{lotProgress.completed}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Updated</Text>
+                            <Text fontSize="sm" fontWeight="semibold" color="text.primary" mt={1}>{formatDate(job.updatedAt)}</Text>
+                          </Box>
                         </SimpleGrid>
-                      </CardBody>
+                      </VStack>
                     </Card>
                   );
                 })}
-
-                {jobs.length === 0 && (
-                  <Card variant="outline" borderRadius="2xl" bg="white">
-                    <CardBody>
-                      <Center py={14}>
-                        <VStack spacing={2}>
-                          <Icon as={PackageSearch} boxSize={8} color="gray.300" />
-                          <Text color="gray.500">No records.</Text>
-                        </VStack>
-                      </Center>
-                    </CardBody>
-                  </Card>
-                )}
+                {queue.length > jobsPerPage ? (
+                  <HStack justify="flex-end" spacing={3}>
+                    <Button size="sm" variant="outline" onClick={() => setJobsPage((current) => Math.max(1, current - 1))} isDisabled={jobsPage <= 1}>
+                      Prev
+                    </Button>
+                    <Text fontSize="xs" color="text.secondary">
+                      {jobsPage}/{jobsPageCount}
+                    </Text>
+                    <Button size="sm" variant="outline" onClick={() => setJobsPage((current) => Math.min(jobsPageCount, current + 1))} isDisabled={jobsPage >= jobsPageCount}>
+                      Next
+                    </Button>
+                  </HStack>
+                ) : null}
               </VStack>
-            </VStack>
-          </Box>
-
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm" h="full">
-            <CardBody p={6}>
-              <HStack justify="space-between" align="start" mb={4}>
-                <VStack align="start" spacing={1}>
-                  <Heading size="md" color="gray.900">
-                    {APP_TEXT.status}
-                  </Heading>
-                  <Text fontSize="sm" color="gray.600">Secondary status.</Text>
-                </VStack>
-                <Icon as={Sparkles} color="teal.600" />
-              </HStack>
-
-              <Accordion allowMultiple defaultIndex={[]}>
-                {[
-                  { title: "Intake", status: "READY", color: "green" },
-                  { title: "Sampling", status: "CONTROLLED", color: "blue" },
-                  { title: "QA", status: "READY", color: "green" },
-                  { title: "Dispatch", status: "READY", color: "teal" },
-                ].map((item) => (
-                  <AccordionItem key={item.title} border="none" mb={2}>
-                    <Card variant="outline" borderRadius="xl" bg={`${item.color}.50`} borderColor={`${item.color}.100`}>
-                      <AccordionButton px={4} py={3}>
-                        <HStack justify="space-between" w="full">
-                          <Text fontWeight="bold" color="gray.900">{item.title}</Text>
-                          <HStack>
-                            <Badge colorScheme={item.color} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                              {item.status}
-                            </Badge>
-                            <AccordionIcon />
-                          </HStack>
-                        </HStack>
-                      </AccordionButton>
-                      <AccordionPanel pt={0} pb={3}>
-                        <Text fontSize="sm" color="gray.600">Status panel</Text>
-                      </AccordionPanel>
-                    </Card>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-            </CardBody>
-          </Card>
-        </SimpleGrid>
+            ) : null}
+          </>
+        ) : null}
       </VStack>
     </ControlTowerLayout>
   );

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { toNumeric } from "@/lib/traceability";
+import { recordAuditLog } from "@/lib/audit";
 
 async function syncLotWeights(tx: Prisma.TransactionClient, lotId: string) {
   const bags = await tx.inspectionBag.findMany({
@@ -103,6 +104,17 @@ export async function POST(req: NextRequest) {
       });
 
       await syncLotWeights(tx, lotId);
+
+      await recordAuditLog(tx, {
+        jobId: lot.jobId,
+        userId: currentUser.id,
+        entity: "LOT_WEIGHT",
+        action: "LOT_WEIGHT_ADDED",
+        metadata: {
+          lotId,
+          addedRows: dataToInsert.length,
+        },
+      });
 
       return { count: dataToInsert.length };
     });
@@ -230,6 +242,25 @@ export async function PATCH(req: NextRequest) {
       });
 
       await syncLotWeights(tx, updatedBag.lotId);
+
+      const bagLot = await tx.inspectionLot.findUnique({
+        where: { id: updatedBag.lotId },
+        select: { jobId: true },
+      });
+
+      if (bagLot) {
+        await recordAuditLog(tx, {
+          jobId: bagLot.jobId,
+          userId: currentUser.id,
+          entity: "LOT_WEIGHT",
+          action: "LOT_EDITED",
+          metadata: {
+            lotId: updatedBag.lotId,
+            bagId: updatedBag.id,
+          },
+        });
+      }
+
       return updatedBag;
     });
 

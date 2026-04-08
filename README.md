@@ -14,6 +14,16 @@ pnpm dev
 bun dev
 ```
 
+`npm run dev` now enforces schema/client safety before startup:
+- runs `prisma migrate status` (must be up to date)
+- runs `prisma generate`
+
+You can run the checks manually with:
+
+```bash
+npm run db:prepare
+```
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
@@ -34,4 +44,31 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Evidence Telemetry
+
+Evidence funnel telemetry events are emitted from media upload and sampling handlers:
+- `upload_attempt`
+- `upload_success`
+- `upload_failed`
+- `stage_complete`
+
+Telemetry configuration:
+- `EVIDENCE_TELEMETRY_ENABLED` (`true` by default)
+- `EVIDENCE_TELEMETRY_SINK` (`AUDIT_LOG` by default, supported: `AUDIT_LOG`, `CONSOLE`)
+- `EVIDENCE_STUCK_HOURS` (daily report threshold, default `24`)
+- `EVIDENCE_TELEMETRY_LOOKBACK_HOURS` (daily report window, default `24`)
+- `MEDIA_STORAGE_PROVIDER` (`LOCAL` by default)
+
+Generate daily telemetry/stuck report:
+
+```bash
+npm run telemetry:report:daily
+```
+
+Critical process regression suite (sampling transition, seal guards, export policy, mobile spacing checks):
+
+```bash
+npm run test:e2e:critical
+```
 # rd-core

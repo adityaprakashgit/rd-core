@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Role, normalizeRole } from "@/lib/role";
+import { AUTH_BYPASS_ENABLED } from "@/lib/runtime-flags";
 
 export type SessionProfile = {
   displayName: string;
@@ -49,13 +50,43 @@ function readHeader(headers: Headers, key: string): string | null {
   return value && value.trim().length > 0 ? value.trim() : null;
 }
 
+async function getBypassUser(): Promise<CurrentUser | null> {
+  if (!AUTH_BYPASS_ENABLED) {
+    return null;
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { isActive: true },
+    orderBy: [
+      { role: "asc" },
+      { createdAt: "asc" },
+    ],
+    select: {
+      id: true,
+      companyId: true,
+      email: true,
+      role: true,
+      profile: {
+        select: {
+          displayName: true,
+          companyName: true,
+          jobTitle: true,
+          avatarUrl: true,
+        },
+      },
+    },
+  });
+
+  return user ? toCurrentUser(user) : null;
+}
+
 export async function getCurrentUserFromHeaders(headers: Headers): Promise<CurrentUser | null> {
   const requestedUserId = readHeader(headers, "x-user-id");
   const requestedCompanyId = readHeader(headers, "x-company-id");
   const requestedRole = normalizeRole(readHeader(headers, "x-user-role"));
 
   if (!requestedUserId || !requestedCompanyId || !requestedRole) {
-    return null;
+    return getBypassUser();
   }
 
   const userId = requestedUserId;
@@ -81,11 +112,11 @@ export async function getCurrentUserFromHeaders(headers: Headers): Promise<Curre
   });
 
   if (!user) {
-    return null;
+    return getBypassUser();
   }
 
   if (user.companyId !== companyId || user.role !== role) {
-    return null;
+    return getBypassUser();
   }
 
   return toCurrentUser(user);

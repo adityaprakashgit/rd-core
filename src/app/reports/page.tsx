@@ -12,25 +12,28 @@ import {
   Heading,
   HStack,
   Input,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Select,
   SimpleGrid,
-  Spinner,
   Stack,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
   Text,
-  Th,
-  Thead,
-  Tr,
   VStack,
   useToast,
 } from "@chakra-ui/react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
+import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
+import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
+import { FilterRail, ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
+import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
-import { normalizeRole } from "@/lib/role";
 import {
   getDefaultReportPreferences,
   getReportDocumentTypeLabel,
@@ -39,6 +42,7 @@ import {
   sanitizeReportPreferences,
   type ReportPreferences,
 } from "@/lib/report-preferences";
+import { normalizeRole } from "@/lib/role";
 
 type JobSummary = {
   id: string;
@@ -92,10 +96,14 @@ function formatWeight(value: number | null | undefined): string {
 
 function getStatusColor(status: string): string {
   switch (status) {
+    case "COMPLETED":
     case "LOCKED":
+    case "REPORT_READY":
       return "green";
     case "QA":
+    case "RND_RUNNING":
       return "blue";
+    case "SAMPLING_PENDING":
     case "IN_PROGRESS":
       return "orange";
     default:
@@ -112,10 +120,13 @@ export default function ReportsPage() {
   const [lots, setLots] = useState<LotRow[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [loadingLots, setLoadingLots] = useState(false);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+  const [lotsError, setLotsError] = useState<string | null>(null);
+  const [masterError, setMasterError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [lastPreviewKind, setLastPreviewKind] = useState<"packing" | "stickers" | null>(null);
   const [generating, setGenerating] = useState<"packing" | "stickers" | null>(null);
-  const [sealLotId, setSealLotId] = useState("");
-  const [sealInput, setSealInput] = useState("");
-  const [sealBusy, setSealBusy] = useState<"generate" | "assign" | null>(null);
+  const [activeStep, setActiveStep] = useState<"setup" | "review" | "preview">("setup");
   const [masterBusy, setMasterBusy] = useState<"load" | null>(null);
   const [clients, setClients] = useState<ClientMasterOption[]>([]);
   const [transporters, setTransporters] = useState<TransporterMasterOption[]>([]);
@@ -126,10 +137,74 @@ export default function ReportsPage() {
   const [billToAddress, setBillToAddress] = useState("");
   const [shipToAddress, setShipToAddress] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
+  const [previewing, setPreviewing] = useState<"packing" | "stickers" | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{
+    kind: "packing" | "stickers";
+    fileName: string;
+    url: string;
+  } | null>(null);
   const [reportPreferences, setReportPreferences] = useState<ReportPreferences>(() =>
     getDefaultReportPreferences("Inspection Control Tower")
   );
   const [selectedDocumentType, setSelectedDocumentType] = useState<ReportPreferences["defaultDocumentType"]>("EXPORT");
+
+  const loadJobs = useCallback(async () => {
+    setLoadingJobs(true);
+    setJobsError(null);
+    try {
+      const isAdmin = normalizeRole(sessionRole) === "ADMIN";
+      const endpoint = isAdmin && viewMode === "all" ? "/api/jobs?view=all" : "/api/jobs?view=my";
+      const response = await fetch(endpoint);
+      if (!response.ok) {
+        throw new Error("Failed to load jobs.");
+      }
+
+      const data: JobSummary[] = await response.json();
+      const nextJobs = Array.isArray(data) ? data : [];
+      setJobs(nextJobs);
+      setSelectedJobId((current) => {
+        if (current && nextJobs.some((job) => job.id === current)) {
+          return current;
+        }
+        return nextJobs[0]?.id ?? "";
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load jobs.";
+      setJobs([]);
+      setSelectedJobId("");
+      setJobsError(message);
+      toast({ title: "Jobs unavailable", description: message, status: "error" });
+    } finally {
+      setLoadingJobs(false);
+    }
+  }, [sessionRole, toast, viewMode]);
+
+  const loadLots = useCallback(async () => {
+    if (!selectedJobId) {
+      setLots([]);
+      setLotsError(null);
+      return;
+    }
+
+    setLoadingLots(true);
+    setLotsError(null);
+    try {
+      const response = await fetch(`/api/inspection/lots?jobId=${encodeURIComponent(selectedJobId)}`);
+      if (!response.ok) {
+        throw new Error("Failed to load lot rows.");
+      }
+
+      const data: LotRow[] = await response.json();
+      setLots(Array.isArray(data) ? data : []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load lot rows.";
+      setLots([]);
+      setLotsError(message);
+      toast({ title: "Lots unavailable", description: message, status: "error" });
+    } finally {
+      setLoadingLots(false);
+    }
+  }, [selectedJobId, toast]);
 
   useEffect(() => {
     let active = true;
@@ -160,48 +235,10 @@ export default function ReportsPage() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-
-    const loadJobs = async () => {
-      setLoadingJobs(true);
-      try {
-        const isAdmin = normalizeRole(sessionRole) === "ADMIN";
-        const endpoint = isAdmin && viewMode === "all" ? "/api/jobs?view=all" : "/api/jobs/my";
-        const response = await fetch(endpoint);
-        if (!response.ok) {
-          throw new Error("Failed to load jobs.");
-        }
-
-        const data: JobSummary[] = await response.json();
-        if (!active) {
-          return;
-        }
-
-        const nextJobs = Array.isArray(data) ? data : [];
-        setJobs(nextJobs);
-        setSelectedJobId((current) => current || nextJobs[0]?.id || "");
-      } catch (error) {
-        if (active) {
-          setJobs([]);
-          setSelectedJobId("");
-          const message = error instanceof Error ? error.message : "Failed to load jobs.";
-          toast({ title: "Jobs unavailable", description: message, status: "error" });
-        }
-      } finally {
-        if (active) {
-          setLoadingJobs(false);
-        }
-      }
-    };
-
     if (sessionRole !== null) {
       void loadJobs();
     }
-
-    return () => {
-      active = false;
-    };
-  }, [sessionRole, toast, viewMode]);
+  }, [loadJobs, sessionRole]);
 
   useEffect(() => {
     const baseCompanyName = "Inspection Control Tower";
@@ -219,78 +256,21 @@ export default function ReportsPage() {
     setSelectedDocumentType(nextPreferences.defaultDocumentType);
   }, []);
 
-  const selectedJob = useMemo(
-    () => jobs.find((job) => job.id === selectedJobId) ?? null,
-    [jobs, selectedJobId]
-  );
-
   useEffect(() => {
-    let active = true;
-
-    const loadLots = async () => {
-      if (!selectedJobId) {
-        setLots([]);
-        return;
-      }
-
-      setLoadingLots(true);
-      try {
-        const response = await fetch(`/api/inspection/lots?jobId=${encodeURIComponent(selectedJobId)}`);
-        if (!response.ok) {
-          throw new Error("Failed to load lot rows.");
-        }
-
-        const data: LotRow[] = await response.json();
-        if (active) {
-          setLots(Array.isArray(data) ? data : []);
-        }
-      } catch (error) {
-        if (active) {
-          setLots([]);
-          const message = error instanceof Error ? error.message : "Failed to load lot rows.";
-          toast({ title: "Lots unavailable", description: message, status: "error" });
-        }
-      } finally {
-        if (active) {
-          setLoadingLots(false);
-        }
-      }
-    };
-
     void loadLots();
+  }, [loadLots]);
 
+  useEffect(() => {
     return () => {
-      active = false;
+      if (pdfPreview?.url) {
+        URL.revokeObjectURL(pdfPreview.url);
+      }
     };
-  }, [selectedJobId, toast]);
-
-  const totals = useMemo(() => {
-    return lots.reduce(
-      (acc, lot) => {
-        acc.totalBags += 1;
-        acc.totalGross += lot.grossWeight ?? 0;
-        acc.totalNet += lot.netWeight ?? 0;
-        acc.totalTare += lot.tareWeight ?? 0;
-        return acc;
-      },
-      { totalBags: 0, totalGross: 0, totalNet: 0, totalTare: 0 }
-    );
-  }, [lots]);
-
-  useEffect(() => {
-    const nextTarget = lots.find((lot) => !lot.sealNumber) ?? lots[0];
-    if (nextTarget && !sealLotId) {
-      setSealLotId(nextTarget.id);
-    }
-  }, [lots, sealLotId]);
-
-  useEffect(() => {
-    setSealInput("");
-    setSealLotId("");
-  }, [selectedJobId]);
+  }, [pdfPreview]);
 
   const loadDispatchMasters = useCallback(async () => {
     setMasterBusy("load");
+    setMasterError(null);
     try {
       const response = await fetch("/api/masters/dispatch-options");
       if (!response.ok) {
@@ -308,6 +288,7 @@ export default function ReportsPage() {
       setItems(Array.isArray(data.items) ? data.items : []);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load dispatch master options.";
+      setMasterError(message);
       toast({ title: "Master load failed", description: message, status: "error" });
     } finally {
       setMasterBusy(null);
@@ -318,6 +299,11 @@ export default function ReportsPage() {
     void loadDispatchMasters();
   }, [loadDispatchMasters]);
 
+  const selectedJob = useMemo(
+    () => jobs.find((job) => job.id === selectedJobId) ?? null,
+    [jobs, selectedJobId]
+  );
+
   useEffect(() => {
     if (!selectedJob) {
       return;
@@ -325,6 +311,7 @@ export default function ReportsPage() {
 
     setSelectedClientName((current) => current || selectedJob.clientName || "");
     setSelectedItemName((current) => current || selectedJob.commodity || "");
+    setVehicleNo("");
   }, [selectedJob]);
 
   useEffect(() => {
@@ -334,19 +321,88 @@ export default function ReportsPage() {
       setShipToAddress(selectedClient.shipToAddress);
     } else if (selectedJob) {
       setBillToAddress(selectedJob.clientName);
-      setShipToAddress(selectedJob.clientName);
+      setShipToAddress(selectedJob.plantLocation || selectedJob.clientName);
     }
   }, [clients, selectedClientName, selectedJob]);
 
+  const totals = useMemo(
+    () =>
+      lots.reduce(
+        (acc, lot) => {
+          acc.totalLots += 1;
+          acc.totalGross += lot.grossWeight ?? 0;
+          acc.totalNet += lot.netWeight ?? 0;
+          acc.totalTare += lot.tareWeight ?? 0;
+          if (lot.sealNumber) {
+            acc.sealedLots += 1;
+          }
+          return acc;
+        },
+        { totalLots: 0, sealedLots: 0, totalGross: 0, totalNet: 0, totalTare: 0 }
+      ),
+    [lots]
+  );
 
-  const handleDownload = useCallback(
+  const flowSteps = useMemo<WorkflowStep[]>(
+    () => [
+      {
+        id: "setup",
+        label: "Setup",
+        state: activeStep === "setup" ? "current" : "completed",
+        onClick: () => setActiveStep("setup"),
+      },
+      {
+        id: "review",
+        label: "Lot Review",
+        state: activeStep === "review" ? "current" : activeStep === "preview" ? "completed" : "next",
+        onClick: () => setActiveStep("review"),
+      },
+      {
+        id: "preview",
+        label: "Preview",
+        state: activeStep === "preview" ? "current" : "upcoming",
+        onClick: () => setActiveStep("preview"),
+      },
+    ],
+    [activeStep]
+  );
+
+  const lotColumns = useMemo(
+    () => [
+      { id: "lotNumber", header: "Lot", render: (lot: LotRow) => <Text fontWeight="semibold">{lot.lotNumber}</Text> },
+      {
+        id: "sealNumber",
+        header: "Seal",
+        render: (lot: LotRow) =>
+          lot.sealNumber ? (
+            <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              {lot.sealNumber}
+            </Badge>
+          ) : (
+            <Badge colorScheme="orange" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              Pending in lot workflow
+            </Badge>
+          ),
+      },
+      { id: "grossWeight", header: "Gross", isNumeric: true, render: (lot: LotRow) => formatWeight(lot.grossWeight) },
+      { id: "tareWeight", header: "Tare", isNumeric: true, render: (lot: LotRow) => formatWeight(lot.tareWeight) },
+      { id: "netWeight", header: "Net", isNumeric: true, render: (lot: LotRow) => formatWeight(lot.netWeight) },
+    ],
+    []
+  );
+
+  const handlePreviewDocument = useCallback(
     async (kind: "packing" | "stickers") => {
+      setLastPreviewKind(kind);
+      setPreviewError(null);
       if (!selectedJobId) {
+        setPreviewError("Select a job before generating documents.");
         toast({ title: "Select a job first", status: "warning" });
         return;
       }
 
       setGenerating(kind);
+      setPreviewing(kind);
       try {
         if (kind === "packing" && vehicleNo.trim().length === 0) {
           throw new Error("Vehicle number is required for every packing list.");
@@ -385,20 +441,25 @@ export default function ReportsPage() {
 
         const blob = await response.blob();
         const objectUrl = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = objectUrl;
-        anchor.download = `${kind === "packing" ? `${selectedDocumentType}_Packing_List` : "Stickers"}_${selectedJob?.jobReferenceNumber ?? selectedJobId}.pdf`;
-        anchor.click();
-        URL.revokeObjectURL(objectUrl);
+        const fileName = `${kind === "packing" ? `${selectedDocumentType}_Packing_List` : "Stickers"}_${selectedJob?.jobReferenceNumber ?? selectedJobId}.pdf`;
+        setPdfPreview((current) => {
+          if (current?.url) {
+            URL.revokeObjectURL(current.url);
+          }
+          return { kind, fileName, url: objectUrl };
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Report generation failed.";
+        setPreviewError(message);
         toast({ title: "Generation failed", description: message, status: "error" });
       } finally {
         setGenerating(null);
+        setPreviewing(null);
       }
     },
     [
       billToAddress,
+      reportPreferences,
       selectedDocumentType,
       selectedItemName,
       selectedJob?.clientName,
@@ -411,445 +472,536 @@ export default function ReportsPage() {
       toast,
       transporters,
       vehicleNo,
-      reportPreferences,
     ]
   );
 
-  const handleGenerateSeal = useCallback(async () => {
-    if (!selectedJobId) {
-      toast({ title: "Select a job first", status: "warning" });
+  const handleDownloadPreview = useCallback(() => {
+    if (!pdfPreview) {
       return;
     }
 
-    setSealBusy("generate");
-    try {
-      const response = await fetch("/api/seal/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: selectedJobId }),
-      });
+    const anchor = document.createElement("a");
+    anchor.href = pdfPreview.url;
+    anchor.download = pdfPreview.fileName;
+    anchor.click();
+  }, [pdfPreview]);
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => null);
-        throw new Error(error?.details ?? "Seal generation failed.");
+  const handleClosePreview = useCallback(() => {
+    setPdfPreview((current) => {
+      if (current?.url) {
+        URL.revokeObjectURL(current.url);
       }
+      return null;
+    });
+  }, []);
 
-      const data: { sealNumber?: string } = await response.json();
-      if (!data.sealNumber) {
-        throw new Error("Seal generation failed.");
-      }
+  if (loadingJobs && jobs.length === 0) {
+    return (
+      <ControlTowerLayout>
+        <PageSkeleton cards={4} rows={3} />
+      </ControlTowerLayout>
+    );
+  }
 
-      setSealInput(data.sealNumber);
-      toast({ title: "Seal generated", status: "success" });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Seal generation failed.";
-      toast({ title: "Seal generation failed", description: message, status: "error" });
-    } finally {
-      setSealBusy(null);
-    }
-  }, [selectedJobId, toast]);
+  if (!loadingJobs && jobsError && jobs.length === 0) {
+    return (
+      <ControlTowerLayout>
+        <InlineErrorState
+          title="Documents workspace unavailable"
+          description={jobsError}
+          onRetry={() => void loadJobs()}
+        />
+      </ControlTowerLayout>
+    );
+  }
 
-  const handleAssignSeal = useCallback(
-    async (auto: boolean) => {
-      if (!sealLotId) {
-        toast({ title: "Select a lot", status: "warning" });
-        return;
-      }
-
-      if (!auto && sealInput.trim().length === 0) {
-        toast({ title: "Enter a seal number", status: "warning" });
-        return;
-      }
-
-      setSealBusy("assign");
-      try {
-        const response = await fetch(`/api/lots/${sealLotId}/seal`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(auto ? { auto: true } : { sealNumber: sealInput.trim() }),
-        });
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => null);
-          throw new Error(error?.details ?? "Seal assignment failed.");
-        }
-
-        toast({ title: "Seal assigned", status: "success" });
-        const refreshed = await fetch(`/api/inspection/lots?jobId=${encodeURIComponent(selectedJobId)}`);
-        if (refreshed.ok) {
-          const data: LotRow[] = await refreshed.json();
-          setLots(Array.isArray(data) ? data : []);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Seal assignment failed.";
-        toast({ title: "Seal assignment failed", description: message, status: "error" });
-      } finally {
-        setSealBusy(null);
-      }
-    },
-    [sealInput, sealLotId, selectedJobId, toast]
-  );
+  if (!loadingJobs && jobs.length === 0) {
+    return (
+      <ControlTowerLayout>
+        <EmptyWorkState
+          title="No jobs are ready for document work"
+          description="This workspace only becomes useful when a real job has reached document preparation or sticker output."
+          action={
+            <Button as="a" href="/operations" variant="outline">
+              Review operational queue
+            </Button>
+          }
+        />
+      </ControlTowerLayout>
+    );
+  }
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={6}>
+      <VStack align="stretch" spacing={6} h="full" overflow="hidden">
         <Box>
           <HStack spacing={2} mb={2} flexWrap="wrap">
-            <Badge colorScheme="teal" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              PACKING LIST
+            <Badge colorScheme="brand" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              DOCUMENT OUTPUT
             </Badge>
-            <Badge colorScheme="gray" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              TEXT-ONLY PDF
+            <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              PREVIEW FIRST
             </Badge>
           </HStack>
-          <Heading size="lg" color="gray.900">
-            Reports
+          <Heading size="lg" color="text.primary">
+            Documents & Reports
           </Heading>
-          <Text color="gray.600" mt={2} maxW="3xl">
-            Generate packing and sticker reports.
-          </Text>
         </Box>
 
-        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={4}>
+        <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
           {[
-            { label: "Total Bags", value: totals.totalBags },
-            { label: "Total Gross", value: formatWeight(totals.totalGross) },
-            { label: "Total Net", value: formatWeight(totals.totalNet) },
-            { label: "Tare Total", value: formatWeight(totals.totalTare) },
+            { label: "Selected Job", value: selectedJob?.inspectionSerialNumber ?? "—", tone: "brand" },
+            { label: "Lots Reviewed", value: String(totals.totalLots), tone: "blue" },
+            { label: "Total Net", value: formatWeight(totals.totalNet), tone: "green" },
+            { label: "Seal Coverage", value: `${totals.sealedLots}/${totals.totalLots || 0}`, tone: "orange" },
           ].map((item) => (
-            <Card key={item.label} variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+            <Card key={item.label} variant="outline" borderRadius="2xl">
               <CardBody p={5}>
-                <Text fontSize="sm" color="gray.500">
+                <Text fontSize="sm" color="text.muted">
                   {item.label}
                 </Text>
-                <Text fontSize="2xl" fontWeight="bold" color="gray.900" mt={2}>
+                <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
                   {item.value}
                 </Text>
+                <Badge mt={3} colorScheme={item.tone} variant="subtle" borderRadius="full" px={2.5} py={1}>
+                  Live workspace state
+                </Badge>
               </CardBody>
             </Card>
           ))}
         </SimpleGrid>
 
-        <Stack direction={{ base: "column", lg: "row" }} spacing={4} align="stretch">
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm" flex={1}>
-            <CardBody p={6}>
-              <HStack justify="space-between" align="start" flexWrap="wrap" spacing={3}>
-                <Box>
-                  <Heading size="md" color="gray.900">
-                    Packing List Table
-                  </Heading>
-                  <Text fontSize="sm" color="gray.600" mt={1}>
-                    Lot-level weights and seal identifiers are generated from the compliance data model.
-                  </Text>
-                </Box>
-                <Badge colorScheme={getStatusColor(selectedJob?.status ?? "PENDING")} variant="subtle" borderRadius="full" px={3} py={1}>
-                  {selectedJob?.status ?? "NO JOB"}
-                </Badge>
-              </HStack>
+        <ProcessFlowLayout
+          contextLabel="Document Status"
+          tracker={<WorkflowStepTracker steps={flowSteps} title="Document Flow" compact />}
+          activeStep={
+            <VStack align="stretch" spacing={4}>
+              {activeStep === "setup" ? (
+                <Card variant="outline" borderRadius="2xl">
+                <CardBody p={6}>
+                  <HStack justify="space-between" align="start" flexWrap="wrap" spacing={3}>
+                    <Box>
+                      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                        Step 1
+                      </Text>
+                      <Heading size="md" color="text.primary" mt={1}>
+                        Document setup
+                      </Heading>
+                    </Box>
+                    <Badge colorScheme={getStatusColor(selectedJob?.status ?? "PENDING")} variant="subtle" borderRadius="full" px={3} py={1}>
+                      {selectedJob?.status ?? "NO JOB"}
+                    </Badge>
+                  </HStack>
 
-              <HStack mt={5} spacing={3} flexWrap="wrap">
-                <Select
-                  maxW={{ base: "full", md: "56" }}
-                  borderRadius="xl"
-                  value={selectedDocumentType}
-                  onChange={(event) =>
-                    setSelectedDocumentType(event.target.value as ReportPreferences["defaultDocumentType"])
-                  }
-                >
-                  {REPORT_DOCUMENT_TYPES.map((documentType) => (
-                    <option key={documentType} value={documentType}>
-                      {getReportDocumentTypeLabel(documentType)} Format
-                    </option>
-                  ))}
-                </Select>
-                <Select
-                  maxW={{ base: "full", md: "72" }}
-                  value={selectedJobId}
-                  onChange={(event) => setSelectedJobId(event.target.value)}
-                  borderRadius="xl"
-                  isDisabled={loadingJobs}
-                >
-                  {jobs.map((job) => (
-                    <option key={job.id} value={job.id}>
-                      {job.inspectionSerialNumber} - {job.clientName}
-                    </option>
-                  ))}
-                </Select>
+                  <Box mt={5}>
+                    <FilterRail>
+                      <Select
+                        maxW={{ base: "full", md: "72" }}
+                        value={selectedJobId}
+                        onChange={(event) => setSelectedJobId(event.target.value)}
+                        borderRadius="xl"
+                        isDisabled={loadingJobs}
+                      >
+                        {jobs.map((job) => (
+                          <option key={job.id} value={job.id}>
+                            {job.inspectionSerialNumber} - {job.clientName}
+                          </option>
+                        ))}
+                      </Select>
+                      <Select
+                        maxW={{ base: "full", md: "56" }}
+                        borderRadius="xl"
+                        value={selectedDocumentType}
+                        onChange={(event) =>
+                          setSelectedDocumentType(event.target.value as ReportPreferences["defaultDocumentType"])
+                        }
+                      >
+                        {REPORT_DOCUMENT_TYPES.map((documentType) => (
+                          <option key={documentType} value={documentType}>
+                            {getReportDocumentTypeLabel(documentType)} Format
+                          </option>
+                        ))}
+                      </Select>
+                      <Button
+                        borderRadius="xl"
+                        onClick={() => void handlePreviewDocument("packing")}
+                        isLoading={generating === "packing"}
+                        isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
+                      >
+                        Preview packing list
+                      </Button>
+                      <Button
+                        variant="outline"
+                        borderRadius="xl"
+                        onClick={() => void handlePreviewDocument("stickers")}
+                        isLoading={generating === "stickers"}
+                        isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
+                      >
+                        Preview stickers
+                      </Button>
+                    </FilterRail>
+                  </Box>
+
+                  {previewError ? (
+                    <Box mt={3} borderRadius="xl" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
+                      <Text fontSize="sm" color="red.700">{previewError}</Text>
+                      <HStack spacing={2} mt={2}>
+                        {lastPreviewKind ? (
+                          <Button size="xs" variant="ghost" onClick={() => void handlePreviewDocument(lastPreviewKind)}>
+                            Retry {lastPreviewKind === "packing" ? "packing list" : "stickers"}
+                          </Button>
+                        ) : null}
+                        <Button size="xs" variant="ghost" onClick={() => setPreviewError(null)}>
+                          Clear
+                        </Button>
+                      </HStack>
+                    </Box>
+                  ) : null}
+
+                  {masterError ? (
+                    <Box mt={3} borderRadius="xl" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
+                      <Text fontSize="sm" color="red.700">{masterError}</Text>
+                      <HStack spacing={2} mt={2}>
+                        <Button size="xs" variant="ghost" onClick={() => void loadDispatchMasters()} isLoading={masterBusy === "load"}>
+                          Retry master load
+                        </Button>
+                        <Button size="xs" variant="ghost" onClick={() => setMasterError(null)}>
+                          Clear
+                        </Button>
+                      </HStack>
+                    </Box>
+                  ) : null}
+
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mt={5}>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Client</FormLabel>
+                      <Select
+                        borderRadius="xl"
+                        value={selectedClientName}
+                        onChange={(event) => setSelectedClientName(event.target.value)}
+                        isDisabled={masterBusy === "load"}
+                      >
+                        <option value="">Select client</option>
+                        {clients.map((entry) => (
+                          <option key={entry.clientName} value={entry.clientName}>
+                            {entry.clientName}
+                          </option>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Item</FormLabel>
+                      <Select
+                        borderRadius="xl"
+                        value={selectedItemName}
+                        onChange={(event) => setSelectedItemName(event.target.value)}
+                        isDisabled={masterBusy === "load"}
+                      >
+                        <option value="">Select item</option>
+                        {items.map((entry) => (
+                          <option key={entry.itemName} value={entry.itemName}>
+                            {entry.itemName}
+                          </option>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Bill to</FormLabel>
+                      <Input borderRadius="xl" value={billToAddress} onChange={(event) => setBillToAddress(event.target.value)} />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Ship to</FormLabel>
+                      <Input borderRadius="xl" value={shipToAddress} onChange={(event) => setShipToAddress(event.target.value)} />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Transporter</FormLabel>
+                      <Select
+                        borderRadius="xl"
+                        value={selectedTransporterName}
+                        onChange={(event) => setSelectedTransporterName(event.target.value)}
+                        isDisabled={masterBusy === "load"}
+                      >
+                        <option value="">Select transporter</option>
+                        {transporters.map((entry) => (
+                          <option key={entry.transporterName} value={entry.transporterName}>
+                            {entry.transporterName}
+                          </option>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl isRequired>
+                      <FormLabel fontSize="sm">Vehicle number</FormLabel>
+                      <Input
+                        borderRadius="xl"
+                        value={vehicleNo}
+                        onChange={(event) => setVehicleNo(event.target.value.toUpperCase())}
+                        placeholder="Enter vehicle number"
+                      />
+                    </FormControl>
+                  </SimpleGrid>
+                  <HStack mt={5} justify="flex-end">
+                    <Button
+                      rightIcon={<ChevronRight size={16} />}
+                      onClick={() => setActiveStep("review")}
+                      isDisabled={loadingLots}
+                    >
+                      Next
+                    </Button>
+                  </HStack>
+                </CardBody>
+              </Card>
+              ) : null}
+
+              {activeStep === "review" ? (
+                <Card variant="outline" borderRadius="2xl">
+                <CardBody p={6}>
+                  <Stack
+                    direction={{ base: "column", md: "row" }}
+                    justify="space-between"
+                    align={{ base: "start", md: "center" }}
+                    spacing={3}
+                    mb={5}
+                  >
+                    <Box>
+                      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                        Step 2
+                      </Text>
+                      <Heading size="md" color="text.primary" mt={1}>
+                        Lot review
+                      </Heading>
+                    </Box>
+                    <Button as="a" href="/master" variant="outline" borderRadius="xl">
+                      Open master registry
+                    </Button>
+                  </Stack>
+
+                  {lotsError ? (
+                    <InlineErrorState
+                      title="Lot review is unavailable"
+                      description={lotsError}
+                      onRetry={() => void loadLots()}
+                    />
+                  ) : loadingLots ? (
+                    <PageSkeleton cards={3} rows={1} />
+                  ) : lots.length === 0 ? (
+                    <EmptyWorkState
+                      title="No lot rows available"
+                      description="The selected job does not have any completed lot data to include in the report yet."
+                    />
+                  ) : (
+                    <VStack align="stretch" spacing={4}>
+                      <EnterpriseDataTable
+                        rows={lots}
+                        columns={lotColumns}
+                        rowKey={(lot) => lot.id}
+                        filters={[
+                          { id: "lots", label: "Lots", value: String(totals.totalLots) },
+                          { id: "sealed", label: "Sealed", value: `${totals.sealedLots}/${totals.totalLots}` },
+                        ]}
+                        emptyLabel="No lot records available."
+                        recordCard={{
+                          title: (lot) => lot.lotNumber,
+                          subtitle: (lot) => `Seal: ${lot.sealNumber ?? "Pending in lot workflow"}`,
+                          fields: [
+                            { id: "gross", label: "Gross", render: (lot) => formatWeight(lot.grossWeight) },
+                            { id: "tare", label: "Tare", render: (lot) => formatWeight(lot.tareWeight) },
+                            { id: "net", label: "Net", render: (lot) => formatWeight(lot.netWeight) },
+                          ],
+                        }}
+                      />
+
+                      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                        {[
+                          { label: "Total gross", value: formatWeight(totals.totalGross) },
+                          { label: "Total tare", value: formatWeight(totals.totalTare) },
+                          { label: "Total net", value: formatWeight(totals.totalNet) },
+                        ].map((item) => (
+                          <Card key={item.label} variant="outline" borderRadius="xl">
+                            <CardBody p={4}>
+                              <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
+                                {item.label}
+                              </Text>
+                              <Text fontSize="2xl" fontWeight="bold" mt={1} color="text.primary">
+                                {item.value}
+                              </Text>
+                            </CardBody>
+                          </Card>
+                        ))}
+                      </SimpleGrid>
+                    </VStack>
+                  )}
+                  <HStack mt={5} justify="space-between">
+                    <Button variant="outline" leftIcon={<ChevronLeft size={16} />} onClick={() => setActiveStep("setup")}>
+                      Back
+                    </Button>
+                    <Button rightIcon={<ChevronRight size={16} />} onClick={() => setActiveStep("preview")}>
+                      Next
+                    </Button>
+                  </HStack>
+                </CardBody>
+              </Card>
+              ) : null}
+
+              {activeStep === "preview" ? (
+                <Card variant="outline" borderRadius="2xl">
+                <CardBody p={6}>
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                    Step 3
+                  </Text>
+                  <Heading size="md" color="text.primary" mt={1}>
+                    Preview and download
+                  </Heading>
+                  <HStack spacing={3} mt={4} flexWrap="wrap">
+                    <Button
+                      onClick={() => void handlePreviewDocument("packing")}
+                      isLoading={generating === "packing"}
+                      isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
+                    >
+                      Open packing preview
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void handlePreviewDocument("stickers")}
+                      isLoading={generating === "stickers"}
+                      isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
+                    >
+                      Open sticker preview
+                    </Button>
+                    {pdfPreview ? (
+                      <Badge colorScheme="green" variant="subtle" borderRadius="full" px={3} py={1}>
+                        Latest preview ready
+                      </Badge>
+                    ) : (
+                      <Badge colorScheme="gray" variant="subtle" borderRadius="full" px={3} py={1}>
+                        Generate after setup
+                      </Badge>
+                    )}
+                  </HStack>
+                  <HStack mt={5}>
+                    <Button variant="outline" leftIcon={<ChevronLeft size={16} />} onClick={() => setActiveStep("review")}>
+                      Back
+                    </Button>
+                  </HStack>
+                </CardBody>
+              </Card>
+              ) : null}
+            </VStack>
+          }
+          context={
+            <VStack align="stretch" spacing={4}>
+              <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl" bg="bg.rail">
+                <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
+                  Active job
+                </Text>
+                <Text fontWeight="semibold" color="text.primary" mt={1}>
+                  {selectedJob?.inspectionSerialNumber ?? "—"}
+                </Text>
+              </Box>
+
+              <VStack align="stretch" spacing={3}>
+                <SectionHint label="Document type" value={getReportDocumentTypeLabel(selectedDocumentType)} />
+                <SectionHint label="Commercial item" value={selectedItemName || selectedJob?.commodity || "Pending"} />
+                <SectionHint label="Transporter" value={selectedTransporterName || "Pending"} />
+                <SectionHint label="Vehicle number" value={vehicleNo || "Required before packing list"} />
+                <SectionHint label="Preview state" value={pdfPreview ? "Ready to download" : "Not generated"} />
+              </VStack>
+
+              <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl">
+                <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
+                  Readiness checks
+                </Text>
+                <VStack align="stretch" spacing={3} mt={3}>
+                  <SectionHint label="Job selected" value={selectedJobId ? "Yes" : "No"} />
+                  <SectionHint label="Lot data loaded" value={lots.length > 0 ? "Yes" : "No"} />
+                  <SectionHint label="Vehicle entered" value={vehicleNo.trim() ? "Yes" : "No"} />
+                  <SectionHint
+                    label="Seal exceptions"
+                    value={totals.sealedLots === totals.totalLots ? "None" : "Resolve in lot workflow"}
+                  />
+                </VStack>
+              </Box>
+
+              <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl">
+                <Text fontSize="sm" fontWeight="semibold" color="text.primary">
+                  Route ownership
+                </Text>
+                <HStack spacing={3} mt={4}>
+                  <Button as="a" href="/operations" size="sm" variant="outline">
+                    Open operations
+                  </Button>
+                  <Button as="a" href="/master" size="sm" variant="ghost">
+                    Open masters
+                  </Button>
+                </HStack>
+              </Box>
+            </VStack>
+          }
+          mobileActions={
+            <HStack spacing={3} align="stretch" flexWrap="wrap">
+              {activeStep !== "setup" ? (
                 <Button
-                  colorScheme="teal"
-                  borderRadius="xl"
-                  onClick={() => void handleDownload("packing")}
+                  variant="outline"
+                  leftIcon={<ChevronLeft size={16} />}
+                  onClick={() => setActiveStep(activeStep === "preview" ? "review" : "setup")}
+                >
+                  Back
+                </Button>
+              ) : null}
+              {activeStep !== "preview" ? (
+                <Button
+                  rightIcon={<ChevronRight size={16} />}
+                  onClick={() => setActiveStep(activeStep === "setup" ? "review" : "preview")}
+                >
+                  Next
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => void handlePreviewDocument("packing")}
                   isLoading={generating === "packing"}
                   isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
                 >
-                  Download Packing List
+                  Preview
                 </Button>
-                <Button
-                  variant="outline"
-                  borderRadius="xl"
-                  onClick={() => void handleDownload("stickers")}
-                  isLoading={generating === "stickers"}
-                  isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
-                >
-                  Download Stickers
-                </Button>
-              </HStack>
-
-              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mt={5}>
-                <FormControl>
-                  <FormLabel fontSize="sm">Client Master</FormLabel>
-                  <Select
-                    borderRadius="xl"
-                    value={selectedClientName}
-                    onChange={(event) => setSelectedClientName(event.target.value)}
-                    isDisabled={masterBusy === "load"}
-                  >
-                    <option value="">Select client</option>
-                    {clients.map((entry) => (
-                      <option key={entry.clientName} value={entry.clientName}>
-                        {entry.clientName}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel fontSize="sm">Item Name Master</FormLabel>
-                  <Select
-                    borderRadius="xl"
-                    value={selectedItemName}
-                    onChange={(event) => setSelectedItemName(event.target.value)}
-                    isDisabled={masterBusy === "load"}
-                  >
-                    <option value="">Select item</option>
-                    {items.map((entry) => (
-                      <option key={entry.itemName} value={entry.itemName}>
-                        {entry.itemName}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel fontSize="sm">Bill To</FormLabel>
-                  <Input borderRadius="xl" value={billToAddress} onChange={(event) => setBillToAddress(event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel fontSize="sm">Ship To</FormLabel>
-                  <Input borderRadius="xl" value={shipToAddress} onChange={(event) => setShipToAddress(event.target.value)} />
-                </FormControl>
-                <FormControl>
-                  <FormLabel fontSize="sm">Transporter Master</FormLabel>
-                  <Select
-                    borderRadius="xl"
-                    value={selectedTransporterName}
-                    onChange={(event) => setSelectedTransporterName(event.target.value)}
-                    isDisabled={masterBusy === "load"}
-                  >
-                    <option value="">Select transporter</option>
-                    {transporters.map((entry) => (
-                      <option key={entry.transporterName} value={entry.transporterName}>
-                        {entry.transporterName}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl isRequired>
-                  <FormLabel fontSize="sm">Vehicle No (manual every time)</FormLabel>
-                  <Input
-                    borderRadius="xl"
-                    value={vehicleNo}
-                    onChange={(event) => setVehicleNo(event.target.value.toUpperCase())}
-                    placeholder="Enter vehicle number"
-                  />
-                </FormControl>
-              </SimpleGrid>
-              <Text mt={3} fontSize="sm" color="gray.500">
-                Manage client, transporter, and item records from Master.
-              </Text>
-
-              <Box mt={5} borderWidth="1px" borderColor="gray.200" borderRadius="2xl" overflowX="auto">
-                <TableContainer>
-                  <Table variant="simple" size="sm">
-                    <Thead bg="gray.50">
-                      <Tr>
-                        <Th>Lot Number</Th>
-                        <Th>Seal Number</Th>
-                        <Th isNumeric>Gross Weight</Th>
-                        <Th isNumeric>Tare Weight</Th>
-                        <Th isNumeric>Net Weight</Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {loadingLots ? (
-                        <Tr>
-                          <Td colSpan={5}>
-                            <HStack py={6} justify="center">
-                              <Spinner size="sm" />
-                              <Text fontSize="sm" color="gray.600">
-                                Loading lots...
-                              </Text>
-                            </HStack>
-                          </Td>
-                        </Tr>
-                      ) : lots.length > 0 ? (
-                        lots.map((lot) => (
-                          <Tr key={lot.lotNumber}>
-                            <Td fontWeight="semibold">{lot.lotNumber}</Td>
-                            <Td>{lot.sealNumber ?? "—"}</Td>
-                            <Td isNumeric>{formatWeight(lot.grossWeight)}</Td>
-                            <Td isNumeric>{formatWeight(lot.tareWeight)}</Td>
-                            <Td isNumeric>{formatWeight(lot.netWeight)}</Td>
-                          </Tr>
-                        ))
-                      ) : (
-                        <Tr>
-                          <Td colSpan={5}>
-                            <Text py={6} color="gray.500" textAlign="center">
-                              No records.
-                            </Text>
-                          </Td>
-                        </Tr>
-                      )}
-                    </Tbody>
-                  </Table>
-                </TableContainer>
-              </Box>
-
-              <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} mt={5}>
-                <Card variant="outline" borderRadius="xl">
-                  <CardBody p={4}>
-                    <Text fontSize="xs" color="gray.500" textTransform="uppercase">
-                      Total Bags
-                    </Text>
-                    <Text fontSize="2xl" fontWeight="bold" mt={1}>
-                      {totals.totalBags}
-                    </Text>
-                  </CardBody>
-                </Card>
-                <Card variant="outline" borderRadius="xl">
-                  <CardBody p={4}>
-                    <Text fontSize="xs" color="gray.500" textTransform="uppercase">
-                      Total Gross
-                    </Text>
-                    <Text fontSize="2xl" fontWeight="bold" mt={1}>
-                      {formatWeight(totals.totalGross)}
-                    </Text>
-                  </CardBody>
-                </Card>
-                <Card variant="outline" borderRadius="xl">
-                  <CardBody p={4}>
-                    <Text fontSize="xs" color="gray.500" textTransform="uppercase">
-                      Total Net
-                    </Text>
-                    <Text fontSize="2xl" fontWeight="bold" mt={1}>
-                      {formatWeight(totals.totalNet)}
-                    </Text>
-                  </CardBody>
-                </Card>
-              </SimpleGrid>
-            </CardBody>
-          </Card>
-
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm" w={{ base: "full", lg: "sm" }}>
-            <CardBody p={6}>
-              <Heading size="md" color="gray.900">
-                Traceability Control
-              </Heading>
-              <Text fontSize="sm" color="gray.600" mt={2}>
-                Seal assignment, photo capture, and report generation are enforced by backend validation.
-              </Text>
-
-              <VStack align="stretch" spacing={3} mt={5}>
-                <Box p={4} borderWidth="1px" borderColor="gray.200" borderRadius="xl" bg="gray.50">
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">
-                    Selected Job
-                  </Text>
-                  <Text fontWeight="semibold" color="gray.900" mt={1}>
-                    {selectedJob?.inspectionSerialNumber ?? "—"}
-                  </Text>
-                  <Text fontSize="sm" color="gray.600" mt={1}>
-                    {selectedJob?.clientName ?? "No record selected"}
-                  </Text>
-                </Box>
-                <Box p={4} borderWidth="1px" borderColor="gray.200" borderRadius="xl">
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">
-                    Seal Coverage
-                  </Text>
-                  <Text fontSize="2xl" fontWeight="bold" color="gray.900" mt={1}>
-                    {lots.filter((lot) => Boolean(lot.sealNumber)).length}/{lots.length}
-                  </Text>
-                </Box>
-                <Box p={4} borderWidth="1px" borderColor="gray.200" borderRadius="xl">
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">
-                    Data Mode
-                  </Text>
-                  <Text fontWeight="semibold" color="gray.900" mt={1}>
-                    Text-only packing list
-                  </Text>
-                  <Text fontSize="sm" color="gray.600" mt={1}>
-                    Barcode rendering is isolated to sticker PDF output.
-                  </Text>
-                </Box>
-                <Box p={4} borderWidth="1px" borderColor="gray.200" borderRadius="xl">
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase">
-                    Seal Assignment
-                  </Text>
-                  <Stack spacing={3} mt={3}>
-                    <Select
-                      size="sm"
-                      borderRadius="xl"
-                      value={sealLotId}
-                      onChange={(event) => setSealLotId(event.target.value)}
-                    >
-                      {lots.map((lot) => (
-                        <option key={lot.lotNumber} value={lot.id}>
-                          {lot.lotNumber}
-                        </option>
-                      ))}
-                    </Select>
-                    <Input
-                      size="sm"
-                      borderRadius="xl"
-                      placeholder="Manual seal number"
-                      value={sealInput}
-                      onChange={(event) => setSealInput(event.target.value)}
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      borderRadius="xl"
-                      onClick={() => void handleGenerateSeal()}
-                      isLoading={sealBusy === "generate"}
-                      isDisabled={loadingJobs || !selectedJobId}
-                    >
-                      Generate Seal
-                    </Button>
-                    <Button
-                      size="sm"
-                      colorScheme="teal"
-                      borderRadius="xl"
-                      onClick={() => void handleAssignSeal(false)}
-                      isLoading={sealBusy === "assign"}
-                      isDisabled={loadingJobs || !sealLotId}
-                    >
-                      Assign Seal
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      borderRadius="xl"
-                      onClick={() => void handleAssignSeal(true)}
-                      isLoading={sealBusy === "assign"}
-                      isDisabled={loadingJobs || !sealLotId}
-                    >
-                      Auto Assign Seal
-                    </Button>
-                  </Stack>
-                </Box>
-              </VStack>
-            </CardBody>
-          </Card>
-        </Stack>
+              )}
+            </HStack>
+          }
+        />
       </VStack>
+
+      <Modal isOpen={Boolean(pdfPreview)} onClose={handleClosePreview} size="full" motionPreset="slideInBottom">
+        <ModalOverlay bg="blackAlpha.600" />
+        <ModalContent borderRadius={{ base: 0, md: "2xl" }} overflow="hidden">
+          <ModalHeader>
+            <Stack spacing={1}>
+              <Heading size="sm" color="text.primary">
+                {pdfPreview?.kind === "stickers" ? "Sticker preview" : "Packing list preview"}
+              </Heading>
+            </Stack>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody bg="bg.canvas" p={{ base: 0, md: 4 }}>
+            {pdfPreview ? (
+              <Box
+                as="iframe"
+                title={pdfPreview.fileName}
+                src={pdfPreview.url}
+                w="full"
+                h={{ base: "calc(100vh - 180px)", md: "calc(100vh - 220px)" }}
+                border="0"
+                bg="white"
+              />
+            ) : null}
+          </ModalBody>
+          <ModalFooter borderTopWidth="1px" borderColor="border.subtle" gap={3}>
+            <Button variant="outline" onClick={handleClosePreview}>
+              Back to setup
+            </Button>
+            <Button onClick={handleDownloadPreview} isLoading={previewing !== null}>
+              Download {pdfPreview?.kind === "stickers" ? "stickers" : "PDF"}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </ControlTowerLayout>
   );
 }

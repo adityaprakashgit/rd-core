@@ -427,7 +427,7 @@ function PlaygroundPageContent() {
         let resolvedJobId = searchParams.get("jobId") ?? "";
 
         if (!resolvedJobId) {
-          const jobsRes = await fetch("/api/jobs/my");
+          const jobsRes = await fetch("/api/jobs?view=my");
           if (jobsRes.ok) {
             const jobs = (await jobsRes.json()) as Array<{ id: string }>;
             resolvedJobId = jobs[0]?.id ?? "";
@@ -1063,9 +1063,6 @@ function PlaygroundPageContent() {
             <Heading size="lg" color="gray.900">
               Industrial R&D Execution Board
             </Heading>
-            <Text color="gray.600" maxW="5xl">
-              Build and run controlled experiments with drag-and-drop steps, chemical and asset assignments, timed execution, packet-to-trial flow, and manual final lock.
-            </Text>
           </VStack>
 
           <HStack spacing={2} wrap="wrap">
