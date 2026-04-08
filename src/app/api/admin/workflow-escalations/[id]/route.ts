@@ -22,15 +22,16 @@ function parseStatus(value: unknown): WorkflowEscalationStatus | null {
     return null;
   }
 
-  if (![
-    WorkflowEscalationStatus.ACKNOWLEDGED,
-    WorkflowEscalationStatus.RESOLVED,
-    WorkflowEscalationStatus.DISMISSED,
-  ].includes(value as WorkflowEscalationStatus)) {
-    return null;
+  switch (value) {
+    case WorkflowEscalationStatus.ACKNOWLEDGED:
+      return WorkflowEscalationStatus.ACKNOWLEDGED;
+    case WorkflowEscalationStatus.RESOLVED:
+      return WorkflowEscalationStatus.RESOLVED;
+    case WorkflowEscalationStatus.DISMISSED:
+      return WorkflowEscalationStatus.DISMISSED;
+    default:
+      return null;
   }
-
-  return value as WorkflowEscalationStatus;
 }
 
 export async function PATCH(

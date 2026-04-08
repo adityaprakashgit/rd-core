@@ -80,7 +80,7 @@ export function buildDuplicateJobEscalation(input: {
   }>;
   overrideRequested: boolean;
 }) {
-  return buildWorkflowEscalationCreateData({
+  return {
     companyId: input.companyId,
     raisedByUserId: input.raisedByUserId,
     type: WorkflowEscalationType.DUPLICATE_JOB,
@@ -100,7 +100,7 @@ export function buildDuplicateJobEscalation(input: {
         createdAt: candidate.createdAt.toISOString(),
       })),
     },
-  });
+  } satisfies WorkflowEscalationCreateInput;
 }
 
 export function buildLotConflictEscalation(input: {
@@ -111,7 +111,7 @@ export function buildLotConflictEscalation(input: {
   expectedUpdatedAt: string;
   actualUpdatedAt: string;
 }) {
-  return buildWorkflowEscalationCreateData({
+  return {
     companyId: input.companyId,
     raisedByUserId: input.raisedByUserId,
     jobId: input.jobId,
@@ -123,7 +123,7 @@ export function buildLotConflictEscalation(input: {
       expectedUpdatedAt: input.expectedUpdatedAt,
       actualUpdatedAt: input.actualUpdatedAt,
     },
-  });
+  } satisfies WorkflowEscalationCreateInput;
 }
 
 export function buildPackingPolicyBlockedEscalation(input: {
@@ -134,7 +134,7 @@ export function buildPackingPolicyBlockedEscalation(input: {
   policyCode: string;
   policyDetails: string;
 }) {
-  return buildWorkflowEscalationCreateData({
+  return {
     companyId: input.companyId,
     raisedByUserId: input.raisedByUserId,
     jobId: input.jobId,
@@ -146,5 +146,5 @@ export function buildPackingPolicyBlockedEscalation(input: {
       policyCode: input.policyCode,
       policyDetails: input.policyDetails,
     },
-  });
+  } satisfies WorkflowEscalationCreateInput;
 }

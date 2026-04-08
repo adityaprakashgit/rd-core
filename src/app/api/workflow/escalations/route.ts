@@ -1,4 +1,5 @@
 import {
+  Prisma,
   WorkflowEscalationSeverity,
   WorkflowEscalationType,
 } from "@prisma/client";
@@ -38,6 +39,21 @@ function parseSeverity(value: unknown): WorkflowEscalationSeverity {
   return (Object.values(WorkflowEscalationSeverity) as string[]).includes(value)
     ? (value as WorkflowEscalationSeverity)
     : WorkflowEscalationSeverity.MEDIUM;
+}
+
+function isInputJsonValue(value: unknown): value is Prisma.InputJsonValue {
+  if (value === null) return true;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.every((item) => isInputJsonValue(item));
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).every((item) => isInputJsonValue(item));
+  }
+  return false;
+}
+
+function parseDetailsJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === undefined) return undefined;
+  return isInputJsonValue(value) ? value : undefined;
 }
 
 export async function POST(request: NextRequest) {
@@ -86,7 +102,7 @@ export async function POST(request: NextRequest) {
       type,
       severity,
       title,
-      detailsJson: payload.detailsJson,
+      detailsJson: parseDetailsJson(payload.detailsJson),
       overrideReason,
       jobId,
       lotId,
