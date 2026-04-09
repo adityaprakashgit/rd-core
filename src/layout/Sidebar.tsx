@@ -16,7 +16,11 @@ import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { normalizeRole, type NormalizedRole } from "@/lib/role";
-import { MODULE_DEFINITIONS } from "@/lib/ui-navigation";
+import {
+  getVisibleModules,
+  isModuleActive,
+  resolveModuleHref,
+} from "@/lib/ui-navigation";
 
 export type SidebarProps = {
   role: string | null | undefined;
@@ -39,9 +43,7 @@ export function Sidebar({
   const router = useRouter();
 
   const normalizedRole = normalizeRole(role);
-  const visibleModules = MODULE_DEFINITIONS.filter((item) =>
-    normalizedRole ? item.roles.includes(normalizedRole as NormalizedRole) : false
-  );
+  const visibleModules = getVisibleModules(normalizedRole as NormalizedRole | null);
 
   return (
     <Box
@@ -82,7 +84,8 @@ export function Sidebar({
 
         <VStack align="stretch" spacing={1.5} flex={1}>
           {visibleModules.map((item) => {
-            const active = item.activeMatch.test(pathname);
+            const active = isModuleActive(item, pathname, normalizedRole as NormalizedRole | null);
+            const destination = resolveModuleHref(item, normalizedRole as NormalizedRole | null);
             const content = (
               <HStack spacing={3} justify={collapsed ? "center" : "start"}>
                 <Icon as={item.icon} boxSize={4} />
@@ -96,7 +99,7 @@ export function Sidebar({
             return (
               <Button
                 key={item.label}
-                onClick={() => router.push(item.href)}
+                onClick={() => router.push(destination)}
                 px={3}
                 py={2}
                 borderRadius="lg"

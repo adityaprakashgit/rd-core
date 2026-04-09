@@ -394,9 +394,18 @@ export function getSuggestedIssueCategoriesFromResponses(
 export function deriveRequiredInspectionMedia(
   items: InspectionChecklistItem[],
   responses: Array<Pick<InspectionChecklistResponse, "checklistItemMasterId" | "responseValue">>,
+  options?: {
+    requiredMediaCategories?: string[];
+  },
 ): InspectionMediaCategory[] {
   const itemById = new Map(items.map((item) => [item.id, item]));
-  const required = new Set<InspectionMediaCategory>(BASE_REQUIRED_INSPECTION_MEDIA);
+  const baseRequiredCategories =
+    options?.requiredMediaCategories && options.requiredMediaCategories.length > 0
+      ? options.requiredMediaCategories
+      : BASE_REQUIRED_INSPECTION_MEDIA;
+  const required = new Set<InspectionMediaCategory>(
+    baseRequiredCategories as InspectionMediaCategory[],
+  );
 
   for (const response of responses) {
     const item = itemById.get(response.checklistItemMasterId);
@@ -417,6 +426,7 @@ export function deriveInspectionAssessment(input: {
   responses: InspectionChecklistResponse[];
   issues: InspectionIssue[];
   mediaCategories: string[];
+  requiredMediaCategories?: string[];
 }) {
   const responseByItemId = new Map(input.responses.map((response) => [response.checklistItemMasterId, response]));
   let identityRiskFlag = false;
@@ -466,7 +476,9 @@ export function deriveInspectionAssessment(input: {
     }
   }
 
-  const requiredMediaCategories = deriveRequiredInspectionMedia(input.items, input.responses);
+  const requiredMediaCategories = deriveRequiredInspectionMedia(input.items, input.responses, {
+    requiredMediaCategories: input.requiredMediaCategories,
+  });
   const uploadedMedia = new Set(input.mediaCategories);
   const missingRequiredMedia = requiredMediaCategories.filter((category) => !uploadedMedia.has(category));
   const samplingBlockedFlag =

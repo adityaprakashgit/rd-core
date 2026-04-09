@@ -7,6 +7,7 @@ import { recordAuditLog } from "@/lib/audit";
 import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { normalizeQuantityMode } from "@/lib/intake-workflow";
 import { isLotVersionConflict, parseExpectedUpdatedAt } from "@/lib/lot-concurrency";
+import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import { buildLotConflictEscalation, enqueueWorkflowEscalationSafe } from "@/lib/workflow-escalation";
 
 function jsonError(error: string, details: string, status: number) {
@@ -196,6 +197,11 @@ export async function POST(req: NextRequest) {
           },
         });
       }
+
+      await recomputeJobWorkflowMilestones(tx, {
+        jobId,
+        companyId: currentUser.companyId,
+      });
 
       return created;
     });

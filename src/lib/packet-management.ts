@@ -192,3 +192,39 @@ export function derivePacketStatus(
 export function sumAllocatedPacketQuantity(packets: PacketRecord[]) {
   return packets.reduce((total, packet) => total + (typeof packet.packetQuantity === "number" ? packet.packetQuantity : 0), 0);
 }
+
+const MASS_UNIT_TO_GRAMS: Record<string, number> = {
+  KG: 1000,
+  G: 1,
+  MG: 0.001,
+};
+
+function normalizeUnit(value: string | null | undefined) {
+  return value?.trim().toUpperCase() ?? null;
+}
+
+export function toComparableQuantity(value: number | null | undefined, unit: string | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  const normalizedUnit = normalizeUnit(unit);
+  if (!normalizedUnit) {
+    return null;
+  }
+  const factor = MASS_UNIT_TO_GRAMS[normalizedUnit];
+  if (factor) {
+    return {
+      value: value * factor,
+      dimension: "MASS" as const,
+      unit: "G",
+    };
+  }
+  if (normalizedUnit === "PCS") {
+    return {
+      value,
+      dimension: "COUNT" as const,
+      unit: "PCS",
+    };
+  }
+  return null;
+}

@@ -15,6 +15,7 @@ import {
 import { buildModuleWorkflowSettingsCreate, canEditSeal, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
+import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import type { SampleRecord } from "@/types/inspection";
 
 export const dynamic = "force-dynamic";
@@ -316,6 +317,10 @@ async function ensureSampleStarted(
   });
 
   await syncLegacySampling(tx, created as unknown as SampleRecord);
+  await recomputeJobWorkflowMilestones(tx, {
+    jobId: lot.jobId,
+    companyId: input.companyId,
+  });
 
   return (await fetchSample(tx, input.lotId)) ?? created;
 }
@@ -635,6 +640,11 @@ export async function PATCH(request: NextRequest) {
 
       await syncLegacySampling(tx, finalized, {
         sealAuto: sealNo !== undefined || markSealed || markLabeled ? sealAuto : undefined,
+      });
+
+      await recomputeJobWorkflowMilestones(tx, {
+        jobId: finalized.jobId,
+        companyId: currentUser.companyId,
       });
 
       return (await fetchSample(tx, lotId)) ?? finalized;

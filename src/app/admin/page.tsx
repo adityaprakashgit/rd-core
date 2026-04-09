@@ -27,6 +27,7 @@ import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/ent
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
 import { EnterpriseStickyTable, FilterSearchStrip, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import { formatHoursDuration, getCurrentMilestoneAgeHours, getCurrentMilestoneStage } from "@/lib/workflow-milestone-display";
 import type { InspectionJob } from "@/types/inspection";
 
 type EscalationRow = {
@@ -52,6 +53,16 @@ type GovernanceRow = {
   owner: string;
   link: string;
   priority: string;
+};
+
+type MilestoneHealthRow = {
+  id: string;
+  jobNumber: string;
+  currentMilestone: string;
+  stageAge: string;
+  owner: string;
+  nextAction: string;
+  link: string;
 };
 
 function formatDate(value: string): string {
@@ -235,7 +246,7 @@ export default function AdminWorkspacePage() {
         queue: "Audit logs",
         pendingAction: `Review timeline for ${job.inspectionSerialNumber || job.jobReferenceNumber || "Job"}`,
         owner: job.assignedTo?.profile?.displayName || "Unassigned",
-        link: `/operations/job/${job.id}`,
+        link: `/jobs/${job.id}/workflow`,
         priority: activeJobs > 0 ? "Medium" : "Low",
       }));
 
@@ -258,6 +269,35 @@ export default function AdminWorkspacePage() {
       documentTemplateRows,
     };
   }, [jobs, rows]);
+
+  const milestoneHealthRows = useMemo<MilestoneHealthRow[]>(() => {
+    return jobs
+      .filter((job) => !["COMPLETED", "DISPATCHED"].includes(job.status))
+      .map((job) => {
+        const currentMilestone = getCurrentMilestoneStage(job);
+        const stageAge = getCurrentMilestoneAgeHours(job);
+        let nextAction = "Open Job Workflow";
+        if (currentMilestone === "Job Created") nextAction = "Create first lot";
+        if (currentMilestone === "Job Started") nextAction = "Submit for final decision";
+        if (currentMilestone === "Sent to Admin") nextAction = "Manager/Admin decision required";
+        if (currentMilestone === "Admin Decision") nextAction = "Complete operations workflow";
+        if (currentMilestone === "Operations Completed") nextAction = "Submit to R&D";
+        return {
+          id: job.id,
+          jobNumber: job.inspectionSerialNumber || job.jobReferenceNumber || "—",
+          currentMilestone,
+          stageAge: stageAge === null ? "Pending" : formatHoursDuration(stageAge),
+          owner: job.assignedTo?.profile?.displayName || "Unassigned",
+          nextAction,
+          link: `/jobs/${job.id}/workflow`,
+        };
+      })
+      .sort((left, right) => {
+        const leftHours = Number.parseInt(left.stageAge, 10) || 0;
+        const rightHours = Number.parseInt(right.stageAge, 10) || 0;
+        return rightHours - leftHours;
+      });
+  }, [jobs]);
 
   return (
     <ControlTowerLayout>
@@ -320,6 +360,36 @@ export default function AdminWorkspacePage() {
 
         {!loading && !error ? (
           <VStack align="stretch" spacing={5}>
+            <VStack align="stretch" spacing={2}>
+              <HStack justify="space-between">
+                <Text fontWeight="semibold">Milestone health</Text>
+                <Badge variant="subtle">{milestoneHealthRows.length}</Badge>
+              </HStack>
+              <EnterpriseStickyTable>
+                <Box p={3}>
+                  <EnterpriseDataTable
+                    rows={milestoneHealthRows}
+                    rowKey={(row) => row.id}
+                    emptyLabel="No active milestone health items."
+                    columns={[
+                      { id: "job", header: "Job Number", render: (row) => row.jobNumber },
+                      { id: "milestone", header: "Current Milestone", render: (row) => row.currentMilestone },
+                      { id: "age", header: "Stage Age", render: (row) => row.stageAge },
+                      { id: "owner", header: "Owner", render: (row) => row.owner },
+                      { id: "action", header: "Next Action", render: (row) => row.nextAction },
+                    ]}
+                    rowActions={[
+                      {
+                        id: "open-job",
+                        label: "Open Job Workflow",
+                        onClick: (row) => router.push(row.link),
+                      },
+                    ]}
+                  />
+                </Box>
+              </EnterpriseStickyTable>
+            </VStack>
+
             {[
               { title: "User and role management", rows: governanceQueues.userRoleRows },
               { title: "Master data", rows: governanceQueues.masterDataRows },
@@ -342,7 +412,15 @@ export default function AdminWorkspacePage() {
                         { id: "queue", header: "Queue", render: (row) => row.queue },
                         { id: "action", header: "Pending Action", render: (row) => row.pendingAction },
                         { id: "owner", header: "Owner", render: (row) => row.owner },
-                        { id: "priority", header: "Priority", render: (row) => <Badge colorScheme={row.priority === "High" ? "red" : row.priority === "Medium" ? "orange" : "gray"}>{row.priority}</Badge> },
+                        {
+                          id: "priority",
+                          header: "Priority",
+                          render: (row) => (
+                            <Badge colorScheme={row.priority === "High" ? "red" : row.priority === "Medium" ? "orange" : "gray"}>
+                              {row.priority}
+                            </Badge>
+                          ),
+                        },
                       ]}
                       rowActions={[
                         {

@@ -11,6 +11,7 @@ import {
   isValidPacketCount,
   normalizePacketMediaType,
   sumAllocatedPacketQuantity,
+  toComparableQuantity,
   type PacketStatus,
 } from "@/lib/packet-management";
 import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
@@ -18,6 +19,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationError, authorize } from "@/lib/rbac";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { deriveSampleStatus } from "@/lib/sample-management";
+import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import type { PacketRecord, SampleRecord } from "@/types/inspection";
 
 export const dynamic = "force-dynamic";
@@ -443,8 +445,17 @@ export async function POST(request: NextRequest) {
     if (message === "PACKET_UNIT_REQUIRED") {
       return jsonError("Validation Error", "Packet unit is required when quantity is entered.", 422);
     }
-    if (message === "PACKET_QUANTITY_EXCEEDED") {
-      return jsonError("Validation Error", "Total packet quantity exceeds sample quantity.", 422);
+    if (message.startsWith("PACKET_QUANTITY_EXCEEDED:")) {
+      const [, projectedRaw = "", sampleRaw = ""] = message.split(":");
+      const projected = projectedRaw.trim();
+      const sample = sampleRaw.trim();
+      return jsonError(
+        "Validation Error",
+        projected && sample
+          ? `Projected packet total ${projected} exceeds sample quantity ${sample}.`
+          : "Total packet quantity exceeds sample quantity.",
+        422,
+      );
     }
     if (error && typeof error === "object" && "code" in error && String((error as { code?: unknown }).code) === "P2002") {
       return jsonError("Conflict Action", "A packet identity conflict occurred. Please try again.", 409);
@@ -484,6 +495,7 @@ export async function PATCH(request: NextRequest) {
       const allocationStatus = body?.allocationStatus !== undefined ? normalizeText(body.allocationStatus) : undefined;
       const allocatedToType = body?.allocatedToType !== undefined ? normalizeText(body.allocatedToType) : undefined;
       const allocatedToId = body?.allocatedToId !== undefined ? normalizeText(body.allocatedToId) : undefined;
+      const handedOverToRndTo = body?.handedOverToRndTo !== undefined ? normalizeText(body.handedOverToRndTo) : undefined;
       const markLabeled = body?.markLabeled === true;
       const markSealed = body?.markSealed === true;
       const markAvailable = body?.markAvailable === true;
@@ -509,13 +521,44 @@ export async function PATCH(request: NextRequest) {
       if (workflowPolicy.packet.packetWeightRequired && markSubmittedToRnd && (!nextQuantity || !nextUnit)) {
         throw new Error("PACKET_WEIGHT_REQUIRED");
       }
+      if (markSubmittedToRnd && !handedOverToRndTo) {
+        throw new Error("RND_HANDOVER_TARGET_REQUIRED");
+      }
+      if (markSubmittedToRnd && handedOverToRndTo) {
+        const rndAssignee = await tx.user.findFirst({
+          where: {
+            id: handedOverToRndTo,
+            companyId: currentUser.companyId,
+            role: "RND",
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (!rndAssignee) {
+          throw new Error("INVALID_RND_HANDOVER_TARGET");
+        }
+      }
 
       const siblingPackets = currentPacket.sample.packets
         .filter((packet) => packet.id !== currentPacket.id)
         .map((packet) => ({ ...packet, allocation: packet.allocation ?? null })) as unknown as PacketRecord[];
-      const projectedQuantity = sumAllocatedPacketQuantity(siblingPackets) + (nextQuantity ?? 0);
-      if (currentPacket.sample.sampleQuantity && projectedQuantity > currentPacket.sample.sampleQuantity) {
-        throw new Error("PACKET_QUANTITY_EXCEEDED");
+      const sampleComparable = toComparableQuantity(currentPacket.sample.sampleQuantity, currentPacket.sample.sampleUnit);
+      const nextComparable = toComparableQuantity(nextQuantity, nextUnit);
+      if (sampleComparable && nextComparable && sampleComparable.dimension === nextComparable.dimension) {
+        const projectedQuantity =
+          siblingPackets.reduce((total, packet) => {
+            const comparable = toComparableQuantity(packet.packetWeight ?? packet.packetQuantity, packet.packetUnit);
+            if (!comparable || comparable.dimension !== sampleComparable.dimension) {
+              return total;
+            }
+            return total + comparable.value;
+          }, 0) + nextComparable.value;
+
+        if (projectedQuantity > sampleComparable.value) {
+          throw new Error(
+            `PACKET_QUANTITY_EXCEEDED:${projectedQuantity} ${sampleComparable.unit}:${sampleComparable.value} ${sampleComparable.unit}`,
+          );
+        }
       }
 
       const updateData: Prisma.PacketUpdateInput = {
@@ -731,6 +774,12 @@ export async function PATCH(request: NextRequest) {
         });
       }
 
+      await recomputeJobWorkflowMilestones(tx, {
+        jobId: refreshed.jobId ?? currentPacket.jobId,
+        companyId: currentUser.companyId,
+        handedOverToRndTo: markSubmittedToRnd ? handedOverToRndTo ?? null : undefined,
+      });
+
       if (packetType !== undefined && packetType !== previous.packetType) {
         await recordAuditLog(tx, {
           jobId: refreshed.jobId ?? currentPacket.jobId,
@@ -888,17 +937,32 @@ export async function PATCH(request: NextRequest) {
     if (message === "PACKET_UNIT_REQUIRED") {
       return jsonError("Validation Error", "Packet unit is mandatory when quantity is provided.", 422);
     }
-    if (message === "PACKET_QUANTITY_EXCEEDED") {
-      return jsonError("Validation Error", "Total packet quantity exceeds sample quantity.", 422);
-    }
     if (message === "PACKET_WEIGHT_REQUIRED") {
       return jsonError("Validation Error", "Every packet needs weight and unit before Submit to R&D.", 422);
+    }
+    if (message === "RND_HANDOVER_TARGET_REQUIRED") {
+      return jsonError("Validation Error", "Select an R&D user before Submit to R&D.", 422);
+    }
+    if (message === "INVALID_RND_HANDOVER_TARGET") {
+      return jsonError("Validation Error", "Selected R&D handover user is not valid for this company.", 422);
     }
     if (message === "PACKET_LOCKED_AFTER_RND_SUBMIT") {
       return jsonError("Forbidden", "Packet editing is locked after Submit to R&D by company policy.", 403);
     }
     if (message === "INVALID_ALLOCATION_STATUS") {
       return jsonError("Validation Error", "Invalid packet allocation status.", 422);
+    }
+    if (message.startsWith("PACKET_QUANTITY_EXCEEDED:")) {
+      const [, projectedRaw = "", sampleRaw = ""] = message.split(":");
+      const projected = projectedRaw.trim();
+      const sample = sampleRaw.trim();
+      return jsonError(
+        "Validation Error",
+        projected && sample
+          ? `Packet total ${projected} exceeds allowed sample quantity ${sample}. Reduce packet weights or increase sample quantity first.`
+          : "Total packet quantity exceeds sample quantity.",
+        422,
+      );
     }
     if (message.startsWith("READINESS_BLOCKED:")) {
       return jsonError("Validation Error", message.replace("READINESS_BLOCKED:", ""), 422);

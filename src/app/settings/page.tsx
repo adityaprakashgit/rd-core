@@ -11,6 +11,7 @@ import {
   FormLabel,
   Heading,
   HStack,
+  IconButton,
   Input,
   Select,
   SimpleGrid,
@@ -21,7 +22,7 @@ import {
   VStack,
   useToast,
 } from "@chakra-ui/react";
-import { Building2, Plus, Save, Settings2, ShieldCheck, Workflow } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, Plus, Save, Settings2, ShieldCheck, Workflow } from "lucide-react";
 
 import { ConfigurationPageTemplate, MobileActionRail } from "@/components/enterprise/PageTemplates";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
@@ -114,6 +115,8 @@ export default function SettingsPageRoute() {
   });
   const [loadingWorkflowSettings, setLoadingWorkflowSettings] = useState(true);
   const [savingWorkflowSettings, setSavingWorkflowSettings] = useState(false);
+  const [selectedRequiredImageCategory, setSelectedRequiredImageCategory] = useState<string | null>(null);
+  const [selectedOptionalImageCategory, setSelectedOptionalImageCategory] = useState<string | null>(null);
 
   useEffect(() => {
     const defaults = getDefaultReportPreferences(companyName);
@@ -159,6 +162,20 @@ export default function SettingsPageRoute() {
   useEffect(() => {
     void fetchChecklistSettings();
   }, [fetchChecklistSettings]);
+
+  useEffect(() => {
+    if (selectedRequiredImageCategory && !workflowSettings.images.requiredImageCategories.includes(selectedRequiredImageCategory)) {
+      setSelectedRequiredImageCategory(null);
+    }
+    if (selectedOptionalImageCategory && !workflowSettings.images.optionalImageCategories.includes(selectedOptionalImageCategory)) {
+      setSelectedOptionalImageCategory(null);
+    }
+  }, [
+    selectedOptionalImageCategory,
+    selectedRequiredImageCategory,
+    workflowSettings.images.optionalImageCategories,
+    workflowSettings.images.requiredImageCategories,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -754,44 +771,103 @@ export default function SettingsPageRoute() {
                         <option value="MASTER_ONLY">Master list only</option>
                       </Select>
                     </FormControl>
-                    <FormControl>
-                      <FormLabel>Required image categories</FormLabel>
-                      <Textarea
-                        rows={5}
-                        value={workflowSettings.images.requiredImageCategories.join("\n")}
-                        onChange={(event) =>
-                          setWorkflowSettings((prev) => ({
-                            ...prev,
-                            images: {
-                              ...prev.images,
-                              requiredImageCategories: event.target.value
-                                .split("\n")
-                                .map((value) => value.trim())
-                                .filter(Boolean),
-                            },
-                          }))
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Optional image categories</FormLabel>
-                      <Textarea
-                        rows={5}
-                        value={workflowSettings.images.optionalImageCategories.join("\n")}
-                        onChange={(event) =>
-                          setWorkflowSettings((prev) => ({
-                            ...prev,
-                            images: {
-                              ...prev.images,
-                              optionalImageCategories: event.target.value
-                                .split("\n")
-                                .map((value) => value.trim())
-                                .filter(Boolean),
-                            },
-                          }))
-                        }
-                      />
-                    </FormControl>
+                    <Box gridColumn={{ base: "auto", md: "span 2" }}>
+                      <FormControl>
+                        <FormLabel>Image category assignment</FormLabel>
+                        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} alignItems="center">
+                          <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={3} minH="190px">
+                            <Text fontSize="sm" fontWeight="semibold" color="text.primary" mb={2}>
+                              Required image categories
+                            </Text>
+                            <VStack align="stretch" spacing={2}>
+                              {workflowSettings.images.requiredImageCategories.map((category) => (
+                                <Button
+                                  key={category}
+                                  size="sm"
+                                  variant={selectedRequiredImageCategory === category ? "solid" : "outline"}
+                                  justifyContent="flex-start"
+                                  onClick={() => setSelectedRequiredImageCategory(category)}
+                                >
+                                  {category}
+                                </Button>
+                              ))}
+                            </VStack>
+                          </Box>
+
+                          <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={2}>
+                            <VStack spacing={2}>
+                              <IconButton
+                                aria-label="Move to optional"
+                                icon={<ArrowRight size={16} />}
+                                onClick={() => {
+                                  if (!selectedRequiredImageCategory) {
+                                    return;
+                                  }
+                                  setWorkflowSettings((prev) => ({
+                                    ...prev,
+                                    images: {
+                                      ...prev.images,
+                                      requiredImageCategories: prev.images.requiredImageCategories.filter(
+                                        (category) => category !== selectedRequiredImageCategory,
+                                      ),
+                                      optionalImageCategories: Array.from(
+                                        new Set([...prev.images.optionalImageCategories, selectedRequiredImageCategory]),
+                                      ),
+                                    },
+                                  }));
+                                  setSelectedOptionalImageCategory(selectedRequiredImageCategory);
+                                  setSelectedRequiredImageCategory(null);
+                                }}
+                                isDisabled={!selectedRequiredImageCategory}
+                              />
+                              <IconButton
+                                aria-label="Move to required"
+                                icon={<ArrowLeft size={16} />}
+                                onClick={() => {
+                                  if (!selectedOptionalImageCategory) {
+                                    return;
+                                  }
+                                  setWorkflowSettings((prev) => ({
+                                    ...prev,
+                                    images: {
+                                      ...prev.images,
+                                      optionalImageCategories: prev.images.optionalImageCategories.filter(
+                                        (category) => category !== selectedOptionalImageCategory,
+                                      ),
+                                      requiredImageCategories: Array.from(
+                                        new Set([...prev.images.requiredImageCategories, selectedOptionalImageCategory]),
+                                      ),
+                                    },
+                                  }));
+                                  setSelectedRequiredImageCategory(selectedOptionalImageCategory);
+                                  setSelectedOptionalImageCategory(null);
+                                }}
+                                isDisabled={!selectedOptionalImageCategory}
+                              />
+                            </VStack>
+                          </Box>
+
+                          <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={3} minH="190px">
+                            <Text fontSize="sm" fontWeight="semibold" color="text.primary" mb={2}>
+                              Optional image categories
+                            </Text>
+                            <VStack align="stretch" spacing={2}>
+                              {workflowSettings.images.optionalImageCategories.map((category) => (
+                                <Button
+                                  key={category}
+                                  size="sm"
+                                  variant={selectedOptionalImageCategory === category ? "solid" : "outline"}
+                                  justifyContent="flex-start"
+                                  onClick={() => setSelectedOptionalImageCategory(category)}
+                                >
+                                  {category}
+                                </Button>
+                              ))}
+                            </VStack>
+                          </Box>
+                        </SimpleGrid>
+                      </FormControl>
+                    </Box>
                     <FormControl>
                       <FormLabel>Packet purpose mode</FormLabel>
                       <Select

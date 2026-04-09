@@ -26,6 +26,8 @@ import {
 import {
   getMobileMoreModules,
   getMobileTabDefinitions,
+  isModuleActive,
+  resolveModuleHref,
 } from "@/lib/ui-navigation";
 
 type MobileBottomNavProps = {
@@ -150,14 +152,15 @@ export function MobileBottomNav({
 
               <Stack spacing={3}>
                 {moreModules.map((module) => {
-                  const isActive = module.activeMatch.test(pathname);
+                  const destination = resolveModuleHref(module, normalizedRole);
+                  const isActive = isModuleActive(module, pathname, normalizedRole);
 
                   return (
                     <Button
                       key={module.id}
                       onClick={() => {
                         onClose();
-                        router.push(module.href);
+                        router.push(destination);
                       }}
                       justifyContent="space-between"
                       variant={isActive ? "solid" : "outline"}

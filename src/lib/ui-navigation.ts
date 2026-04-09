@@ -1,17 +1,16 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
   Blocks,
   ClipboardCheck,
   Ellipsis,
   FlaskConical,
   Home,
-  LayoutDashboard,
-  PackageCheck,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   FileText,
+  TriangleAlert,
+  BriefcaseBusiness,
 } from "lucide-react";
 
 import type { NormalizedRole } from "@/lib/role";
@@ -61,25 +60,40 @@ export type MobileTabDefinition = {
   isMore?: boolean;
 };
 
+const HOME_DESTINATIONS: Record<NormalizedRole, string> = {
+  ADMIN: "/admin",
+  OPERATIONS: "/userinsp",
+  RND: "/userrd",
+  VIEWER: "/exceptions",
+};
+
+function getPrimaryMobileModuleIds(role: NormalizedRole | null | undefined): string[] {
+  if (role === "RND") {
+    return ["home", "jobs", "documents", "exceptions"];
+  }
+
+  if (role === "VIEWER") {
+    return ["home", "inspection", "documents"];
+  }
+
+  return ["home", "inspection", "documents", "exceptions"];
+}
+
 export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   {
-    id: "control-center",
-    label: "Dashboard",
+    id: "home",
+    label: "Home",
     href: "/userinsp",
-    icon: LayoutDashboard,
+    icon: Home,
     roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/userinsp|^\/userrd$/,
+    activeMatch: /^\/(userinsp|userrd|exceptions|admin)$/,
     mobileTabGroup: "home",
     mobilePriority: 1,
     mobileLabel: "Home",
-    roleDestinationMap: {
-      ADMIN: "/userinsp",
-      OPERATIONS: "/userinsp",
-      VIEWER: "/userinsp",
-    },
+    roleDestinationMap: HOME_DESTINATIONS,
   },
   {
-    id: "execution",
+    id: "inspection",
     label: "Inspection",
     href: "/operations",
     icon: ClipboardCheck,
@@ -87,7 +101,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     activeMatch: /^\/operations/,
     mobileTabGroup: "queue",
     mobilePriority: 2,
-    mobileLabel: "Queue",
+    mobileLabel: "Inspection",
     roleDestinationMap: {
       ADMIN: "/operations",
       OPERATIONS: "/operations",
@@ -98,119 +112,100 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     id: "jobs",
     label: "Jobs",
     href: "/jobs",
-    icon: ClipboardCheck,
+    icon: BriefcaseBusiness,
     roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/jobs|^\/rd$/,
+    activeMatch: /^\/(jobs|rd)(\/|$)/,
     mobileTabGroup: "queue",
-    mobilePriority: 2,
+    mobilePriority: 3,
   },
   {
-    id: "lab-analysis",
+    id: "rnd",
     label: "R&D",
     href: "/userrd",
     icon: FlaskConical,
     roles: ["ADMIN", "RND", "VIEWER"],
-    activeMatch: /^\/userrd|^\/rd/,
-    mobileTabGroup: "home",
-    mobilePriority: 1,
-    mobileLabel: "Home",
+    activeMatch: /^\/userrd(\/|$)/,
+    mobileTabGroup: "queue",
+    mobilePriority: 4,
     roleDestinationMap: {
+      ADMIN: "/userrd",
       RND: "/userrd",
+      VIEWER: "/userrd",
     },
   },
   {
-    id: "packet-management",
-    label: "Packet Management",
-    href: "/operations",
-    icon: PackageCheck,
-    roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /\/packet$/,
-    mobileTabGroup: "monitoring",
-    mobilePriority: 4,
-  },
-  {
-    id: "dispatch",
-    label: "Dispatch",
-    href: "/reports",
-    icon: Activity,
-    roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/reports$/,
-    mobileTabGroup: "reports",
-    mobilePriority: 3,
-  },
-  {
-    id: "documents-reports",
+    id: "documents",
     label: "Documents",
     href: "/documents",
     icon: FileText,
     roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/documents|^\/traceability/,
+    activeMatch: /^\/(documents|reports|traceability)(\/|$)/,
     mobileTabGroup: "reports",
-    mobilePriority: 3,
+    mobilePriority: 5,
     mobileLabel: "Documents",
   },
   {
-    id: "reports",
-    label: "Reports",
-    href: "/reports",
-    icon: FileText,
-    roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/reports$/,
-    mobileTabGroup: "reports",
-    mobilePriority: 3,
-    mobileLabel: "Reports",
-  },
-  {
-    id: "monitoring",
+    id: "exceptions",
     label: "Exceptions",
     href: "/exceptions",
-    icon: Activity,
+    icon: TriangleAlert,
     roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/exceptions|^\/status/,
+    activeMatch: /^\/(exceptions|status)(\/|$)/,
     mobileTabGroup: "monitoring",
-    mobilePriority: 4,
+    mobilePriority: 6,
     mobileLabel: "Exceptions",
   },
   {
-    id: "reference-data",
+    id: "master-data",
     label: "Master Data",
     href: "/master",
     icon: Blocks,
     roles: ["ADMIN", "OPERATIONS"],
-    activeMatch: /^\/master/,
-    mobileTabGroup: "more",
-    mobilePriority: 5,
-  },
-  {
-    id: "administration",
-    label: "Admin",
-    href: "/admin",
-    icon: ShieldCheck,
-    roles: ["ADMIN"],
-    activeMatch: /^\/admin/,
+    activeMatch: /^\/master(\/|$)/,
     mobileTabGroup: "more",
     mobilePriority: 7,
   },
   {
-    id: "workspace-configuration",
+    id: "settings",
     label: "Settings",
     href: "/settings",
     icon: Settings,
     roles: ["ADMIN"],
-    activeMatch: /^\/settings/,
+    activeMatch: /^\/settings(\/|$)/,
     mobileTabGroup: "more",
-    mobilePriority: 6,
+    mobilePriority: 8,
+  },
+  {
+    id: "admin",
+    label: "Admin",
+    href: "/admin",
+    icon: ShieldCheck,
+    roles: ["ADMIN"],
+    activeMatch: /^\/admin(\/|$)/,
+    mobileTabGroup: "more",
+    mobilePriority: 9,
   },
 ];
 
 export const PAGE_DEFINITIONS: PageDefinition[] = [
   {
     id: "jobs-registry",
-    title: "Job Registry",
+    title: "Jobs",
     subtitle: "Unified job registry with workflow-first execution routing.",
     moduleId: "jobs",
     matcher: /^\/jobs$/,
     breadcrumbs: [{ label: "Jobs", href: "/jobs" }],
+  },
+  {
+    id: "job-detail",
+    title: "Job Detail",
+    subtitle: "Job context, linked records, and workflow entry for the selected job.",
+    moduleId: "jobs",
+    matcher: /^\/jobs\/[^/]+$/,
+    breadcrumbs: [
+      { label: "Jobs", href: "/jobs" },
+      { label: "Job Detail" },
+    ],
   },
   {
     id: "jobs-workflow",
@@ -224,173 +219,216 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
     ],
   },
   {
-    id: "control-center-home",
-    title: "Inspection List",
-    subtitle: "Table-first inspection registry and assignment queue.",
-    moduleId: "control-center",
+    id: "home-operations",
+    title: "Home",
+    subtitle: "Production workspace with current assignments, inspections, and next required actions.",
+    moduleId: "home",
     matcher: /^\/userinsp$/,
-    breadcrumbs: [{ label: "Control Center", href: "/userinsp" }],
+    breadcrumbs: [{ label: "Home", href: "/userinsp" }],
   },
   {
-    id: "control-center-job",
-    title: "Inspection Detail",
-    subtitle: "Lot progression, evidence capture, and final pass decisions for the selected job.",
-    moduleId: "control-center",
+    id: "home-rnd",
+    title: "Home",
+    subtitle: "R&D workspace for pending samples, active testing, and review handoffs.",
+    moduleId: "home",
+    matcher: /^\/userrd$/,
+    breadcrumbs: [{ label: "Home", href: "/userrd" }],
+  },
+  {
+    id: "home-manager",
+    title: "Home",
+    subtitle: "Manager workspace for exceptions, blockers, missing documents, and lot aging.",
+    moduleId: "home",
+    matcher: /^\/exceptions$/,
+    breadcrumbs: [{ label: "Home", href: "/exceptions" }],
+  },
+  {
+    id: "home-admin",
+    title: "Home",
+    subtitle: "Admin workspace for governance, role management, audit review, and workflow configuration.",
+    moduleId: "home",
+    matcher: /^\/admin$/,
+    breadcrumbs: [{ label: "Home", href: "/admin" }],
+  },
+  {
+    id: "inspection-list",
+    title: "Inspection",
+    subtitle: "Operational inspection queue with explicit lot linkage and primary next actions.",
+    moduleId: "inspection",
+    matcher: /^\/operations$/,
+    breadcrumbs: [{ label: "Inspection", href: "/operations" }],
+  },
+  {
+    id: "inspection-detail-legacy-userinsp",
+    title: "Job Workflow",
+    subtitle: "Legacy inspection route redirected into the canonical job workflow.",
+    moduleId: "jobs",
     matcher: /^\/userinsp\/job\/[^/]+$/,
     breadcrumbs: [
-      { label: "Inspection", href: "/userinsp" },
-      { label: "Inspection Detail" },
+      { label: "Jobs", href: "/jobs" },
+      { label: "Job Workflow" },
     ],
   },
   {
-    id: "control-center-lot-packet",
-    title: "Packet Management",
-    subtitle: "Split the ready sample into traceable packets with proof and availability control.",
-    moduleId: "control-center",
-    matcher: /^\/userinsp\/job\/[^/]+\/lot\/[^/]+\/packet$/,
-    breadcrumbs: [
-      { label: "Inspection", href: "/userinsp" },
-      { label: "Inspection Detail" },
-      { label: "Lot View" },
-      { label: "Packet Management" },
-    ],
-  },
-  {
-    id: "control-center-lot",
-    title: "Lot Inspection Workbench",
-    subtitle: "Guided inspection, exception capture, and proof collection at lot level.",
-    moduleId: "control-center",
-    matcher: /^\/userinsp\/job\/[^/]+\/lot\/[^/]+$/,
-    breadcrumbs: [
-      { label: "Inspection", href: "/userinsp" },
-      { label: "Inspection Detail" },
-      { label: "Lot View" },
-    ],
-  },
-  {
-    id: "execution-home",
-    title: "Inspection List",
-    subtitle: "Operational inspection list with explicit lot linkage.",
-    moduleId: "execution",
-    matcher: /^\/operations$/,
-    breadcrumbs: [{ label: "Execution", href: "/operations" }],
-  },
-  {
-    id: "execution-job",
-    title: "Inspection Detail",
-    subtitle: "Inspection task detail with lot-level execution and traceability.",
-    moduleId: "execution",
+    id: "inspection-detail-legacy-operations",
+    title: "Job Workflow",
+    subtitle: "Legacy operations route redirected into the canonical job workflow.",
+    moduleId: "jobs",
     matcher: /^\/operations\/job\/[^/]+$/,
     breadcrumbs: [
-      { label: "Inspection Queue", href: "/operations" },
-      { label: "Inspection Detail" },
+      { label: "Jobs", href: "/jobs" },
+      { label: "Job Workflow" },
     ],
   },
   {
-    id: "execution-lot-packet",
-    title: "Packet Management",
-    subtitle: "Split the ready sample into traceable packets with proof and availability control.",
-    moduleId: "execution",
-    matcher: /^\/operations\/job\/[^/]+\/lot\/[^/]+\/packet$/,
+    id: "inspection-lot-legacy-userinsp",
+    title: "Job Workflow",
+    subtitle: "Legacy lot route redirected into the canonical job workflow.",
+    moduleId: "jobs",
+    matcher: /^\/userinsp\/job\/[^/]+\/lot\/[^/]+$/,
     breadcrumbs: [
-      { label: "Inspection Queue", href: "/operations" },
-      { label: "Inspection Detail" },
-      { label: "Lot View" },
-      { label: "Packet Management" },
+      { label: "Jobs", href: "/jobs" },
+      { label: "Job Workflow" },
     ],
   },
   {
-    id: "execution-lot",
-    title: "Lot Inspection Workbench",
-    subtitle: "Guided inspection, exception capture, and proof collection for each lot.",
-    moduleId: "execution",
+    id: "inspection-lot-legacy-operations",
+    title: "Job Workflow",
+    subtitle: "Legacy lot route redirected into the canonical job workflow.",
+    moduleId: "jobs",
     matcher: /^\/operations\/job\/[^/]+\/lot\/[^/]+$/,
     breadcrumbs: [
-      { label: "Inspection Queue", href: "/operations" },
-      { label: "Inspection Detail" },
-      { label: "Lot View" },
+      { label: "Jobs", href: "/jobs" },
+      { label: "Job Workflow" },
     ],
   },
   {
-    id: "lab-home",
-    title: "Lab & Analysis",
-    subtitle: "Sampling lifecycle, assay readiness, and analytical throughput.",
-    moduleId: "lab-analysis",
-    matcher: /^\/userrd$/,
-    breadcrumbs: [{ label: "Lab & Analysis", href: "/userrd" }],
+    id: "packet-legacy-userinsp",
+    title: "Job Workflow",
+    subtitle: "Legacy packet route redirected into the canonical job workflow.",
+    moduleId: "jobs",
+    matcher: /^\/userinsp\/job\/[^/]+\/lot\/[^/]+\/packet$/,
+    breadcrumbs: [
+      { label: "Jobs", href: "/jobs" },
+      { label: "Job Workflow" },
+    ],
   },
   {
-    id: "lab-job",
-    title: "Analytical Workbench",
-    subtitle: "Structured trial execution, measurement capture, and QA handoff.",
-    moduleId: "lab-analysis",
+    id: "packet-legacy-operations",
+    title: "Job Workflow",
+    subtitle: "Legacy packet route redirected into the canonical job workflow.",
+    moduleId: "jobs",
+    matcher: /^\/operations\/job\/[^/]+\/lot\/[^/]+\/packet$/,
+    breadcrumbs: [
+      { label: "Jobs", href: "/jobs" },
+      { label: "Job Workflow" },
+    ],
+  },
+  {
+    id: "rnd-workbench",
+    title: "R&D",
+    subtitle: "Sample testing board, result capture, and approval handoff for active analytical work.",
+    moduleId: "rnd",
     matcher: /^\/userrd\/job\/[^/]+$/,
     breadcrumbs: [
-      { label: "Lab & Analysis", href: "/userrd" },
-      { label: "Analytical Workbench" },
+      { label: "R&D", href: "/userrd" },
+      { label: "Sample Testing Board" },
     ],
+  },
+  {
+    id: "job-orchestration-legacy",
+    title: "Jobs",
+    subtitle: "Legacy job orchestration route retained while the unified jobs registry becomes canonical.",
+    moduleId: "jobs",
+    matcher: /^\/rd$/,
+    breadcrumbs: [{ label: "Jobs", href: "/jobs" }],
   },
   {
     id: "documents-home",
-    title: "Document Registry",
+    title: "Documents",
     subtitle: "Fast retrieval for COA, dispatch documents, test reports, and evidence uploads.",
-    moduleId: "documents-reports",
-    matcher: /^\/documents$|^\/reports$/,
+    moduleId: "documents",
+    matcher: /^\/documents$/,
     breadcrumbs: [{ label: "Documents", href: "/documents" }],
+  },
+  {
+    id: "reports-home",
+    title: "Reports",
+    subtitle: "Generate and review packing lists, stickers, and downstream PDF outputs.",
+    moduleId: "documents",
+    matcher: /^\/reports$/,
+    breadcrumbs: [
+      { label: "Documents", href: "/documents" },
+      { label: "Reports" },
+    ],
   },
   {
     id: "traceability-lot",
     title: "Lot Traceability",
     subtitle: "Lot-anchored lifecycle lineage across inspection, samples, packets, documents, and audit history.",
-    moduleId: "documents-reports",
-    matcher: /^\/traceability\/lot\/[^/]+$/,
+    moduleId: "documents",
+    matcher: /^\/traceability\/(lot|lots)\/[^/]+$/,
     breadcrumbs: [
       { label: "Documents", href: "/documents" },
       { label: "Lot Traceability" },
     ],
   },
   {
-    id: "monitoring-home",
-    title: "Exception Queue",
-    subtitle: "Derived blockers and workflow escalations with stage-level actionability.",
-    moduleId: "monitoring",
-    matcher: /^\/exceptions$|^\/status$/,
-    breadcrumbs: [{ label: "Exceptions", href: "/exceptions" }],
+    id: "reference-data-home",
+    title: "Master Data",
+    subtitle: "Enterprise master records governing clients, materials, containers, and transporters.",
+    moduleId: "master-data",
+    matcher: /^\/master$/,
+    breadcrumbs: [{ label: "Master Data", href: "/master" }],
   },
   {
-    id: "reference-data-home",
-    title: "Reference Data",
-    subtitle: "Enterprise master records governing dispatch, clients, and materials.",
-    moduleId: "reference-data",
-    matcher: /^\/master$/,
-    breadcrumbs: [{ label: "Reference Data", href: "/master" }],
+    id: "lot-detail-route",
+    title: "Lot Detail",
+    subtitle: "Direct lot lookup route with traceability-oriented record context.",
+    moduleId: "documents",
+    matcher: /^\/lots\/[^/]+$/,
+    breadcrumbs: [
+      { label: "Documents", href: "/documents" },
+      { label: "Lot Detail" },
+    ],
+  },
+  {
+    id: "sample-detail-route",
+    title: "Sample Detail",
+    subtitle: "Direct sample lookup route with linked lot and R&D context.",
+    moduleId: "rnd",
+    matcher: /^\/samples\/[^/]+$/,
+    breadcrumbs: [
+      { label: "R&D", href: "/userrd" },
+      { label: "Sample Detail" },
+    ],
+  },
+  {
+    id: "packet-detail-route",
+    title: "Packet Detail",
+    subtitle: "Direct packet lookup route with linked lot, dispatch, and document context.",
+    moduleId: "documents",
+    matcher: /^\/packets\/[^/]+$/,
+    breadcrumbs: [
+      { label: "Documents", href: "/documents" },
+      { label: "Packet Detail" },
+    ],
   },
   {
     id: "workspace-config-home",
-    title: "Workspace Configuration",
-    subtitle: "Global settings, defaults, and enterprise communication preferences.",
-    moduleId: "workspace-configuration",
+    title: "Settings",
+    subtitle: "Company-scoped workflow rules, numbering behavior, proof requirements, and seal policy.",
+    moduleId: "settings",
     matcher: /^\/settings$/,
-    breadcrumbs: [{ label: "Workspace Configuration", href: "/settings" }],
+    breadcrumbs: [{ label: "Settings", href: "/settings" }],
   },
   {
-    id: "administration-home",
-    title: "Administration",
-    subtitle: "Enterprise governance controls, tenancy configuration, and access oversight.",
-    moduleId: "administration",
-    matcher: /^\/admin$/,
-    breadcrumbs: [{ label: "Administration", href: "/admin" }],
-  },
-  {
-    id: "job-orchestration-create",
-    title: "Job Orchestration",
-    subtitle: "Create and initialize jobs with enterprise workflow defaults.",
-    moduleId: "jobs",
-    matcher: /^\/rd$/,
-    breadcrumbs: [
-      { label: "Jobs", href: "/rd" },
-      { label: "Job Orchestration" },
-    ],
+    id: "status-home",
+    title: "Exceptions",
+    subtitle: "Legacy status route showing derived blockers and workflow escalations.",
+    moduleId: "exceptions",
+    matcher: /^\/status$/,
+    breadcrumbs: [{ label: "Exceptions", href: "/exceptions" }],
   },
 ];
 
@@ -398,10 +436,60 @@ const fallbackPageDefinition: PageDefinition = {
   id: "workspace",
   title: "Workspace",
   subtitle: "Enterprise operations workspace.",
-  moduleId: "control-center",
+  moduleId: "home",
   matcher: /^\/.*/,
   breadcrumbs: [{ label: "Workspace" }],
 };
+
+export function resolveModuleHref(
+  module: ModuleDefinition,
+  role: NormalizedRole | null | undefined
+): string {
+  if (role && module.roleDestinationMap?.[role]) {
+    return module.roleDestinationMap[role] as string;
+  }
+
+  return module.href;
+}
+
+export function getVisibleModules(role: NormalizedRole | null | undefined): ModuleDefinition[] {
+  if (!role) {
+    return [];
+  }
+
+  const homeHref = HOME_DESTINATIONS[role];
+
+  return MODULE_DEFINITIONS.filter((module) => {
+    if (!module.roles.includes(role)) {
+      return false;
+    }
+
+    if (module.id === "home") {
+      return true;
+    }
+
+    return resolveModuleHref(module, role) !== homeHref;
+  });
+}
+
+export function isModuleActive(
+  module: ModuleDefinition,
+  pathname: string,
+  role: NormalizedRole | null | undefined
+): boolean {
+  if (module.id === "home") {
+    if (!role) {
+      return false;
+    }
+    return HOME_DESTINATIONS[role] === pathname;
+  }
+
+  if (role && resolveModuleHref(module, role) === HOME_DESTINATIONS[role]) {
+    return false;
+  }
+
+  return module.activeMatch.test(pathname);
+}
 
 export function resolvePageDefinition(pathname: string): PageDefinition {
   return PAGE_DEFINITIONS.find((page) => page.matcher.test(pathname)) ?? fallbackPageDefinition;
@@ -418,41 +506,43 @@ export function getModuleById(moduleId: string): ModuleDefinition | undefined {
 }
 
 export function getMobileTabDefinitions(role: NormalizedRole | null | undefined): MobileTabDefinition[] {
+  const homeHref = role ? HOME_DESTINATIONS[role] : "/userinsp";
+
   if (role === "RND") {
     return [
       {
         id: "home",
         label: "Home",
-        href: "/userrd",
+        href: homeHref,
         icon: Home,
-        activeMatch: /^\/userrd/,
+        activeMatch: /^\/userrd$/,
       },
       {
         id: "queue",
-        label: "Queue",
-        href: "/rd",
-        icon: ClipboardCheck,
-        activeMatch: /^\/rd/,
+        label: "Jobs",
+        href: "/jobs",
+        icon: BriefcaseBusiness,
+        activeMatch: /^\/(jobs|rd)(\/|$)/,
       },
       {
         id: "reports",
         label: "Documents",
         href: "/documents",
         icon: FileText,
-        activeMatch: /^\/documents|^\/reports/,
+        activeMatch: /^\/(documents|reports|traceability)(\/|$)/,
       },
       {
         id: "monitoring",
         label: "Exceptions",
         href: "/exceptions",
-        icon: Activity,
-        activeMatch: /^\/exceptions|^\/status/,
+        icon: TriangleAlert,
+        activeMatch: /^\/(exceptions|status)(\/|$)/,
       },
       {
         id: "more",
         label: "More",
         icon: Ellipsis,
-        activeMatch: /^\/(settings|admin|master)/,
+        activeMatch: /^\/(settings|admin|master)(\/|$)/,
         isMore: true,
       },
     ];
@@ -462,36 +552,40 @@ export function getMobileTabDefinitions(role: NormalizedRole | null | undefined)
     {
       id: "home",
       label: "Home",
-      href: "/userinsp",
+      href: homeHref,
       icon: Home,
-      activeMatch: /^\/userinsp/,
+      activeMatch: /^\/(userinsp|exceptions|admin)$/,
     },
     {
       id: "queue",
-      label: "Queue",
+      label: "Inspection",
       href: "/operations",
       icon: ClipboardCheck,
-      activeMatch: /^\/operations/,
+      activeMatch: /^\/operations(\/|$)/,
     },
     {
       id: "reports",
       label: "Documents",
       href: "/documents",
       icon: FileText,
-      activeMatch: /^\/documents|^\/reports/,
+      activeMatch: /^\/(documents|reports|traceability)(\/|$)/,
     },
-    {
-      id: "monitoring",
-      label: "Exceptions",
-      href: "/exceptions",
-      icon: Activity,
-      activeMatch: /^\/exceptions|^\/status/,
-    },
+    ...(role === "VIEWER"
+      ? []
+      : [
+          {
+            id: "monitoring" as const,
+            label: "Exceptions",
+            href: "/exceptions",
+            icon: TriangleAlert,
+            activeMatch: /^\/(exceptions|status)(\/|$)/,
+          },
+        ]),
     {
       id: "more",
       label: "More",
       icon: Ellipsis,
-      activeMatch: /^\/(settings|admin|master|userrd|rd)/,
+      activeMatch: /^\/(jobs|settings|admin|master|userrd|rd)(\/|$)/,
       isMore: true,
     },
   ];
@@ -502,9 +596,11 @@ export function getMobileMoreModules(role: NormalizedRole | null | undefined): M
     return [];
   }
 
-  return MODULE_DEFINITIONS.filter(
-    (module) => module.roles.includes(role) && module.mobileTabGroup === "more"
-  ).sort((left, right) => (left.mobilePriority ?? 999) - (right.mobilePriority ?? 999));
+  const primaryModuleIds = new Set(getPrimaryMobileModuleIds(role));
+
+  return getVisibleModules(role)
+    .filter((module) => !primaryModuleIds.has(module.id))
+    .sort((left, right) => (left.mobilePriority ?? 999) - (right.mobilePriority ?? 999));
 }
 
 export const GLOBAL_SEARCH_PLACEHOLDER = "Search Lot ID, Job ID, Sample ID, Packet ID, Dispatch ID, Certificate";

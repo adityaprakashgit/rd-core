@@ -26,6 +26,13 @@ type BarcodeDetectorLike = {
 
 type BarcodeDetectorCtorLike = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
 type ZxingControlsLike = { stop: () => void };
+type QuaggaDecodeSingleResultLike = { codeResult?: { code?: string } };
+type QuaggaLike = {
+  decodeSingle: (
+    config: Record<string, unknown>,
+    callback: (result: QuaggaDecodeSingleResultLike | null) => void,
+  ) => void;
+};
 
 function getBarcodeDetectorCtor(): BarcodeDetectorCtorLike | null {
   if (typeof window === "undefined") {
@@ -49,11 +56,25 @@ export function SealScanner({
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const zxingControlsRef = useRef<ZxingControlsLike | null>(null);
+  const captureInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isImageScanning, setIsImageScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [manualSeal, setManualSeal] = useState("");
 
   const supportsNativeBarcode = useMemo(() => Boolean(getBarcodeDetectorCtor()), []);
+  const hasSecureContext = useMemo(() => (typeof window === "undefined" ? true : window.isSecureContext), []);
+  const hasCameraStreamSupport = useMemo(
+    () => typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia),
+    [],
+  );
+  const prefersCaptureFlow = useMemo(
+    () =>
+      typeof navigator !== "undefined" &&
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent),
+    [],
+  );
   const isValidSeal = /^\d{16}$/.test(manualSeal.trim());
 
   const stopScan = useCallback(() => {
@@ -76,10 +97,14 @@ export function SealScanner({
 
   const consumeScannedValue = useCallback(
     (rawValue: string) => {
-      const digits = rawValue.replace(/\D/g, "");
-      if (/^\d{16}$/.test(digits)) {
-        onScanned(digits);
-        setManualSeal(digits);
+      const exactMatch = rawValue.match(/\d{16}/)?.[0] ?? null;
+      const digitsOnly = rawValue.replace(/\D/g, "");
+      const fallbackMatch = digitsOnly.length >= 16 ? digitsOnly.slice(0, 16) : null;
+      const normalizedSeal = exactMatch ?? fallbackMatch;
+
+      if (normalizedSeal && /^\d{16}$/.test(normalizedSeal)) {
+        onScanned(normalizedSeal);
+        setManualSeal(normalizedSeal);
         stopScan();
         onClose();
         return;
@@ -102,13 +127,9 @@ export function SealScanner({
       const controls = await reader.decodeFromConstraints(
         { video: { facingMode: { ideal: "environment" } } },
         videoElement,
-        (result, error) => {
+        (result) => {
           if (result) {
             consumeScannedValue(result.getText());
-            return;
-          }
-          if (error && (typeof error !== "object" || error === null || !("name" in error) || error.name !== "NotFoundException")) {
-            setScanError("Scanner could not read the seal. Move closer and retry.");
           }
         },
       );
@@ -122,6 +143,10 @@ export function SealScanner({
   const startScan = useCallback(async () => {
     setScanError(null);
     stopScan();
+    if (prefersCaptureFlow) {
+      captureInputRef.current?.click();
+      return;
+    }
 
     const detectorCtor = getBarcodeDetectorCtor();
     if (!detectorCtor) {
@@ -155,16 +180,82 @@ export function SealScanner({
             return;
           }
           consumeScannedValue(raw);
-        } catch {
-          setScanError("Scanner could not read the seal. Move closer and retry.");
-        }
+        } catch {}
       }, 700);
 
       setIsScanning(true);
     } catch {
       await startZxingScan();
     }
-  }, [consumeScannedValue, startZxingScan, stopScan]);
+  }, [consumeScannedValue, prefersCaptureFlow, startZxingScan, stopScan]);
+
+  const scanFromImageFile = useCallback(
+    async (file: File) => {
+      setScanError(null);
+      setIsImageScanning(true);
+      try {
+        const imageUrl = URL.createObjectURL(file);
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("Image load failed"));
+          img.src = imageUrl;
+        });
+
+        try {
+          const quaggaModule = await import("@ericblade/quagga2");
+          const quagga = (quaggaModule.default ?? quaggaModule) as unknown as QuaggaLike;
+          const quaggaCode = await new Promise<string | null>((resolve) => {
+            quagga.decodeSingle(
+              {
+                src: imageUrl,
+                numOfWorkers: 0,
+                locate: true,
+                inputStream: { size: 1200 },
+                decoder: {
+                  readers: [
+                    "code_128_reader",
+                    "code_39_reader",
+                    "ean_reader",
+                    "ean_8_reader",
+                    "upc_reader",
+                  ],
+                },
+              },
+              (result) => resolve(result?.codeResult?.code ?? null),
+            );
+          });
+          if (quaggaCode) {
+            consumeScannedValue(quaggaCode);
+            return;
+          }
+
+          const detectorCtor = getBarcodeDetectorCtor();
+          if (detectorCtor) {
+            const detector = new detectorCtor({ formats: ["code_128", "qr_code", "ean_13", "code_39"] });
+            const detections = await detector.detect(image);
+            const raw = detections[0]?.rawValue?.trim() ?? "";
+            if (raw) {
+              consumeScannedValue(raw);
+              return;
+            }
+          }
+
+          const { BrowserMultiFormatReader } = await import("@zxing/browser");
+          const reader = new BrowserMultiFormatReader();
+          const result = await reader.decodeFromImageElement(image);
+          consumeScannedValue(result.getText());
+        } finally {
+          URL.revokeObjectURL(imageUrl);
+        }
+      } catch {
+        setScanError("Could not detect seal from image. Retry or enter seal manually.");
+      } finally {
+        setIsImageScanning(false);
+      }
+    },
+    [consumeScannedValue],
+  );
 
   useEffect(() => {
     return () => {
@@ -208,11 +299,54 @@ export function SealScanner({
 
               <HStack spacing={3}>
                 <Button leftIcon={<Camera size={16} />} onClick={() => void startScan()} isDisabled={isScanning}>
-                  {isScanning ? "Scanning..." : "Start camera scan"}
+                  {isScanning ? "Scanning..." : prefersCaptureFlow ? "Capture and scan" : "Start camera scan"}
                 </Button>
                 <Button variant="outline" onClick={stopScan} isDisabled={!isScanning}>
                   Stop
                 </Button>
+              </HStack>
+              <HStack spacing={3} flexWrap="wrap">
+                <Button
+                  variant="outline"
+                  onClick={() => captureInputRef.current?.click()}
+                  isDisabled={isImageScanning}
+                >
+                  {isImageScanning ? "Scanning image..." : "Capture photo to scan"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => uploadInputRef.current?.click()}
+                  isDisabled={isImageScanning}
+                >
+                  Upload image to scan
+                </Button>
+                <Input
+                  ref={captureInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  display="none"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      void scanFromImageFile(file);
+                    }
+                    event.target.value = "";
+                  }}
+                />
+                <Input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="image/*"
+                  display="none"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      void scanFromImageFile(file);
+                    }
+                    event.target.value = "";
+                  }}
+                />
               </HStack>
 
               <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={4}>
@@ -242,6 +376,11 @@ export function SealScanner({
               {!supportsNativeBarcode ? (
                 <Text fontSize="xs" color="text.secondary">
                   Using compatibility scanner mode for this device.
+                </Text>
+              ) : null}
+              {!hasSecureContext || !hasCameraStreamSupport ? (
+                <Text fontSize="xs" color="orange.600">
+                  Live camera scan is limited on this connection. Use &quot;Capture photo to scan&quot; or manual seal entry.
                 </Text>
               ) : null}
             </Stack>

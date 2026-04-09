@@ -223,6 +223,16 @@ model InspectionJob {
   assignedToId    String?
   assignedById    String?
   assignedAt      DateTime?
+  jobStartedAt    DateTime?
+  sentToAdminAt   DateTime?
+  sentToAdminBy   String?
+  adminDecisionAt DateTime?
+  adminDecisionBy String?
+  adminDecisionStatus String?
+  operationsCompletedAt DateTime?
+  handedOverToRndAt DateTime?
+  handedOverToRndBy String?
+  handedOverToRndTo String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -385,6 +395,11 @@ model Inspection {
   inspectionStatus    String    @default("IN_PROGRESS")
   decisionStatus      String    @default("PENDING")
   startedAt           DateTime  @default(now())
+  sentToAdminAt       DateTime?
+  sentToAdminBy       String?
+  decisionAt          DateTime?
+  decisionBy          String?
+  decisionOutcome     String?
   completedAt         DateTime?
   overallRemark       String?
   identityRiskFlag    Boolean   @default(false)

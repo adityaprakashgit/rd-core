@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, assertCompanyScope, AuthorizationError } from "@/lib/rbac";
 import { generateUniqueSealNumber, isValidSealNumber } from "@/lib/traceability";
+import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import { evaluateSealAssignmentPrerequisites, getSealAssignmentPolicy } from "@/lib/seal-policy";
 
 function jsonError(error: string, details: string, code: string, status: number) {
@@ -155,6 +156,11 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
         action: "SEAL_ASSIGNED",
         sealNumber,
         sealAuto: useAuto,
+      });
+
+      await recomputeJobWorkflowMilestones(tx, {
+        jobId: lot.jobId,
+        companyId: currentUser.companyId,
       });
 
       return result;

@@ -31,6 +31,22 @@ type WorkflowJobLot = {
     events?: SampleEventRecord[];
   } | null;
 };
+
+type WorkflowMilestones = {
+  jobCreatedAt: string | Date;
+  jobStartedAt?: string | Date | null;
+  sentToAdminAt?: string | Date | null;
+  sentToAdminBy?: string | null;
+  adminDecisionAt?: string | Date | null;
+  adminDecisionBy?: string | null;
+  adminDecisionStatus?: string | null;
+  operationsCompletedAt?: string | Date | null;
+  handedOverToRndAt?: string | Date | null;
+  handedOverToRndBy?: string | null;
+  handedOverToRndTo?: string | null;
+  handedOverToRndToLabel?: string | null;
+};
+
 function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
 }
@@ -51,6 +67,16 @@ function buildWorkflowSummary(
   job: {
     id: string;
     createdAt: string | Date;
+    jobStartedAt?: string | Date | null;
+    sentToAdminAt?: string | Date | null;
+    sentToAdminBy?: string | null;
+    adminDecisionAt?: string | Date | null;
+    adminDecisionBy?: string | null;
+    adminDecisionStatus?: string | null;
+    operationsCompletedAt?: string | Date | null;
+    handedOverToRndAt?: string | Date | null;
+    handedOverToRndBy?: string | null;
+    handedOverToRndTo?: string | null;
     deadline?: string | Date | null;
     lots?: WorkflowJobLot[];
     createdByUser?: PublicUser | null;
@@ -152,6 +178,20 @@ function buildWorkflowSummary(
       assignedTo: job.assignedTo?.profile?.displayName ?? null,
       deadline: job.deadline,
     },
+    milestones: {
+      jobCreatedAt: job.createdAt,
+      jobStartedAt: job.jobStartedAt,
+      sentToAdminAt: job.sentToAdminAt,
+      sentToAdminBy: job.sentToAdminBy,
+      adminDecisionAt: job.adminDecisionAt,
+      adminDecisionBy: job.adminDecisionBy,
+      adminDecisionStatus: job.adminDecisionStatus,
+      operationsCompletedAt: job.operationsCompletedAt,
+      handedOverToRndAt: job.handedOverToRndAt,
+      handedOverToRndBy: job.handedOverToRndBy,
+      handedOverToRndTo: job.handedOverToRndTo,
+      handedOverToRndToLabel: null,
+    } satisfies WorkflowMilestones,
     history,
   };
 }
@@ -175,7 +215,7 @@ export async function GET(request: NextRequest, context: RouteContext<"/api/jobs
       return jsonError("Not Found", "Job could not be found.", 404);
     }
 
-    const [settingsRecord, clients, items, containerTypes] = await Promise.all([
+    const [settingsRecord, clients, items, containerTypes, rndAssignees] = await Promise.all([
       prisma.moduleWorkflowSettings.upsert({
         where: { companyId: currentUser.companyId },
         update: {},
@@ -193,16 +233,74 @@ export async function GET(request: NextRequest, context: RouteContext<"/api/jobs
         where: { companyId: currentUser.companyId, isActive: true },
         orderBy: { name: "asc" },
       }),
+      prisma.user.findMany({
+        where: {
+          companyId: currentUser.companyId,
+          role: "RND",
+          isActive: true,
+        },
+        orderBy: [{ createdAt: "asc" }],
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          profile: {
+            select: {
+              displayName: true,
+              companyName: true,
+              avatarUrl: true,
+              jobTitle: true,
+            },
+          },
+        },
+      }),
     ]);
 
     const settings = toModuleWorkflowPolicy(settingsRecord);
     const summary = buildWorkflowSummary(job as unknown as Parameters<typeof buildWorkflowSummary>[0], settings, currentUser.role);
+    const userIds = Array.from(
+      new Set(
+        [
+          summary.milestones.sentToAdminBy,
+          summary.milestones.adminDecisionBy,
+          summary.milestones.handedOverToRndBy,
+          summary.milestones.handedOverToRndTo,
+        ].filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const milestoneUsers = userIds.length
+      ? await prisma.user.findMany({
+          where: {
+            companyId: currentUser.companyId,
+            id: { in: userIds },
+          },
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: {
+                displayName: true,
+              },
+            },
+          },
+        })
+      : [];
+    const userLabelMap = new Map(
+      milestoneUsers.map((user) => [user.id, user.profile?.displayName ?? user.email ?? user.id]),
+    );
+
     return NextResponse.json({
       job,
       settings,
       clients,
       items,
       containerTypes,
+      rndAssignees: rndAssignees.map((user) => ({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        displayName: user.profile?.displayName ?? user.email ?? "R&D User",
+      })),
       workflowStage: summary.workflowStage,
       nextAction: summary.nextAction,
       blockers: summary.blockers,
@@ -212,6 +310,13 @@ export async function GET(request: NextRequest, context: RouteContext<"/api/jobs
       sealMapping: summary.sealMapping,
       packets: summary.packets,
       assignment: summary.assignment,
+      milestones: {
+        ...summary.milestones,
+        sentToAdminBy: summary.milestones.sentToAdminBy ? (userLabelMap.get(summary.milestones.sentToAdminBy) ?? summary.milestones.sentToAdminBy) : null,
+        adminDecisionBy: summary.milestones.adminDecisionBy ? (userLabelMap.get(summary.milestones.adminDecisionBy) ?? summary.milestones.adminDecisionBy) : null,
+        handedOverToRndBy: summary.milestones.handedOverToRndBy ? (userLabelMap.get(summary.milestones.handedOverToRndBy) ?? summary.milestones.handedOverToRndBy) : null,
+        handedOverToRndToLabel: summary.milestones.handedOverToRndTo ? (userLabelMap.get(summary.milestones.handedOverToRndTo) ?? null) : null,
+      },
       history: summary.history,
     });
   } catch (error: unknown) {

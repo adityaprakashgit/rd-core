@@ -31,6 +31,7 @@ import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/ent
 import {
   EnterpriseStickyTable,
   ExceptionBanner,
+  HistoryTimeline,
   LinkedRecordsPanel,
   PageActionBar,
   PageIdentityBar,
@@ -65,12 +66,20 @@ type ContainerTypeOption = {
   name: string;
 };
 
+type RndAssigneeOption = {
+  id: string;
+  displayName: string;
+  email: string | null;
+  role: PublicUser["role"];
+};
+
 type WorkflowPayload = {
   job: InspectionJob;
   settings: ModuleWorkflowPolicy;
   clients: ClientOption[];
   items: ItemOption[];
   containerTypes: ContainerTypeOption[];
+  rndAssignees: RndAssigneeOption[];
   workflowStage: string;
   nextAction: string;
   blockers: string[];
@@ -80,6 +89,20 @@ type WorkflowPayload = {
   sealMapping: { lotId: string | null; lotNumber: string | null; sealNumber: string | null; status: string | null };
   packets: NonNullable<NonNullable<InspectionLot["sample"]>["packets"]>;
   assignment: { createdBy: string | null; assignedTo: string | null; deadline: string | Date | null };
+  milestones: {
+    jobCreatedAt: string | Date;
+    jobStartedAt?: string | Date | null;
+    sentToAdminAt?: string | Date | null;
+    sentToAdminBy?: string | null;
+    adminDecisionAt?: string | Date | null;
+    adminDecisionBy?: string | null;
+    adminDecisionStatus?: string | null;
+    operationsCompletedAt?: string | Date | null;
+    handedOverToRndAt?: string | Date | null;
+    handedOverToRndBy?: string | null;
+    handedOverToRndTo?: string | null;
+    handedOverToRndToLabel?: string | null;
+  };
   history: Array<{ id: string; label: string; timestamp: string | Date; actor: string }>;
 };
 
@@ -163,6 +186,7 @@ export function UnifiedJobWorkflow() {
   });
   const [packetCount, setPacketCount] = useState("1");
   const [packetDrafts, setPacketDrafts] = useState<Record<string, { packetWeight: string; packetUnit: string }>>({});
+  const [rndHandoverTarget, setRndHandoverTarget] = useState("");
 
   const fetchWorkflow = useCallback(async () => {
     setLoading(true);
@@ -185,6 +209,7 @@ export function UnifiedJobWorkflow() {
       const nextLotId =
         preferredLotId && workflowPayload.job.lots?.some((lot) => lot.id === preferredLotId) ? preferredLotId : firstLotId;
       setSelectedLotId(nextLotId);
+      setRndHandoverTarget(workflowPayload.milestones.handedOverToRndTo ?? "");
       setJobForm({
         clientId: workflowPayload.job.clientId ?? "",
         clientName: workflowPayload.job.clientName,
@@ -224,6 +249,7 @@ export function UnifiedJobWorkflow() {
   );
   const selectedSample = selectedLot?.sample ?? null;
   const packets = useMemo(() => selectedSample?.packets ?? [], [selectedSample?.packets]);
+  const rndAssignees = payload?.rndAssignees ?? [];
 
   useEffect(() => {
     if (!selectedSample) {
@@ -416,7 +442,14 @@ export function UnifiedJobWorkflow() {
         }),
       });
       if (!response.ok) {
-        throw new Error("Decision update failed.");
+        let details = "";
+        try {
+          const payload = (await response.json()) as { details?: unknown };
+          details = typeof payload?.details === "string" ? payload.details : "";
+        } catch {
+          details = "";
+        }
+        throw new Error(details || "Decision update failed.");
       }
       await fetchWorkflow();
       toast({ title: "Decision updated", status: "success" });
@@ -552,7 +585,14 @@ export function UnifiedJobWorkflow() {
           body: JSON.stringify({ auto: true }),
         });
         if (!response.ok) {
-          throw new Error(`Seal generation failed for ${lot.lotNumber}.`);
+          let details = "";
+          try {
+            const payload = (await response.json()) as { details?: unknown };
+            details = typeof payload?.details === "string" ? payload.details : "";
+          } catch {
+            details = "";
+          }
+          throw new Error(details || `Seal generation failed for ${lot.lotNumber}.`);
         }
       }
       await fetchWorkflow();
@@ -600,12 +640,12 @@ export function UnifiedJobWorkflow() {
         body: JSON.stringify({
           packetId,
           packetWeight: draft.packetWeight,
-          packetQuantity: draft.packetWeight,
           packetUnit: draft.packetUnit,
         }),
       });
       if (!response.ok) {
-        throw new Error("Packet could not be updated.");
+        const payload = (await response.json().catch(() => null)) as { details?: string; error?: string } | null;
+        throw new Error(payload?.details || payload?.error || "Packet could not be updated.");
       }
       await fetchWorkflow();
       toast({ title: "Packet updated", status: "success" });
@@ -618,6 +658,10 @@ export function UnifiedJobWorkflow() {
 
   const handleSubmitToRnd = async () => {
     if (!packets.length) {
+      return;
+    }
+    if (!rndHandoverTarget) {
+      toast({ title: "R&D handover target required", description: "Select the R&D user who will receive this workflow.", status: "warning" });
       return;
     }
     setSaving(true);
@@ -633,13 +677,14 @@ export function UnifiedJobWorkflow() {
           body: JSON.stringify({
             packetId: packet.id,
             packetWeight: draft.packetWeight,
-            packetQuantity: draft.packetWeight,
             packetUnit: draft.packetUnit,
             markSubmittedToRnd: true,
+            handedOverToRndTo: rndHandoverTarget,
           }),
         });
         if (!response.ok) {
-          throw new Error(`Submit to R&D failed for ${packet.packetCode}.`);
+          const payload = (await response.json().catch(() => null)) as { details?: string; error?: string } | null;
+          throw new Error(payload?.details || payload?.error || `Submit to R&D failed for ${packet.packetCode}.`);
         }
       }
       await fetchWorkflow();
@@ -667,7 +712,54 @@ export function UnifiedJobWorkflow() {
     );
   }
 
-  const nextPrimaryAction = payload?.nextAction ?? "Add Lot";
+  const workflowPayload = payload!;
+  const nextPrimaryAction = workflowPayload.nextAction ?? "Add Lot";
+  const processTimeline = [
+    {
+      id: "job-created",
+      title: "Job Created",
+      subtitle: "Parent job record created.",
+      at: formatDate(workflowPayload.milestones.jobCreatedAt),
+    },
+    {
+      id: "job-started",
+      title: "Job Started",
+      subtitle: workflowPayload.milestones.jobStartedAt ? "First lot created." : "Pending first lot creation.",
+      at: workflowPayload.milestones.jobStartedAt ? formatDate(workflowPayload.milestones.jobStartedAt) : undefined,
+    },
+    {
+      id: "sent-to-admin",
+      title: "Sent to Admin",
+      subtitle: workflowPayload.milestones.sentToAdminAt
+        ? `Submitted by ${workflowPayload.milestones.sentToAdminBy || "Not Available"}.`
+        : "Pending operations submission for final decision.",
+      at: workflowPayload.milestones.sentToAdminAt ? formatDate(workflowPayload.milestones.sentToAdminAt) : undefined,
+    },
+    {
+      id: "admin-decision",
+      title: "Admin Decision",
+      subtitle: workflowPayload.milestones.adminDecisionAt
+        ? `${workflowPayload.milestones.adminDecisionStatus || "Decision"} by ${workflowPayload.milestones.adminDecisionBy || "Not Available"}.`
+        : "Pending final admin decision.",
+      at: workflowPayload.milestones.adminDecisionAt ? formatDate(workflowPayload.milestones.adminDecisionAt) : undefined,
+    },
+    {
+      id: "operations-completed",
+      title: "Operations Completed",
+      subtitle: workflowPayload.milestones.operationsCompletedAt
+        ? "Operations-side proof, packets, and readiness completed."
+        : "Pending full operations completion across all lots.",
+      at: workflowPayload.milestones.operationsCompletedAt ? formatDate(workflowPayload.milestones.operationsCompletedAt) : undefined,
+    },
+    {
+      id: "handover-rnd",
+      title: "Handed Over to R&D",
+      subtitle: workflowPayload.milestones.handedOverToRndAt
+        ? `Submitted by ${workflowPayload.milestones.handedOverToRndBy || "Not Available"}${workflowPayload.milestones.handedOverToRndToLabel ? ` to ${workflowPayload.milestones.handedOverToRndToLabel}` : ""}.`
+        : "Pending R&D handover.",
+      at: workflowPayload.milestones.handedOverToRndAt ? formatDate(workflowPayload.milestones.handedOverToRndAt) : undefined,
+    },
+  ];
 
   return (
     <ControlTowerLayout>
@@ -1028,10 +1120,25 @@ export function UnifiedJobWorkflow() {
                     <EmptyWorkState title="Sample required" description="Start sampling before creating packets." />
                   ) : (
                     <>
-                      <HStack spacing={3}>
-                        <Input maxW="120px" value={packetCount} onChange={(event) => setPacketCount(event.target.value)} />
-                        <Button onClick={() => void handleCreatePackets()} isLoading={saving}>Create Packets</Button>
-                      </HStack>
+                      <VStack align="stretch" spacing={3}>
+                        <HStack spacing={3} align="end">
+                          <FormControl maxW="160px">
+                            <FormLabel mb={1}>Packets to create</FormLabel>
+                            <Input
+                              value={packetCount}
+                              onChange={(event) => setPacketCount(event.target.value)}
+                              aria-label="Packets to create"
+                            />
+                          </FormControl>
+                          <Button onClick={() => void handleCreatePackets()} isLoading={saving}>Create Packets</Button>
+                        </HStack>
+                        <Text fontSize="sm" color="text.secondary">
+                          This number is how many new packet rows will be created for the current sample.
+                          {selectedSample?.sampleQuantity !== null && selectedSample?.sampleQuantity !== undefined
+                            ? ` Current sample quantity: ${selectedSample.sampleQuantity} ${selectedSample.sampleUnit ?? "KG"}.`
+                            : ""}
+                        </Text>
+                      </VStack>
                       <EnterpriseStickyTable>
                         <Table size="sm">
                           <Thead>
@@ -1095,7 +1202,18 @@ export function UnifiedJobWorkflow() {
                   <Text fontSize="sm" color="text.secondary">
                     This is the terminal operations action. Every packet must carry packet weight and packet unit before submission.
                   </Text>
-                  <Button alignSelf="start" onClick={() => void handleSubmitToRnd()} isLoading={saving} isDisabled={!packets.length}>
+                  <FormControl maxW={{ base: "full", md: "320px" }} isRequired>
+                    <FormLabel>Hand Over To</FormLabel>
+                    <Select value={rndHandoverTarget} onChange={(event) => setRndHandoverTarget(event.target.value)}>
+                      <option value="">Select R&amp;D user</option>
+                      {rndAssignees.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.displayName}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Button alignSelf="start" onClick={() => void handleSubmitToRnd()} isLoading={saving} isDisabled={!packets.length || !rndHandoverTarget}>
                     Submit to R&amp;D
                   </Button>
                 </VStack>
@@ -1135,6 +1253,15 @@ export function UnifiedJobWorkflow() {
                   status="warning"
                 />
               ) : null}
+
+              <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" bg="bg.surface" p={4}>
+                <VStack align="stretch" spacing={3}>
+                  <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                    Process Timeline
+                  </Text>
+                  <HistoryTimeline events={processTimeline} />
+                </VStack>
+              </Box>
             </VStack>
           </Box>
         </Stack>

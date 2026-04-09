@@ -23,6 +23,7 @@ import {
   PageIdentityBar,
 } from "@/components/enterprise/EnterprisePatterns";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import { formatHoursDuration, getCurrentMilestoneAgeHours, getCurrentMilestoneStage } from "@/lib/workflow-milestone-display";
 import { getJobWorkflowPresentation } from "@/lib/workflow-stage";
 import type { InspectionJob } from "@/types/inspection";
 
@@ -69,6 +70,11 @@ type ActiveJobRow = {
   currentStage: string;
   pendingAction: string;
   owner: string;
+  jobStarted: string;
+  sentToAdmin: string;
+  adminDecision: string;
+  operationsCompleted: string;
+  rndHandover: string;
 };
 
 type LotAgingRow = {
@@ -78,6 +84,8 @@ type LotAgingRow = {
   ageHours: number;
   sampleStatus: string;
   blocker: string;
+  stageAge: string;
+  currentMilestone: string;
   jobRefId: string;
   lotRefId: string;
 };
@@ -159,6 +167,13 @@ export default function ManagerWorkspacePage() {
           currentStage: presentation.label,
           pendingAction: presentation.nextAction,
           owner: job.assignedTo?.profile?.displayName || "Unassigned",
+          jobStarted: job.jobStartedAt ? new Date(job.jobStartedAt).toLocaleString() : "Pending",
+          sentToAdmin: job.sentToAdminAt ? new Date(job.sentToAdminAt).toLocaleString() : "Pending",
+          adminDecision: job.adminDecisionAt
+            ? `${job.adminDecisionStatus || "Decision"} • ${new Date(job.adminDecisionAt).toLocaleString()}`
+            : "Pending",
+          operationsCompleted: job.operationsCompletedAt ? new Date(job.operationsCompletedAt).toLocaleString() : "Pending",
+          rndHandover: job.handedOverToRndAt ? new Date(job.handedOverToRndAt).toLocaleString() : "Pending",
         };
       });
   }, [jobs]);
@@ -175,6 +190,7 @@ export default function ManagerWorkspacePage() {
           : lot.sample.sampleStatus !== "READY_FOR_PACKETING"
             ? "Testing pending"
             : "Awaiting packet/dispatch";
+        const stageAgeHours = getCurrentMilestoneAgeHours(job) ?? ageHours;
         rows.push({
           id: `lot-aging-${lot.id}`,
           lotNumber: lot.lotNumber,
@@ -182,6 +198,8 @@ export default function ManagerWorkspacePage() {
           ageHours,
           sampleStatus,
           blocker,
+          stageAge: formatHoursDuration(stageAgeHours),
+          currentMilestone: getCurrentMilestoneStage(job),
           jobRefId: job.id,
           lotRefId: lot.id,
         });
@@ -350,8 +368,13 @@ export default function ManagerWorkspacePage() {
                 { id: "lots", header: "Lots", render: (row) => row.lots },
                 { id: "stage", header: "Current Stage", render: (row) => row.currentStage },
                 { id: "pending", header: "Pending Action", render: (row) => row.pendingAction },
+                { id: "started", header: "Job Started", render: (row) => row.jobStarted },
+                { id: "sent", header: "Sent to Admin", render: (row) => row.sentToAdmin },
+                { id: "decision", header: "Admin Decision", render: (row) => row.adminDecision },
+                { id: "ops", header: "Operations Completed", render: (row) => row.operationsCompleted },
+                { id: "handover", header: "Handed Over to R&D", render: (row) => row.rndHandover },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
-              ]} rowActions={[{ id: "open-job", label: "Open Job", onClick: (row) => { const job = jobs.find((entry) => entry.id === row.id); if (job) router.push(`/operations/job/${job.id}`); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-job", label: "Open Job Workflow", onClick: (row) => { const job = jobs.find((entry) => entry.id === row.id); if (job) router.push(`/jobs/${job.id}/workflow`); } }]} /></Box></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>
@@ -360,9 +383,11 @@ export default function ManagerWorkspacePage() {
                 { id: "lot", header: "Lot Number", render: (row) => row.lotNumber },
                 { id: "job", header: "Job Number", render: (row) => row.jobNumber },
                 { id: "age", header: "Age", render: (row) => `${row.ageHours}h` },
+                { id: "stage-age", header: "Stage Age", render: (row) => row.stageAge },
+                { id: "milestone", header: "Current Milestone", render: (row) => row.currentMilestone },
                 { id: "sample", header: "Sample Status", render: (row) => row.sampleStatus },
                 { id: "blocker", header: "Blocker", render: (row) => row.blocker },
-              ]} rowActions={[{ id: "open-lot", label: "Open Lot", onClick: (row) => { router.push(`/operations/job/${row.jobRefId}/lot/${row.lotRefId}`); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-lot", label: "Open Traceability", onClick: (row) => { router.push(`/traceability/lots/${row.lotRefId}`); } }]} /></Box></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>

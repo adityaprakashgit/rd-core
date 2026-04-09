@@ -1,4 +1,6 @@
 export type PublicUser = {
+  id?: string;
+  email?: string | null;
   role: "ADMIN" | "OPERATIONS" | "RND" | "VIEWER";
   profile: {
     displayName: string;
@@ -25,6 +27,16 @@ export type InspectionJob = {
   assignedToId?: string | null;
   assignedById?: string | null;
   assignedAt?: string | Date | null;
+  jobStartedAt?: string | Date | null;
+  sentToAdminAt?: string | Date | null;
+  sentToAdminBy?: string | null;
+  adminDecisionAt?: string | Date | null;
+  adminDecisionBy?: string | null;
+  adminDecisionStatus?: "PASS" | "HOLD" | "REJECT" | string | null;
+  operationsCompletedAt?: string | Date | null;
+  handedOverToRndAt?: string | Date | null;
+  handedOverToRndBy?: string | null;
+  handedOverToRndTo?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
   assignedTo?: PublicUser | null;
@@ -161,6 +173,11 @@ export type LotInspectionRecord = {
   inspectionStatus: InspectionStatus | string;
   decisionStatus: InspectionDecisionStatus | string;
   startedAt: string | Date;
+  sentToAdminAt?: string | Date | null;
+  sentToAdminBy?: string | null;
+  decisionAt?: string | Date | null;
+  decisionBy?: string | null;
+  decisionOutcome?: "PASS" | "HOLD" | "REJECT" | string | null;
   completedAt?: string | Date | null;
   overallRemark?: string | null;
   identityRiskFlag: boolean;

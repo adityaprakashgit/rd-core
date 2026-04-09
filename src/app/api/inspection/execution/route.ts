@@ -15,6 +15,7 @@ import { buildModuleWorkflowSettingsCreate, canApproveFinalDecision, toModuleWor
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { getCurrentUserFromRequest } from "@/lib/session";
+import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import type {
   InspectionChecklistResponse,
   InspectionDecisionStatus,
@@ -52,6 +53,23 @@ const imageCategoryMap: Record<string, string> = {
 
 function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
+}
+
+function mapDecisionOutcome(decisionStatus: InspectionDecisionStatus | string | null | undefined) {
+  if (decisionStatus === "READY_FOR_SAMPLING") {
+    return "PASS";
+  }
+  if (decisionStatus === "ON_HOLD") {
+    return "HOLD";
+  }
+  if (decisionStatus === "REJECTED") {
+    return "REJECT";
+  }
+  return null;
+}
+
+function resolveRequiredMediaCategoriesFromSettings(requiredImageCategories: string[]) {
+  return requiredImageCategories.map((label) => imageCategoryMap[label] ?? label.toUpperCase().replaceAll(" ", "_"));
 }
 
 async function ensureChecklistSeeded(tx: PrismaLike) {
@@ -130,6 +148,8 @@ async function getLotScope(tx: PrismaLike, lotId: string, companyId: string) {
 
 async function buildInspectionPayload(tx: PrismaLike, lotId: string, companyId: string) {
   await ensureChecklistSeeded(tx);
+  const workflowPolicy = await getWorkflowPolicy(tx, companyId);
+  const requiredMediaCategories = resolveRequiredMediaCategoriesFromSettings(workflowPolicy.images.requiredImageCategories);
   const lot = await getLotScope(tx, lotId, companyId);
   const checklistItems = await tx.inspectionChecklistItemMaster.findMany({
     where: { isActive: true },
@@ -146,6 +166,7 @@ async function buildInspectionPayload(tx: PrismaLike, lotId: string, companyId: 
         responses: inspection.responses as InspectionChecklistResponse[],
         issues: inspection.issues as InspectionIssue[],
         mediaCategories: inspection.mediaFiles.map((file) => file.category),
+        requiredMediaCategories,
       })
     : null;
 
@@ -365,8 +386,8 @@ export async function PATCH(request: NextRequest) {
       }
       if (decisionStatus) {
         const capturedCategories = new Set((lot.mediaFiles ?? []).map((file) => file.category));
-        const missingCategories = workflowPolicy.images.requiredImageCategories.filter((label) => {
-          const category = imageCategoryMap[label] ?? label.toUpperCase().replaceAll(" ", "_");
+        const requiredMediaCategories = resolveRequiredMediaCategoriesFromSettings(workflowPolicy.images.requiredImageCategories);
+        const missingCategories = requiredMediaCategories.filter((category) => {
           return !capturedCategories.has(category);
         });
         if (missingCategories.length > 0) {
@@ -509,6 +530,7 @@ export async function PATCH(request: NextRequest) {
         responses: refreshed.responses as InspectionChecklistResponse[],
         issues: refreshed.issues as InspectionIssue[],
         mediaCategories: refreshed.mediaFiles.map((file) => file.category),
+        requiredMediaCategories: resolveRequiredMediaCategoriesFromSettings(workflowPolicy.images.requiredImageCategories),
       });
 
       const nextOverallRemark = overallRemarkProvided ? overallRemark : refreshed.overallRemark;
@@ -551,6 +573,19 @@ export async function PATCH(request: NextRequest) {
         data: {
           ...(overallRemarkProvided ? { overallRemark: nextOverallRemark } : {}),
           decisionStatus: nextDecisionStatus ?? "PENDING",
+          ...(decisionStatus === "PENDING" && !inspection.sentToAdminAt
+            ? {
+                sentToAdminAt: new Date(),
+                sentToAdminBy: currentUser.id,
+              }
+            : {}),
+          ...(decisionStatus && decisionStatus !== "PENDING"
+            ? {
+                decisionAt: new Date(),
+                decisionBy: currentUser.id,
+                decisionOutcome: mapDecisionOutcome(decisionStatus),
+              }
+            : {}),
           inspectionStatus: nextInspectionStatus,
           completedAt: nextInspectionStatus === "COMPLETED" ? new Date() : null,
           identityRiskFlag: assessment.identityRiskFlag,
@@ -607,6 +642,11 @@ export async function PATCH(request: NextRequest) {
           },
         });
       }
+
+      await recomputeJobWorkflowMilestones(tx, {
+        jobId: lot.jobId,
+        companyId: currentUser.companyId,
+      });
 
       return buildInspectionPayload(tx, lotId, currentUser.companyId);
     });
