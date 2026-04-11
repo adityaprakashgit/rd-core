@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { loadRndLineageLinkage } from "@/lib/rnd-report-linkage";
+import { resolveActiveOutputForLineage } from "@/lib/rnd-report-linkage";
 import { getCurrentUserFromRequest } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +61,8 @@ type TraceabilityLotResponse = {
     packetCode: string;
     dispatchState: string;
     blockingReason: string | null;
+    currentForDispatchSnapshotId: string | null;
+    currentForDispatchUrl: string | null;
   }>;
   coa: {
     available: boolean;
@@ -73,11 +75,12 @@ type TraceabilityLotResponse = {
       snapshotId: string | null;
       rndJobNumber: string | null;
       generatedAt: string | null;
+      status: "Active Report" | "Available";
     };
     previous: Array<{
       snapshotId: string;
       rndJobNumber: string;
-      generatedAt: string;
+      generatedAt: string | null;
       status: "Previous Report";
     }>;
   };
@@ -318,18 +321,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const relatedDocuments: TraceabilityLotResponse["relatedDocuments"] = [];
-    const reportLinkage = lot.sample
-      ? await loadRndLineageLinkage(prisma, {
+    const outputSelection = lot.sample
+      ? await resolveActiveOutputForLineage(prisma, {
           companyId: currentUser.companyId,
           parentJobId: lot.job.id,
           sampleId: lot.sample.id,
+          fallbackSnapshots: lot.job.reportSnapshots,
         })
       : null;
-    const activeSnapshotId = reportLinkage?.activeReport?.reportSnapshotId ?? lot.job.reportSnapshots[0]?.id ?? null;
-    const previousSnapshotIds = (reportLinkage?.previousReports ?? []).map((row) => row.reportSnapshotId);
+    const activeSnapshotId = outputSelection?.activeReport?.snapshotId ?? null;
+    const currentForDispatchUrl = outputSelection?.currentForDispatch?.url ?? null;
+    const previousSnapshotIds = (outputSelection?.previousReports ?? []).map((row) => row.snapshotId);
     const precedenceBySnapshot = new Map<string, string>();
     if (activeSnapshotId) precedenceBySnapshot.set(activeSnapshotId, "Active Report");
-    for (const id of previousSnapshotIds) precedenceBySnapshot.set(id, "Previous Report");
+    for (const id of previousSnapshotIds) {
+      precedenceBySnapshot.set(id, "Superseded");
+    }
 
     for (const snapshot of lot.job.reportSnapshots) {
       const precedence = precedenceBySnapshot.get(snapshot.id);
@@ -447,29 +454,28 @@ export async function GET(request: NextRequest, context: RouteContext) {
           packetCode: packet.packetCode,
           dispatchState: allocationStatus,
           blockingReason: blocked,
+          currentForDispatchSnapshotId: activeSnapshotId,
+          currentForDispatchUrl,
         };
       }),
       coa: {
         available: Boolean(activeSnapshotId),
         latestSnapshotId: activeSnapshotId,
         previousSnapshotIds,
-        generatedAt: reportLinkage?.activeReport
-          ? toIso(reportLinkage.activeReport.reportSnapshot.createdAt)
-          : toIso(lot.job.reportSnapshots[0]?.createdAt),
+        generatedAt: outputSelection?.activeCoa?.generatedAt ?? null,
       },
       reports: {
         active: {
           snapshotId: activeSnapshotId,
-          rndJobNumber: reportLinkage?.activeReport?.rndJob?.rndJobNumber ?? null,
-          generatedAt: reportLinkage?.activeReport
-            ? toIso(reportLinkage.activeReport.reportSnapshot.createdAt)
-            : toIso(lot.job.reportSnapshots[0]?.createdAt),
+          rndJobNumber: outputSelection?.activeReport?.rndJobNumber ?? null,
+          generatedAt: outputSelection?.activeReport?.generatedAt ?? null,
+          status: outputSelection?.selectionSource === "LINEAGE" ? "Active Report" : "Available",
         },
-        previous: (reportLinkage?.previousReports ?? []).map((row) => ({
-          snapshotId: row.reportSnapshotId,
-          rndJobNumber: row.rndJob.rndJobNumber,
-          generatedAt: row.reportSnapshot.createdAt.toISOString(),
-          status: "Previous Report",
+        previous: (outputSelection?.previousReports ?? []).map((row) => ({
+          snapshotId: row.snapshotId,
+          rndJobNumber: row.rndJobNumber,
+          generatedAt: row.generatedAt,
+          status: row.status,
         })),
       },
       relatedDocuments: relatedDocuments

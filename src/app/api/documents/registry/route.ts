@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
+import { resolveActiveOutputForLineage } from "@/lib/rnd-report-linkage";
 import { getCurrentUserFromRequest } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -132,8 +133,9 @@ function buildDocumentRows(input: {
       } | null;
     }>;
   }>;
-  activeSnapshotBySampleId: Map<string, string>;
+  activeOutputBySampleId: Map<string, { snapshotId: string; url: string; source: "LINEAGE" | "LEGACY_FALLBACK" }>;
   reportStatusBySnapshotId: Map<string, string>;
+  coaStatusBySnapshotId: Map<string, string>;
 }): DocumentRegistryRow[] {
   const rows: DocumentRegistryRow[] = [];
 
@@ -142,6 +144,7 @@ function buildDocumentRows(input: {
 
     for (const snapshot of job.reportSnapshots) {
       const reportStatus = input.reportStatusBySnapshotId.get(snapshot.id) ?? "Available";
+      const coaStatus = input.coaStatusBySnapshotId.get(snapshot.id) ?? "Available";
       rows.push({
         id: `report-${snapshot.id}`,
         documentType: "TEST_REPORT",
@@ -168,7 +171,7 @@ function buildDocumentRows(input: {
         lotNumber: null,
         packetId: null,
         packetCode: null,
-        status: reportStatus,
+        status: coaStatus,
         generatedAt: snapshot.createdAt.toISOString(),
         linkedActionUrl: `/api/report/${snapshot.id}`,
         source: "REPORT_SNAPSHOT",
@@ -249,30 +252,29 @@ function buildDocumentRows(input: {
           });
         }
 
-        const activeSnapshotId = lot.sample
-          ? input.activeSnapshotBySampleId.get(lot.sample.id) ?? null
+        const activeOutput = lot.sample
+          ? input.activeOutputBySampleId.get(lot.sample.id) ?? null
           : null;
-        const fallbackSnapshotId = job.reportSnapshots[0]?.id ?? null;
-        const dispatchSnapshotId = activeSnapshotId ?? fallbackSnapshotId;
+        const dispatchSnapshotId = activeOutput?.snapshotId ?? null;
         const dispatchSnapshot = dispatchSnapshotId
           ? job.reportSnapshots.find((snapshot) => snapshot.id === dispatchSnapshotId) ?? null
           : null;
-        if (packet.allocation?.allocationStatus && dispatchSnapshot) {
-            rows.push({
-              id: `dispatch-${packet.id}-${dispatchSnapshot.id}`,
-              documentType: "DISPATCH_DOCUMENT",
-              documentLabel: documentTypeLabel("DISPATCH_DOCUMENT"),
-              jobId: job.id,
-              jobNumber,
-              lotId: lot.id,
-              lotNumber: lot.lotNumber,
-              packetId: packet.id,
-              packetCode: packet.packetCode,
-              status: packet.allocation.allocationStatus,
-              generatedAt: dispatchSnapshot.createdAt.toISOString(),
-              linkedActionUrl: `/api/report/${dispatchSnapshot.id}`,
-              source: "REPORT_SNAPSHOT",
-            });
+        if (packet.allocation?.allocationStatus && dispatchSnapshot && activeOutput) {
+          rows.push({
+            id: `dispatch-${packet.id}-${dispatchSnapshot.id}`,
+            documentType: "DISPATCH_DOCUMENT",
+            documentLabel: documentTypeLabel("DISPATCH_DOCUMENT"),
+            jobId: job.id,
+            jobNumber,
+            lotId: lot.id,
+            lotNumber: lot.lotNumber,
+            packetId: packet.id,
+            packetCode: packet.packetCode,
+            status: "Current for Dispatch",
+            generatedAt: dispatchSnapshot.createdAt.toISOString(),
+            linkedActionUrl: activeOutput.url,
+            source: "REPORT_SNAPSHOT",
+          });
         }
       }
     }
@@ -385,46 +387,65 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const parentJobIds = jobs.map((job) => job.id);
-    const reportVersions = parentJobIds.length
-      ? await prisma.rndReportVersion.findMany({
-          where: {
-            companyId: currentUser.companyId,
-            parentJobId: { in: parentJobIds },
-          },
-          select: {
-            sampleId: true,
-            reportSnapshotId: true,
-            precedence: true,
-            updatedAt: true,
-          },
-        })
-      : [];
-
-    const activeSnapshotBySampleId = new Map<string, { snapshotId: string; updatedAt: number }>();
+    const activeOutputBySampleId = new Map<string, { snapshotId: string; url: string; source: "LINEAGE" | "LEGACY_FALLBACK" }>();
     const reportStatusBySnapshotId = new Map<string, string>();
-    for (const row of reportVersions) {
-      if (row.precedence === "ACTIVE") {
-        const prev = activeSnapshotBySampleId.get(row.sampleId);
-        const ts = row.updatedAt.getTime();
-        if (!prev || ts > prev.updatedAt) {
-          activeSnapshotBySampleId.set(row.sampleId, {
-            snapshotId: row.reportSnapshotId,
-            updatedAt: ts,
-          });
+    const coaStatusBySnapshotId = new Map<string, string>();
+
+    const sampleLineagesMap = new Map<string, { sampleId: string; parentJobId: string; fallbackSnapshots: Array<{ id: string; createdAt: Date }> }>();
+    for (const job of jobs) {
+      for (const lot of job.lots) {
+        const sampleId = lot.sample?.id;
+        if (!sampleId || sampleLineagesMap.has(sampleId)) {
+          continue;
         }
-        reportStatusBySnapshotId.set(row.reportSnapshotId, "Active Report");
-      } else if (!reportStatusBySnapshotId.has(row.reportSnapshotId)) {
-        reportStatusBySnapshotId.set(row.reportSnapshotId, "Previous Report");
+        sampleLineagesMap.set(sampleId, {
+          sampleId,
+          parentJobId: job.id,
+          fallbackSnapshots: job.reportSnapshots,
+        });
+      }
+    }
+    const sampleLineages = [...sampleLineagesMap.values()];
+
+    for (const lineage of sampleLineages) {
+      const output = await resolveActiveOutputForLineage(prisma, {
+        companyId: currentUser.companyId,
+        parentJobId: lineage.parentJobId,
+        sampleId: lineage.sampleId,
+        fallbackSnapshots: lineage.fallbackSnapshots,
+      });
+
+      if (output.currentForDispatch) {
+        activeOutputBySampleId.set(lineage.sampleId, {
+          snapshotId: output.currentForDispatch.snapshotId,
+          url: output.currentForDispatch.url,
+          source: output.selectionSource ?? "LEGACY_FALLBACK",
+        });
+      }
+
+      if (output.selectionSource === "LINEAGE") {
+        if (output.activeReport) {
+          reportStatusBySnapshotId.set(output.activeReport.snapshotId, "Active Report");
+        }
+        if (output.activeCoa) {
+          coaStatusBySnapshotId.set(output.activeCoa.snapshotId, "Active COA");
+        }
+        for (const row of output.previousReports) {
+          if (!reportStatusBySnapshotId.has(row.snapshotId)) {
+            reportStatusBySnapshotId.set(row.snapshotId, row.status);
+          }
+          if (!coaStatusBySnapshotId.has(row.snapshotId)) {
+            coaStatusBySnapshotId.set(row.snapshotId, row.status);
+          }
+        }
       }
     }
 
     const rows = buildDocumentRows({
       jobs,
-      activeSnapshotBySampleId: new Map(
-        [...activeSnapshotBySampleId.entries()].map(([sampleId, value]) => [sampleId, value.snapshotId]),
-      ),
+      activeOutputBySampleId,
       reportStatusBySnapshotId,
+      coaStatusBySnapshotId,
     })
       .filter((row) => mapMatches(row.lotNumber, filters.lot))
       .filter((row) => mapMatches(row.packetCode, filters.packet))

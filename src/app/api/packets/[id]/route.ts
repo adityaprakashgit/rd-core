@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationError, authorize } from "@/lib/rbac";
 import { derivePacketUsageBalance } from "@/lib/rnd-ledger";
+import { resolveActiveOutputForLineage } from "@/lib/rnd-report-linkage";
 import { getCurrentUserFromRequest } from "@/lib/session";
 
 function jsonError(error: string, details: string, status: number) {
@@ -51,6 +52,17 @@ export async function GET(request: NextRequest, context: PacketRouteContext) {
             createdAt: true,
           },
         },
+        job: {
+          select: {
+            reportSnapshots: {
+              orderBy: { createdAt: "desc" },
+              select: {
+                id: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -60,10 +72,23 @@ export async function GET(request: NextRequest, context: PacketRouteContext) {
 
     const seed = Number(packet.packetWeight ?? packet.packetQuantity ?? 0);
     const balance = derivePacketUsageBalance(packet.usageLedgerEntries, Number.isFinite(seed) ? seed : 0);
+    const output = await resolveActiveOutputForLineage(prisma, {
+      companyId: currentUser.companyId,
+      parentJobId: packet.jobId,
+      sampleId: packet.sampleId,
+      fallbackSnapshots: packet.job.reportSnapshots,
+    });
 
     return NextResponse.json({
       ...packet,
       ledgerBalance: balance,
+      reportLinkage: {
+        activeReport: output.activeReport,
+        activeCoa: output.activeCoa,
+        currentForDispatch: output.currentForDispatch,
+        previousReports: output.previousReports,
+        selectionSource: output.selectionSource,
+      },
     });
   } catch (error: unknown) {
     if (error instanceof AuthorizationError) {

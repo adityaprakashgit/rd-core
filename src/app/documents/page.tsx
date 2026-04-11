@@ -221,7 +221,10 @@ export default function DocumentRegistryPage() {
                 <option value="">All</option>
                 <option value="Available">Available</option>
                 <option value="Active Report">Active Report</option>
+                <option value="Active COA">Active COA</option>
                 <option value="Previous Report">Previous Report</option>
+                <option value="Superseded">Superseded</option>
+                <option value="Current for Dispatch">Current for Dispatch</option>
                 <option value="BLOCKED">Blocked</option>
                 <option value="ALLOCATED">Allocated</option>
                 <option value="USED">Used</option>

@@ -16,6 +16,7 @@ vi.mock("@/lib/session", () => ({
 
 import { GET as getTraceabilityLot } from "@/app/api/traceability/lot/[lotId]/route";
 import { GET as getDocumentRegistry } from "@/app/api/documents/registry/route";
+import { GET as getPacketDetail } from "@/app/api/packets/[id]/route";
 
 type SeedLineage = {
   jobId: string;
@@ -338,15 +339,17 @@ describe("DB integration: traceability/documents report precedence labels", () =
     const traceabilityPayload = (await traceabilityResponse.json()) as {
       coa: { latestSnapshotId: string | null; previousSnapshotIds: string[] };
       reports: {
-        active: { snapshotId: string | null };
+        active: { snapshotId: string | null; status: string };
         previous: Array<{ snapshotId: string; status: string }>;
       };
+      dispatches: Array<{ currentForDispatchSnapshotId: string | null; currentForDispatchUrl: string | null }>;
       relatedDocuments: Array<{ id: string; status: string }>;
     };
 
     expect(traceabilityPayload.coa.latestSnapshotId).toBe(seed.lineageWithVersions.newSnapshotId);
     expect(traceabilityPayload.coa.previousSnapshotIds).toContain(seed.lineageWithVersions.oldSnapshotId);
     expect(traceabilityPayload.reports.active.snapshotId).toBe(seed.lineageWithVersions.newSnapshotId);
+    expect(traceabilityPayload.reports.active.status).toBe("Active Report");
     expect(traceabilityPayload.reports.previous).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -363,7 +366,15 @@ describe("DB integration: traceability/documents report precedence labels", () =
         }),
         expect.objectContaining({
           id: `report-${seed.lineageWithVersions.oldSnapshotId}`,
-          status: "Previous Report",
+          status: "Superseded",
+        }),
+      ]),
+    );
+    expect(traceabilityPayload.dispatches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          currentForDispatchSnapshotId: seed.lineageWithVersions.newSnapshotId,
+          currentForDispatchUrl: `/api/report/${seed.lineageWithVersions.newSnapshotId}`,
         }),
       ]),
     );
@@ -395,7 +406,7 @@ describe("DB integration: traceability/documents report precedence labels", () =
           id: `coa-${seed.lineageWithVersions.newSnapshotId}`,
           documentType: "COA",
           source: "REPORT_SNAPSHOT",
-          status: "Active Report",
+          status: "Active COA",
         }),
         expect.objectContaining({
           id: `report-${seed.lineageWithVersions.oldSnapshotId}`,
@@ -412,6 +423,7 @@ describe("DB integration: traceability/documents report precedence labels", () =
         expect.objectContaining({
           id: `dispatch-${seed.lineageWithVersions.packetId}-${seed.lineageWithVersions.newSnapshotId}`,
           documentType: "DISPATCH_DOCUMENT",
+          status: "Current for Dispatch",
           linkedActionUrl: `/api/report/${seed.lineageWithVersions.newSnapshotId}`,
         }),
       ]),
@@ -433,5 +445,34 @@ describe("DB integration: traceability/documents report precedence labels", () =
         }),
       ]),
     );
+
+    const packetResponse = await getPacketDetail(
+      new NextRequest(`http://localhost/api/packets/${seed.lineageWithVersions.packetId}`),
+      { params: Promise.resolve({ id: seed.lineageWithVersions.packetId }) },
+    );
+    expect(packetResponse.status).toBe(200);
+    const packetPayload = (await packetResponse.json()) as {
+      reportLinkage: {
+        activeReport: { snapshotId: string } | null;
+        activeCoa: { snapshotId: string } | null;
+        currentForDispatch: { snapshotId: string; url: string } | null;
+        previousReports: Array<{ snapshotId: string }>;
+        selectionSource: string | null;
+      };
+    };
+    expect(packetPayload.reportLinkage.activeReport?.snapshotId).toBe(seed.lineageWithVersions.newSnapshotId);
+    expect(packetPayload.reportLinkage.activeCoa?.snapshotId).toBe(seed.lineageWithVersions.newSnapshotId);
+    expect(packetPayload.reportLinkage.currentForDispatch).toEqual(
+      expect.objectContaining({
+        snapshotId: seed.lineageWithVersions.newSnapshotId,
+        url: `/api/report/${seed.lineageWithVersions.newSnapshotId}`,
+      }),
+    );
+    expect(packetPayload.reportLinkage.previousReports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ snapshotId: seed.lineageWithVersions.oldSnapshotId }),
+      ]),
+    );
+    expect(packetPayload.reportLinkage.selectionSource).toBe("LINEAGE");
   });
 });

@@ -77,6 +77,14 @@ type PacketDraft = {
   labelText: string;
 };
 
+type PacketOutputLinkage = {
+  activeReport: { snapshotId: string; url: string } | null;
+  activeCoa: { snapshotId: string; url: string } | null;
+  currentForDispatch: { snapshotId: string; url: string } | null;
+  previousReports: Array<{ snapshotId: string; status: string }>;
+  selectionSource: "LINEAGE" | "LEGACY_FALLBACK" | null;
+};
+
 type MediaConfig = {
   mediaType: PacketMediaType;
   title: string;
@@ -227,6 +235,7 @@ export function PacketManagementWorkspace() {
   const [generatingSealPacketId, setGeneratingSealPacketId] = useState<string | null>(null);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [selectedPacketId, setSelectedPacketId] = useState<string | null>(null);
+  const [selectedPacketOutput, setSelectedPacketOutput] = useState<PacketOutputLinkage | null>(null);
 
   const fileInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -296,6 +305,40 @@ export function PacketManagementWorkspace() {
     });
   }, [packets]);
 
+  useEffect(() => {
+    let active = true;
+    if (!selectedPacketId) {
+      setSelectedPacketOutput(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    async function loadPacketOutput() {
+      try {
+        const response = await fetch(`/api/packets/${selectedPacketId}`);
+        if (!response.ok) {
+          throw new Error("Failed to load packet output linkage.");
+        }
+        const payload = (await response.json()) as { reportLinkage?: PacketOutputLinkage };
+        if (!active) {
+          return;
+        }
+        setSelectedPacketOutput(payload.reportLinkage ?? null);
+      } catch {
+        if (!active) {
+          return;
+        }
+        setSelectedPacketOutput(null);
+      }
+    }
+
+    void loadPacketOutput();
+    return () => {
+      active = false;
+    };
+  }, [selectedPacketId]);
+
   const workflowSteps = useMemo(() => buildWorkflowSteps(sample, packets), [packets, sample]);
   const allocatedQuantity = useMemo(() => sumAllocatedPacketQuantity(packets), [packets]);
   const totalQuantity = typeof sample?.sampleQuantity === "number" ? sample.sampleQuantity : 0;
@@ -307,8 +350,11 @@ export function PacketManagementWorkspace() {
   const selectedPacket = packets.find((packet) => packet.id === selectedPacketId) ?? packets[0] ?? null;
   const selectedPacketReadiness = selectedPacket ? getPacketReadiness(selectedPacket) : null;
   const sampleReady = deriveSampleStatus(sample) === "READY_FOR_PACKETING";
-  const hasLinkedCoa = ["REPORT_READY", "LOCKED", "COMPLETED", "DISPATCHED"].includes(lot?.job.status ?? "");
-  const hasDispatchArtifact = ["COMPLETED", "DISPATCHED"].includes(lot?.job.status ?? "");
+  const activeReportUrl = selectedPacketOutput?.activeReport?.url ?? null;
+  const activeCoaUrl = selectedPacketOutput?.activeCoa?.url ?? null;
+  const currentForDispatchUrl = selectedPacketOutput?.currentForDispatch?.url ?? null;
+  const hasLinkedCoa = Boolean(activeCoaUrl);
+  const hasDispatchArtifact = Boolean(currentForDispatchUrl);
   const autoBalancedPacketId = useMemo(() => {
     if (totalQuantity <= 0 || packets.length < 2) {
       return null;
@@ -790,7 +836,13 @@ export function PacketManagementWorkspace() {
                     id: "dispatch-docs",
                     header: "Linked dispatch documents",
                     render: () => (
-                      <Button size="xs" variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>
+                      <Button
+                        as="a"
+                        href={currentForDispatchUrl ?? `/reports?jobId=${jobId}`}
+                        target={currentForDispatchUrl ? "_blank" : undefined}
+                        size="xs"
+                        variant="outline"
+                      >
                         View PDF
                       </Button>
                     ),
@@ -848,6 +900,10 @@ export function PacketManagementWorkspace() {
                         <SectionHint label="Required checks" value={selectedPacketReadiness?.isReady ? "Completed" : "Pending"} />
                         <SectionHint label="Missing checks" value={selectedPacketReadiness ? String(selectedPacketReadiness.missing.length) : "0"} />
                         <SectionHint label="Allocation" value={selectedPacket?.allocation?.allocationStatus ?? "BLOCKED"} />
+                        <SectionHint
+                          label="Current for Dispatch"
+                          value={selectedPacketOutput?.currentForDispatch ? "Current for Dispatch" : "Pending"}
+                        />
                       </VStack>
                     ),
                   },
@@ -856,11 +912,19 @@ export function PacketManagementWorkspace() {
                     label: "Documents",
                     content: (
                       <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3}>
-                        <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>View PDF</Button>
+                        <Button as="a" href={activeReportUrl ?? `/reports?jobId=${jobId}`} target={activeReportUrl ? "_blank" : undefined} variant="outline">
+                          View PDF
+                        </Button>
                         <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>Download Packing List PDF</Button>
-                        <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>Download Report PDF</Button>
+                        <Button as="a" href={activeReportUrl ?? `/reports?jobId=${jobId}`} target={activeReportUrl ? "_blank" : undefined} variant="outline">
+                          Download Report PDF
+                        </Button>
                         <Button variant="outline" onClick={() => router.push(`/traceability/lot/${lotId}`)}>Open Traceability</Button>
                         <WorkflowStateChip status={hasLinkedCoa ? "COA_AVAILABLE" : "COA_PENDING"} />
+                        <Button as="a" href={activeCoaUrl ?? "/documents"} target={activeCoaUrl ? "_blank" : undefined} variant="outline">
+                          Active COA
+                        </Button>
+                        <SectionHint label="Previous Reports" value={String(selectedPacketOutput?.previousReports.length ?? 0)} />
                       </SimpleGrid>
                     ),
                   },
