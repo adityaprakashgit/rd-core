@@ -1,13 +1,34 @@
 # UI_REVAMP_SCREEN_MAP
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- Agent enforcement is defined in `AGENTS.md`.
+- This file is a planning/reference map and MUST remain subordinate to canonical governance.
+- If wording conflicts, precedence is:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. supporting/module docs
+
 ## Canonical Rules
 - Stage flow: `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 - Roles: Production, R&D, Manager, Admin
 - Runtime mapping: Production -> `OPERATIONS`, R&D -> `RND`, Manager -> `VIEWER` (scoped), Admin -> `ADMIN`
 - Core object: Lot is the primary traceable object
+- Canonical lineage model: `Job -> Lot -> Sample -> Trial -> Packet -> Dispatch -> COA`
 - Exclude Playground
 - No KPI/dashboard clutter on operational screens
 - One screen = one clear task
+- Workflow-heavy detail pages MUST follow Object Process Template rules:
+  - non-scroll-dependent stage orientation
+  - sticky stage header/tabs
+  - one active stage panel at a time
+  - right rail for linked records, blockers, history, and documents
+- Workflow semantics MUST remain distinct:
+  - Stage = process position
+  - Status = record state
+  - Next Action = immediate required action
+  - Owner = accountable role/user
+  - Blocker = condition preventing progression
 - PDF labels used everywhere:
   - `Download Report PDF`
   - `Download Packing List PDF`
@@ -21,9 +42,9 @@
 - Record linkage must remain explicit across Job, Lot, Sample, Packet, Dispatch, and Documents.
 - Operator surfaces stay task-first and uncluttered.
 - Device policy:
-  - Desktop-first enterprise shell.
-  - Tablet-responsive split and table layouts.
-  - Mobile limited to focused task completion.
+  - Execution/process surfaces MUST be task-first and stage-oriented across breakpoints.
+  - Registry/oversight surfaces MAY use dense enterprise list/table layouts.
+  - Responsive differences MUST be layout-level, not workflow-logic-level.
 
 ## 2. Navigation Map
 ### Primary Navigation (Desktop, Locked)
@@ -61,8 +82,9 @@ From documents context:
   - Company and role context
   - Quick actions
 - Page frame:
-  - `PageHeader`
-  - `Filter/Search/Action Bar`
+  - `PageIdentityBar`
+  - `PageActionBar`
+  - `FilterSearchStrip` or `WorkflowStageHeader/WorkflowStageTabs`
   - Main content area
   - Optional right context panel
 - Mobile shell:
@@ -120,16 +142,18 @@ From documents context:
   - Compact aggregate chips allowed where decision-relevant.
 
 ## 6. Detail Page Structure
-- Shared detail composition:
+- Shared detail composition (Object Process Template):
   - Header with key identifiers, state, and one primary CTA.
-  - Main tabbed content surface.
+  - Sticky stage tabs/header with explicit stage ownership.
+  - One active stage panel at a time.
   - Right context rail with blockers, next actions, and trace links.
 - Panel behavior:
   - Drawers for edit/supporting flows to preserve context.
   - Modals only for hard confirmations and full-screen PDF preview.
 
-## 7. Tab Strategy
-- Stable detail tabs across modules:
+## 7. Stage Navigation Strategy
+- Stage tabs MUST be non-scroll-dependent on workflow-heavy detail pages.
+- Stable stage/tab taxonomy across modules:
   - `Overview`
   - `Workflow`
   - `Traceability`
@@ -176,8 +200,8 @@ From documents context:
   - `Lot Number`
   - `Material Name`
   - `Current Step`
-- Lineage chain blocks:
-  - Job -> Lot -> Inspection -> Sample -> Packet -> Dispatch -> Documents
+- Lineage chain blocks MUST follow canonical lineage:
+  - Job -> Lot -> Sample -> Trial -> Packet -> Dispatch -> COA
 - Required sections:
   - Evidence gallery
   - Seal history
@@ -256,7 +280,7 @@ From documents context:
 All role homepages remain queue-first and table-first, not dashboard-widget-first.
 
 ## Final Closure Notes
-- Detail tabs are standardized on shared `DetailTabsLayout` for:
+- Workflow-heavy detail pages MUST use shared `DetailTabsLayout`/Object Process primitives for:
   - Inspection Job Detail
   - Packet Detail
   - R&D Job Detail

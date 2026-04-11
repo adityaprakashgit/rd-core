@@ -38,6 +38,49 @@ enum WorkflowEscalationStatus {
   DISMISSED
 }
 
+enum RndJobStatus {
+  CREATED
+  READY_FOR_TEST_SETUP
+  READY_FOR_TESTING
+  IN_TESTING
+  AWAITING_REVIEW
+  APPROVED
+  COMPLETED
+  REWORK_REQUIRED
+}
+
+enum RndJobType {
+  INITIAL_TEST
+  RETEST
+  CLIENT_REQUESTED_RETEST
+  BACKUP_TEST
+  RETAIN_TEST
+}
+
+enum RndReviewAction {
+  APPROVE
+  REJECT
+  REWORK
+}
+
+enum PacketUsageEntryType {
+  ALLOCATE
+  CONSUME
+  RELEASE
+  RECLASSIFY
+  ADJUST
+}
+
+enum PacketUsageDirection {
+  IN
+  OUT
+}
+
+enum ResultPrecedenceStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
 model User {
   id                  String    @id
   companyId           String
@@ -70,6 +113,11 @@ model User {
   loginAttempts            LoginAttempt[]
   raisedEscalations        WorkflowEscalation[] @relation("WorkflowEscalationRaisedBy")
   assignedEscalations      WorkflowEscalation[] @relation("WorkflowEscalationAssignedTo")
+  assignedRndJobs          RndJob[]             @relation("RndJobAssignedTo")
+  approverRndJobs          RndJob[]             @relation("RndJobApprover")
+  uploadedRndAttachments   RndJobAttachment[]   @relation("RndJobAttachmentUploadedBy")
+  rndReviews               RndJobReview[]       @relation("RndJobReviewedBy")
+  packetUsageLedgerEntries PacketUsageLedger[]  @relation("PacketUsageLedgerCreatedBy")
 }
 
 model LoginAttempt {
@@ -167,27 +215,72 @@ model ContainerTypeMaster {
 model ModuleWorkflowSettings {
   id                          String   @id @default(cuid())
   companyId                   String   @unique
+  creatorIsDefaultAssignee    Boolean  @default(true)
+  deadlineRequired            Boolean  @default(false)
+  decisionRequiredBeforeSampling Boolean @default(true)
+  submitToRndEnabled          Boolean  @default(true)
+  allowJobCollaborators       Boolean  @default(true)
   autoLotNumbering            Boolean  @default(false)
   lotNumberPrefix             String?
   lotNumberSequenceFormat     String?
   autoSampleIdGeneration      Boolean  @default(true)
   sampleIdPrefix              String?
   sampleIdSequenceFormat      String?
+  autoPacketIdGeneration      Boolean  @default(true)
+  packetIdPrefix              String?
+  packetIdSequenceFormat      String?
   finalDecisionApproverPolicy String   @default("MANAGER_ADMIN")
   lockPacketEditingAfterRndSubmit Boolean @default(true)
   sealScanRequired            Boolean  @default(true)
   imageTimestampRequired      Boolean  @default(false)
   requiredImageCategories     String[]
   optionalImageCategories     String[]
+  hiddenImageCategories       String[]
   bulkSealGenerationEnabled   Boolean  @default(true)
   sealEditPolicy              String   @default("ADMIN_ONLY")
+  sealEditRoles               String[]
   containerTypeSource         String   @default("MASTER_ONLY")
   homogeneousProofRequired    Boolean  @default(true)
   packetPurposeMode           String   @default("OPTIONAL")
+  holdRejectNotesMandatory    Boolean  @default(true)
+  notifyOnAssign              Boolean  @default(true)
+  notifyOnSubmit              Boolean  @default(true)
+  notifyOnDecision            Boolean  @default(true)
+  allowedModuleIds            String[]
   showOptionalImageSection    Boolean  @default(true)
   showBlockersInline          Boolean  @default(true)
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
+}
+
+model CompanyProfileSettings {
+  id             String   @id @default(cuid())
+  companyId      String   @unique
+  companyName    String?
+  legalName      String?
+  billingAddress String?
+  shippingAddress String?
+  sameAsBilling  Boolean  @default(true)
+  gstNumber      String?
+  cinOrRegistration String?
+  contactPerson  String?
+  contactNumber  String?
+  email          String?
+  website        String?
+  logoUrl        String?
+  primaryColor   String?
+  secondaryColor String?
+  accentColor    String?
+  supportColor   String?
+  reportHeaderName String?
+  packingListHeaderName String?
+  coaHeaderName  String?
+  footerText     String?
+  signatureName  String?
+  signatureTitle String?
+  stampImageUrl  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model WarehouseMaster {
@@ -246,6 +339,7 @@ model InspectionJob {
   auditLogs          AuditLog[]
   packets            Packet[]
   workflowEscalations WorkflowEscalation[]
+  rndJobs            RndJob[]
 
   createdByUser User  @relation("InspectionJobCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   assignedTo    User? @relation("InspectionJobAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
@@ -278,7 +372,8 @@ model ReportSnapshot {
   data      Json
   createdAt DateTime @default(now())
 
-  job InspectionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job               InspectionJob      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rndReportVersions RndReportVersion[]
 }
 
 model InspectionLot {
@@ -321,6 +416,7 @@ model InspectionLot {
   sample     Sample?
   trials     RDTrial[]     @relation("LotTrials")
   packets    Packet[]
+  rndJobs    RndJob[]
   assignedTo User?         @relation("InspectionLotAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   assignedBy User?         @relation("InspectionLotAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
 
@@ -577,6 +673,7 @@ model Sample {
   media      SampleMedia[]
   sealLabel  SampleSealLabel?
   packets    Packet[]
+  rndJobs    RndJob[]
 
   @@index([companyId, sampleStatus])
   @@index([jobId, createdAt])
@@ -612,6 +709,8 @@ model Packet {
   sealLabel  PacketSealLabel?
   allocation PacketAllocation?
   trial      RDTrial?
+  rndJobs    RndJob[]
+  usageLedgerEntries PacketUsageLedger[]
 
   @@unique([sampleId, packetNo])
   @@index([companyId, packetStatus])
@@ -865,4 +964,142 @@ model RDTemplateMaster {
 
   @@index([companyId])
   @@map("rd_template_master")
+}
+
+model RndJob {
+  id              String      @id @default(cuid())
+  rndJobNumber    String      @unique
+  companyId       String
+  parentJobId     String
+  lotId           String
+  sampleId        String
+  packetId        String
+  previousRndJobId String?
+  status          RndJobStatus @default(CREATED)
+  resultPrecedence ResultPrecedenceStatus @default(ACTIVE)
+  jobType         RndJobType   @default(INITIAL_TEST)
+  packetUse       String?
+  testType        String?
+  testMethod      String?
+  priority        String       @default("MEDIUM")
+  deadline        DateTime?
+  assignedToId    String?
+  approverUserId  String?
+  remarks         String?
+  receivedAt      DateTime     @default(now())
+  testingStartedAt DateTime?
+  resultsSubmittedAt DateTime?
+  reviewedAt      DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  parentJob       InspectionJob @relation(fields: [parentJobId], references: [id], onDelete: Cascade)
+  lot             InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  sample          Sample        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  packet          Packet        @relation(fields: [packetId], references: [id], onDelete: Cascade)
+  previousRndJob  RndJob?       @relation("RndJobRetestLineage", fields: [previousRndJobId], references: [id], onDelete: SetNull)
+  nextRetestJobs  RndJob[]      @relation("RndJobRetestLineage")
+  assignedTo      User?         @relation("RndJobAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  approverUser    User?         @relation("RndJobApprover", fields: [approverUserId], references: [id], onDelete: SetNull)
+  readings        RndJobReading[]
+  attachments     RndJobAttachment[]
+  reviews         RndJobReview[]
+  reportVersions  RndReportVersion[]
+  packetUsageLedgerEntries PacketUsageLedger[]
+
+  @@index([companyId, status, receivedAt(sort: Desc)])
+  @@index([companyId, assignedToId])
+  @@index([companyId, approverUserId])
+  @@index([parentJobId, createdAt(sort: Desc)])
+  @@index([packetId])
+}
+
+model RndReportVersion {
+  id               String                 @id @default(cuid())
+  companyId        String
+  parentJobId      String
+  sampleId         String
+  rndJobId         String
+  reportSnapshotId String
+  precedence       ResultPrecedenceStatus @default(ACTIVE)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  rndJob         RndJob         @relation(fields: [rndJobId], references: [id], onDelete: Cascade)
+  reportSnapshot ReportSnapshot @relation(fields: [reportSnapshotId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, parentJobId, sampleId, precedence])
+  @@index([rndJobId, createdAt(sort: Desc)])
+  @@index([reportSnapshotId])
+}
+
+model RndJobReading {
+  id         String   @id @default(cuid())
+  rndJobId   String
+  parameter  String
+  value      Decimal
+  unit       String?
+  remarks    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  rndJob RndJob @relation(fields: [rndJobId], references: [id], onDelete: Cascade)
+
+  @@index([rndJobId, createdAt])
+}
+
+model RndJobAttachment {
+  id           String   @id @default(cuid())
+  rndJobId     String
+  fileName     String
+  fileUrl      String
+  mimeType     String?
+  fileSizeBytes Int?
+  notes        String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  rndJob     RndJob @relation(fields: [rndJobId], references: [id], onDelete: Cascade)
+  uploadedBy User?  @relation("RndJobAttachmentUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([rndJobId, createdAt])
+}
+
+model RndJobReview {
+  id           String          @id @default(cuid())
+  rndJobId     String
+  action       RndReviewAction
+  notes        String?
+  reviewedById String
+  reviewedAt   DateTime        @default(now())
+  createdAt    DateTime        @default(now())
+
+  rndJob     RndJob @relation(fields: [rndJobId], references: [id], onDelete: Cascade)
+  reviewedBy User   @relation("RndJobReviewedBy", fields: [reviewedById], references: [id], onDelete: Restrict)
+
+  @@index([rndJobId, reviewedAt(sort: Desc)])
+}
+
+model PacketUsageLedger {
+  id          String               @id @default(cuid())
+  companyId   String
+  packetId    String
+  rndJobId    String?
+  entryType   PacketUsageEntryType
+  useType     String?
+  quantity    Decimal
+  unit        String
+  direction   PacketUsageDirection
+  notes       String?
+  createdById String
+  createdAt   DateTime             @default(now())
+
+  packet    Packet @relation(fields: [packetId], references: [id], onDelete: Cascade)
+  rndJob    RndJob? @relation(fields: [rndJobId], references: [id], onDelete: SetNull)
+  createdBy User @relation("PacketUsageLedgerCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([companyId, packetId, createdAt(sort: Desc)])
+  @@index([rndJobId, createdAt(sort: Desc)])
 }

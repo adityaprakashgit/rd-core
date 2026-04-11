@@ -59,6 +59,17 @@ async function resolveSamplingWriteGate(lotId: string, userCompanyId: string | n
   return { lot, gate };
 }
 
+async function resolveSamplingWriteContext(lotId: string, userCompanyId: string | null | undefined) {
+  const { lot, gate } = await resolveSamplingWriteGate(lotId, userCompanyId);
+  if (gate) {
+    return {
+      lot: null,
+      errorResponse: jsonError(gate.error, gate.details, gate.code, gate.status),
+    } as const;
+  }
+  return { lot, errorResponse: null } as const;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(req);
@@ -73,10 +84,11 @@ export async function POST(req: NextRequest) {
       return jsonError("Validation Error", "lotId is strictly required to record a sample.", "SAMPLING_LOT_ID_REQUIRED", 400);
     }
 
-    const { lot, gate } = await resolveSamplingWriteGate(lotId, currentUser.companyId);
-    if (gate) {
-      return jsonError(gate.error, gate.details, gate.code, gate.status);
+    const writeContext = await resolveSamplingWriteContext(lotId, currentUser.companyId);
+    if (writeContext.errorResponse) {
+      return writeContext.errorResponse;
     }
+    const { lot } = writeContext;
 
     const existing = await prisma.sampling.findUnique({
       where: { lotId },
@@ -196,10 +208,11 @@ export async function PATCH(req: NextRequest) {
       return jsonError("Validation Error", "lotId is strictly required to update a sample.", "SAMPLING_LOT_ID_REQUIRED", 400);
     }
 
-    const { lot, gate } = await resolveSamplingWriteGate(lotId, currentUser.companyId);
-    if (gate) {
-      return jsonError(gate.error, gate.details, gate.code, gate.status);
+    const writeContext = await resolveSamplingWriteContext(lotId, currentUser.companyId);
+    if (writeContext.errorResponse) {
+      return writeContext.errorResponse;
     }
+    const { lot } = writeContext;
 
     const existing = await prisma.sampling.findUnique({
       where: { lotId },

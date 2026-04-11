@@ -36,6 +36,7 @@ import { EvidenceRail } from "@/components/inspection/EvidenceRail";
 import { SealScanner } from "@/components/inspection/SealScanner";
 import { EmptyWorkState, InlineErrorState, PageSkeleton, TopErrorBanner } from "@/components/enterprise/AsyncState";
 import { ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
+import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
@@ -70,23 +71,6 @@ type InspectionExecutionPayload = {
 
 const mediaConfigs = SAMPLE_EVIDENCE_ITEMS;
 const requiredMediaConfigs = mediaConfigs.filter((config) => config.required);
-
-function getStatusColor(status: string | null | undefined) {
-  switch (status) {
-    case "READY_FOR_PACKETING":
-      return "green";
-    case "SEALED":
-      return "blue";
-    case "HOMOGENIZED":
-      return "purple";
-    case "DETAILS_CAPTURED":
-      return "orange";
-    case "SAMPLING_IN_PROGRESS":
-      return "yellow";
-    default:
-      return "gray";
-  }
-}
 
 function buildWorkflowSteps(sample: SampleRecord | null): WorkflowStep[] {
   const status = deriveSampleStatus(sample);
@@ -473,9 +457,7 @@ export function SampleManagementWorkspace({
                 <Badge colorScheme="teal" variant="solid" borderRadius="full" px={3} py={1}>
                   {lot.lotNumber}
                 </Badge>
-                <Badge colorScheme={getStatusColor(currentStatus)} borderRadius="full" px={3} py={1}>
-                  {currentStatus.replaceAll("_", " ")}
-                </Badge>
+                <WorkflowStateChip status={currentStatus} />
                 {sample?.sampleCode ? (
                   <Badge colorScheme="brand" variant="subtle" borderRadius="full" px={3} py={1}>
                     {sample.sampleCode}
@@ -509,12 +491,12 @@ export function SampleManagementWorkspace({
               { label: "Required proof", value: `${mediaConfigs.filter((item) => item.required && mediaMap[item.mediaType]).length}/${requiredMediaCount}`, note: "Required media captured" },
               { label: "Readiness", value: readiness.isReady ? "Ready" : `${readiness.missing.length} pending`, note: "Packet generation gate" },
             ].map((item) => (
-            <Card key={item.label} variant="outline" borderRadius="2xl">
+            <Card key={item.label} variant="outline" borderRadius="xl">
               <CardBody p={5}>
                 <Text fontSize="sm" color="text.muted">
                   {item.label}
                 </Text>
-                <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+                <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
                   {item.value}
                 </Text>
                 <Text fontSize="sm" color="text.secondary" mt={1}>
@@ -538,7 +520,7 @@ export function SampleManagementWorkspace({
           tracker={<WorkflowStepTracker title="Sample progress" steps={workflowSteps} compact />}
           activeStep={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 1
@@ -550,7 +532,7 @@ export function SampleManagementWorkspace({
                     Create the official sample record. One active sample per lot is enforced in MVP.
                   </Text>
                   {sample ? (
-                    <HStack mt={5} spacing={3} p={4} bg="green.50" borderRadius="xl" border="1px solid" borderColor="green.100">
+                    <HStack mt={5} spacing={3} p={4} bg="bg.rail" borderRadius="lg" border="1px solid" borderColor="border.default">
                       <Icon as={CheckCircle2} boxSize={5} color="green.500" />
                       <Box>
                         <Text fontWeight="semibold" color="text.primary">
@@ -574,7 +556,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 2
@@ -629,7 +611,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 3
@@ -657,7 +639,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 4
@@ -670,7 +652,7 @@ export function SampleManagementWorkspace({
                   </Text>
 
                   <Stack direction={{ base: "column", md: "row" }} spacing={4} align={{ base: "stretch", md: "center" }}>
-                    <Box flex={1} p={4} borderRadius="xl" bg={hasHomogenizedSample(sample) ? "green.50" : "orange.50"} border="1px solid" borderColor={hasHomogenizedSample(sample) ? "green.100" : "orange.100"}>
+                    <Box flex={1} p={4} borderRadius="lg" bg="bg.rail" border="1px solid" borderColor="border.default">
                       <Text fontWeight="semibold" color="text.primary">
                         Has the sample been homogenized?
                       </Text>
@@ -692,7 +674,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 5
@@ -739,14 +721,8 @@ export function SampleManagementWorkspace({
                         </Button>
                       </HStack>
                       <HStack mt={2} spacing={2} flexWrap="wrap">
-                        <Badge colorScheme={isSealFormatValid ? "green" : "orange"}>
-                          {isSealFormatValid ? "Seal format valid" : "Seal must be 16 digits"}
-                        </Badge>
-                        {sealAuto ? (
-                          <Badge colorScheme="blue">Auto generated</Badge>
-                        ) : (
-                          <Badge colorScheme="gray">Scanned / manual</Badge>
-                        )}
+                        <WorkflowStateChip status={isSealFormatValid ? "SEAL_VALID" : "SEAL_INVALID"} />
+                        <WorkflowStateChip status={sealAuto ? "SEAL_AUTO" : "SEAL_MANUAL"} />
                       </HStack>
                       <Text fontSize="xs" color="text.secondary" mt={2}>
                         {sealAuto ? "Seal was generated by system." : "Scan seal, then save. Manual entry is fallback only."}
@@ -772,7 +748,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 6
@@ -785,7 +761,7 @@ export function SampleManagementWorkspace({
                   </Text>
                   <VStack align="stretch" spacing={2}>
                     {(readiness.missing.length > 0 ? readiness.missing : ["Ready for packet generation"]).map((item) => (
-                      <HStack key={item} spacing={3} p={3} borderRadius="lg" bg={readiness.isReady ? "green.50" : "gray.50"}>
+                      <HStack key={item} spacing={3} p={3} borderRadius="md" bg="bg.rail">
                         <Icon as={readiness.isReady ? CheckCircle2 : ClipboardCheck} color={readiness.isReady ? "green.500" : "gray.500"} />
                         <Text fontSize="sm" color="text.primary">
                           {item}
@@ -808,7 +784,7 @@ export function SampleManagementWorkspace({
           }
           context={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={5}>
                   <Heading size="sm" color="text.primary">
                     Sample detail card
@@ -854,7 +830,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={5}>
                   <Heading size="sm" color="text.primary">
                     Media gallery
@@ -882,7 +858,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={5}>
                   <Heading size="sm" color="text.primary">
                     Event timeline

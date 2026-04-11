@@ -1,17 +1,25 @@
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getEvidenceCategoryLabel } from "@/lib/evidence-definition";
+import {
+  getRequiredProofFailureCode,
+  resolveEvidenceCategoriesForLot,
+  resolveMissingRequiredEvidenceCategories,
+} from "@/lib/image-proof-policy";
+import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { buildPackingListHtml, renderHtmlToPdf } from "@/lib/traceability";
-import { sanitizeReportDocumentType, sanitizeReportPreferences } from "@/lib/report-preferences";
+import { sanitizeReportDocumentType } from "@/lib/report-preferences";
 import {
   getExportPolicyBlockReason,
   getReportExportStagePolicy,
   isExportStageAllowed,
 } from "@/lib/report-export-policy";
 import { buildPackingPolicyBlockedEscalation, enqueueWorkflowEscalationSafe } from "@/lib/workflow-escalation";
+import { resolveDocumentBrandingContext } from "@/lib/document-branding-context";
 
 export const runtime = "nodejs";
 const WEIGHT_TOLERANCE = 0.01;
@@ -74,52 +82,8 @@ function resolveLotWeights(lot: {
   return { grossWeight, tareWeight, netWeight };
 }
 
-function hasRequiredDispatchEvidence(lot: {
-  bagPhotoUrl: string | null;
-  samplingPhotoUrl: string | null;
-  sealPhotoUrl: string | null;
-  sampling: Array<{
-    beforePhotoUrl: string | null;
-    duringPhotoUrl: string | null;
-    afterPhotoUrl: string | null;
-  }>;
-  mediaFiles: Array<{
-    category: string;
-  }>;
-}) {
-  const categories = new Set(lot.mediaFiles.map((entry) => entry.category));
-
-  const hasBagEvidence =
-    Boolean(lot.bagPhotoUrl) ||
-    categories.has("BAG_WITH_LOT_NO") ||
-    categories.has("BAG") ||
-    categories.has("BAG_CLOSEUP") ||
-    categories.has("MATERIAL_VISIBLE");
-
-  const samplingRecord = lot.sampling[0];
-  const hasSamplingEvidence =
-    Boolean(lot.samplingPhotoUrl) ||
-    Boolean(samplingRecord?.duringPhotoUrl || samplingRecord?.beforePhotoUrl || samplingRecord?.afterPhotoUrl) ||
-    categories.has("SAMPLING_IN_PROGRESS") ||
-    categories.has("DURING") ||
-    categories.has("BEFORE") ||
-    categories.has("AFTER");
-
-  const hasSealEvidence =
-    Boolean(lot.sealPhotoUrl) ||
-    categories.has("SEALED_BAG") ||
-    categories.has("SEAL") ||
-    categories.has("SEAL_CLOSEUP");
-
-  return {
-    hasBagEvidence,
-    hasSamplingEvidence,
-    hasSealEvidence,
-  };
-}
-
-function jsonError(error: string, details: string, status: number) {
-  return NextResponse.json({ error, details }, { status });
+function jsonError(error: string, details: string, status: number, code = "PACKING_LIST_ERROR") {
+  return NextResponse.json({ error, details, code }, { status });
 }
 
 async function logAuditSafe(jobId: string, userId: string) {
@@ -211,6 +175,13 @@ export async function POST(request: NextRequest) {
       return jsonError("Forbidden", "Cross-company access is not allowed.", 403);
     }
 
+    const settings = await prisma.moduleWorkflowSettings.upsert({
+      where: { companyId: currentUser.companyId },
+      update: {},
+      create: buildModuleWorkflowSettingsCreate(currentUser.companyId),
+    });
+    const workflowPolicy = toModuleWorkflowPolicy(settings);
+
     const exportPolicy = getReportExportStagePolicy();
     if (!isExportStageAllowed(exportPolicy, job.status)) {
       const blocked = getExportPolicyBlockReason(exportPolicy);
@@ -256,6 +227,15 @@ export async function POST(request: NextRequest) {
             afterPhotoUrl: true,
           },
         },
+        inspection: {
+          select: {
+            mediaFiles: {
+              select: {
+                category: true,
+              },
+            },
+          },
+        },
         mediaFiles: {
           select: {
             category: true,
@@ -297,22 +277,22 @@ export async function POST(request: NextRequest) {
         return jsonError("Validation Error", error instanceof Error ? error.message : `Lot ${lot.lotNumber}: Missing weights.`, 422);
       }
 
-      const evidenceState = hasRequiredDispatchEvidence(lot);
-      if (!evidenceState.hasBagEvidence || !evidenceState.hasSamplingEvidence || !evidenceState.hasSealEvidence) {
-        const missing: string[] = [];
-        if (!evidenceState.hasBagEvidence) {
-          missing.push("bag photo");
-        }
-        if (!evidenceState.hasSamplingEvidence) {
-          missing.push("sampling photo");
-        }
-        if (!evidenceState.hasSealEvidence) {
-          missing.push("seal photo");
-        }
+      const resolvedEvidence = resolveEvidenceCategoriesForLot({
+        lot,
+        lotMedia: lot.mediaFiles,
+        inspectionMedia: lot.inspection?.mediaFiles,
+      });
+      const missingRequired = resolveMissingRequiredEvidenceCategories(
+        workflowPolicy.images.requiredImageCategories,
+        resolvedEvidence,
+      );
+      if (missingRequired.length > 0) {
+        const missingLabels = missingRequired.map((category) => getEvidenceCategoryLabel(category));
         return jsonError(
           "Validation Error",
-          `Lot ${lot.lotNumber}: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required before dispatch.`,
-          422
+          `Lot ${lot.lotNumber}: Upload required proof before dispatch: ${missingLabels.join(", ")}.`,
+          422,
+          getRequiredProofFailureCode(missingRequired),
         );
       }
 
@@ -326,7 +306,12 @@ export async function POST(request: NextRequest) {
     }
 
     const baseCompanyName = currentUser.profile?.companyName ?? "Inspection Control Tower";
-    const reportPreferences = sanitizeReportPreferences(payload.reportPreferences, baseCompanyName);
+    const { reportPreferences } = await resolveDocumentBrandingContext(prisma, {
+      companyId: currentUser.companyId,
+      fallbackCompanyName: baseCompanyName,
+      requestReportPreferences: payload.reportPreferences,
+      documentKind: "packing",
+    });
     const documentType = sanitizeReportDocumentType(payload.documentType ?? reportPreferences.defaultDocumentType);
 
     const html = buildPackingListHtml({
@@ -390,10 +375,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     if (error instanceof AuthorizationError) {
-      return jsonError("Forbidden", error.message, 403);
+      return jsonError("Forbidden", error.message, 403, "PACKING_LIST_FORBIDDEN");
     }
 
     const message = error instanceof Error ? error.message : "Failed to generate packing list.";
-    return jsonError("System Error", message, 500);
+    return jsonError("System Error", message, 500, "PACKING_LIST_GENERATE_FAILED");
   }
 }

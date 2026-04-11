@@ -37,6 +37,7 @@ import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint, TopErrorBa
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
 import { DetailTabsLayout, ExceptionBanner, HistoryTimeline, LinkedRecordsPanel } from "@/components/enterprise/EnterprisePatterns";
 import { MobileActionRail, WorkbenchPageTemplate } from "@/components/enterprise/PageTemplates";
+import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import {
@@ -118,29 +119,6 @@ function formatDate(value: string | Date | null | undefined) {
   }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
-}
-
-function getPacketStatusColor(status: string) {
-  switch (status) {
-    case "AVAILABLE":
-      return "green";
-    case "ALLOCATED":
-      return "purple";
-    case "RESERVED":
-      return "orange";
-    case "USED":
-      return "gray";
-    case "SEALED":
-      return "blue";
-    case "LABELED":
-      return "cyan";
-    case "DETAILS_CAPTURED":
-      return "yellow";
-    case "BLOCKED":
-      return "red";
-    default:
-      return "gray";
-  }
 }
 
 function buildWorkflowSteps(sample: SampleRecord | null, packets: PacketRecord[]): WorkflowStep[] {
@@ -718,9 +696,7 @@ export function PacketManagementWorkspace() {
                 <Badge colorScheme="teal" variant="solid" borderRadius="full" px={3} py={1}>
                   {lot.lotNumber}
                 </Badge>
-                <Badge colorScheme={sampleReady ? "green" : "orange"} borderRadius="full" px={3} py={1}>
-                  {deriveSampleStatus(sample).replaceAll("_", " ")}
-                </Badge>
+                <WorkflowStateChip status={deriveSampleStatus(sample)} />
                 <Badge colorScheme="brand" variant="subtle" borderRadius="full" px={3} py={1}>
                   {sample.sampleCode}
                 </Badge>
@@ -740,55 +716,55 @@ export function PacketManagementWorkspace() {
         </Stack>
 
         <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody p={5}>
               <Text fontSize="sm" color="text.muted">
                 Sample quantity
               </Text>
-              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
                 {sample.sampleQuantity ?? "—"} {sample.sampleUnit ?? ""}
               </Text>
             </CardBody>
           </Card>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody p={5}>
               <Text fontSize="sm" color="text.muted">
                 Packet cards
               </Text>
-              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
                 {packets.length}
               </Text>
             </CardBody>
           </Card>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody p={5}>
               <Text fontSize="sm" color="text.muted">
                 Ready packets
               </Text>
-              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
                 {readyPackets.length}
               </Text>
             </CardBody>
           </Card>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody p={5}>
               <Text fontSize="sm" color="text.muted">
                 Remaining quantity
               </Text>
-              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
                 {totalQuantity > 0 ? remainingQuantity : "—"} {sample.sampleUnit ?? ""}
               </Text>
             </CardBody>
           </Card>
         </SimpleGrid>
 
-        <Card variant="outline" borderRadius="2xl">
+        <Card variant="outline" borderRadius="xl">
           <CardBody p={5}>
             <WorkflowStepTracker title="Packet flow" steps={workflowSteps} compact />
           </CardBody>
         </Card>
 
-        <Card variant="outline" borderRadius="2xl">
+        <Card variant="outline" borderRadius="xl">
           <CardBody p={5}>
             <VStack align="stretch" spacing={4}>
               <HStack justify="space-between">
@@ -803,16 +779,12 @@ export function PacketManagementWorkspace() {
                   { id: "packet-id", header: "Packet ID", render: (row) => row.packetCode },
                   { id: "linked-lot", header: "Linked lot", render: (row) => row.lot?.lotNumber ?? lot.lotNumber },
                   { id: "quantity", header: "Quantity", render: (row) => `${row.packetQuantity ?? "—"} ${row.packetUnit ?? ""}` },
-                  { id: "status", header: "Status", render: (row) => <Badge colorScheme={getPacketStatusColor(row.packetStatus)} variant="subtle">{row.packetStatus.replaceAll("_", " ")}</Badge> },
+                  { id: "status", header: "Status", render: (row) => <WorkflowStateChip status={row.packetStatus} /> },
                   { id: "storage-dispatch", header: "Storage / dispatch state", render: (row) => row.allocation?.allocationStatus ?? "BLOCKED" },
                   {
                     id: "coa",
                     header: "Linked COA",
-                    render: () => (
-                      <Badge colorScheme={hasLinkedCoa ? "green" : "gray"} variant="subtle">
-                        {hasLinkedCoa ? "COA Available" : "Not Available"}
-                      </Badge>
-                    ),
+                    render: () => <WorkflowStateChip status={hasLinkedCoa ? "COA_AVAILABLE" : "COA_PENDING"} />,
                   },
                   {
                     id: "dispatch-docs",
@@ -834,7 +806,7 @@ export function PacketManagementWorkspace() {
           </CardBody>
         </Card>
 
-        <Card variant="outline" borderRadius="2xl">
+        <Card variant="outline" borderRadius="xl">
           <CardBody p={5}>
             <VStack align="stretch" spacing={4}>
               <HStack justify="space-between">
@@ -888,9 +860,7 @@ export function PacketManagementWorkspace() {
                         <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>Download Packing List PDF</Button>
                         <Button variant="outline" onClick={() => router.push(`/reports?jobId=${jobId}`)}>Download Report PDF</Button>
                         <Button variant="outline" onClick={() => router.push(`/traceability/lot/${lotId}`)}>Open Traceability</Button>
-                        <Badge alignSelf="start" colorScheme={hasLinkedCoa ? "green" : "gray"} variant="subtle">
-                          {hasLinkedCoa ? "Linked COA available" : "Linked COA Not Available"}
-                        </Badge>
+                        <WorkflowStateChip status={hasLinkedCoa ? "COA_AVAILABLE" : "COA_PENDING"} />
                       </SimpleGrid>
                     ),
                   },
@@ -972,7 +942,7 @@ export function PacketManagementWorkspace() {
           rightLabel="Quantity & Readiness"
           left={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Stack direction={{ base: "column", lg: "row" }} justify="space-between" align={{ base: "stretch", lg: "center" }} spacing={4}>
                     <Box>
@@ -1032,12 +1002,12 @@ export function PacketManagementWorkspace() {
                   const requiredProofDone = mediaConfigs.filter((item) => item.required).filter((item) => mediaMap[item.mediaType]?.fileUrl).length;
 
                   return (
-                    <Card key={packet.id} variant="outline" borderRadius="2xl" borderColor={packet.packetStatus === "AVAILABLE" ? "green.200" : undefined}>
+                    <Card key={packet.id} variant="outline" borderRadius="xl" borderColor={packet.packetStatus === "AVAILABLE" ? "green.200" : undefined}>
                       <CardBody p={6}>
                         <Stack spacing={5}>
                           {draft.packetUnit && packet.packetUnit !== draft.packetUnit ? (
-                            <Box p={3} borderRadius="xl" bg="orange.50" border="1px solid" borderColor="orange.100">
-                              <Text fontSize="sm" color="orange.800">
+                            <Box p={3} borderRadius="lg" bg="bg.rail" border="1px solid" borderColor="border.default">
+                              <Text fontSize="sm" color="text.secondary">
                                 Unit will be saved as {draft.packetUnit}. Packet unit is inherited from the sample.
                               </Text>
                             </Box>
@@ -1048,12 +1018,8 @@ export function PacketManagementWorkspace() {
                                 <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={3} py={1}>
                                   Packet #{packet.packetNo}
                                 </Badge>
-                                <Badge colorScheme={getPacketStatusColor(currentStatus)} borderRadius="full" px={3} py={1}>
-                                  {packet.packetStatus.replaceAll("_", " ")}
-                                </Badge>
-                                <Badge colorScheme={packet.allocation?.allocationStatus === "AVAILABLE" ? "green" : "gray"} variant="subtle" borderRadius="full" px={3} py={1}>
-                                  {packet.allocation?.allocationStatus ?? "BLOCKED"}
-                                </Badge>
+                                <WorkflowStateChip status={currentStatus} />
+                                <WorkflowStateChip status={packet.allocation?.allocationStatus ?? "BLOCKED"} />
                                 <Button
                                   size="xs"
                                   colorScheme="red"
@@ -1332,18 +1298,18 @@ export function PacketManagementWorkspace() {
                           </SimpleGrid>
 
                           {!readiness.isReady ? (
-                            <Box p={4} borderRadius="xl" bg="orange.50" border="1px solid" borderColor="orange.100">
-                              <Text fontSize="sm" fontWeight="semibold" color="orange.800">
+                            <Box p={4} borderRadius="lg" bg="bg.rail" border="1px solid" borderColor="border.default">
+                              <Text fontSize="sm" fontWeight="semibold" color="text.primary">
                                 Missing before availability
                               </Text>
                               {packet.id === autoBalancedPacketId && totalQuantity > 0 ? (
-                                <Text fontSize="xs" color="orange.700" mt={1}>
+                                <Text fontSize="xs" color="text.secondary" mt={1}>
                                   Last packet quantity is auto-balanced from the remaining sample weight.
                                 </Text>
                               ) : null}
                               <VStack align="stretch" spacing={1} mt={2}>
                                 {readiness.missing.map((item) => (
-                                  <Text key={item} fontSize="sm" color="orange.700">
+                                  <Text key={item} fontSize="sm" color="text.secondary">
                                     • {item}
                                   </Text>
                                 ))}
@@ -1373,7 +1339,7 @@ export function PacketManagementWorkspace() {
                 </Text>
               </Box>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody>
                   <VStack align="stretch" spacing={3}>
                     <SectionHint label="Sample status" value={deriveSampleStatus(sample).replaceAll("_", " ")} />
@@ -1387,13 +1353,13 @@ export function PacketManagementWorkspace() {
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl" bg="purple.50">
+              <Card variant="outline" borderRadius="xl" bg="bg.surface">
                 <CardBody>
                   <VStack align="stretch" spacing={2}>
-                    <Text fontSize="sm" fontWeight="semibold" color="purple.900">
+                    <Text fontSize="sm" fontWeight="semibold" color="text.primary">
                       Downstream rule
                     </Text>
-                    <Text fontSize="sm" color="purple.800">
+                    <Text fontSize="sm" color="text.secondary">
                       Trials should consume only packets marked AVAILABLE. Draft or blocked packets stay out of trial selection.
                     </Text>
                   </VStack>

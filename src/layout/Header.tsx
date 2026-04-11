@@ -22,7 +22,7 @@ import { ChevronRight, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { normalizeRole } from "@/lib/role";
+import { normalizeRole, type NormalizedRole } from "@/lib/role";
 import type { BreadcrumbDefinition, PageDefinition } from "@/lib/ui-navigation";
 
 export type HeaderProps = {
@@ -32,6 +32,8 @@ export type HeaderProps = {
   onLogout: () => void;
   viewMode: "my" | "all";
   onViewModeChange: (mode: "my" | "all") => void;
+  canSwitchRoleView?: boolean;
+  onRoleViewChange?: (role: NormalizedRole) => void;
   page: PageDefinition;
   breadcrumbs: BreadcrumbDefinition[];
   searchPlaceholder?: string;
@@ -44,6 +46,8 @@ export function Header({
   onLogout,
   viewMode,
   onViewModeChange,
+  canSwitchRoleView = false,
+  onRoleViewChange,
   page,
   breadcrumbs,
   searchPlaceholder,
@@ -149,20 +153,19 @@ export function Header({
       justify="space-between"
       align="center"
       gap={{ base: 2, md: 3 }}
-      px={{ base: 3, md: 4, lg: 6 }}
-      py={{ base: 1.5, md: 2, lg: 3 }}
+      px={{ base: 3, md: 4, lg: 5 }}
+      py={{ base: 1.5, md: 1.5, lg: 2 }}
       bg="bg.surface"
       borderBottomWidth="1px"
       borderColor="border.default"
       position="sticky"
       top={0}
       zIndex={30}
-      shadow="xs"
-      backdropFilter="blur(18px)"
+      shadow="none"
     >
       <HStack spacing={2} align="start" minW={0} flex={1}>
         <Box minW={0} pr={1}>
-          <Text fontSize={{ base: "lg", md: "lg" }} fontWeight="bold" color="text.primary" noOfLines={1}>
+          <Text fontSize={{ base: "md", md: "lg" }} fontWeight="semibold" color="text.primary" noOfLines={1}>
             {page.title}
           </Text>
           <Breadcrumb
@@ -193,10 +196,10 @@ export function Header({
       <HStack spacing={1.5} flexWrap="nowrap" justify="flex-end" align="center">
         <Box position="relative" ref={searchRef} display={{ base: "none", xl: "block" }}>
           <Input
-            size="md"
+            size="sm"
             placeholder={searchPlaceholder ?? `Search in ${companyName}`}
             minW={{ base: "full", lg: "320px" }}
-            maxW={{ base: "full", xl: "420px" }}
+            maxW={{ base: "full", xl: "380px" }}
             aria-label="Global search"
             bg="bg.surface"
             value={searchText}
@@ -225,8 +228,8 @@ export function Header({
               bg="bg.surface"
               borderWidth="1px"
               borderColor="border.default"
-              borderRadius="xl"
-              shadow="lg"
+              borderRadius="lg"
+              shadow="sm"
               maxH="420px"
               overflowY="auto"
               zIndex={50}
@@ -283,6 +286,23 @@ export function Header({
           >
             <option value="my">My Tasks</option>
             <option value="all">Company View</option>
+          </Select>
+        ) : null}
+
+        {canSwitchRoleView && onRoleViewChange ? (
+          <Select
+            size="sm"
+            maxW={{ base: "full", sm: "44" }}
+            value={normalizedRole ?? "OPERATIONS"}
+            onChange={(event) => onRoleViewChange(event.target.value as NormalizedRole)}
+            aria-label="Role view"
+            bg="bg.surface"
+            display={{ base: "none", lg: "block" }}
+          >
+            <option value="ADMIN">Admin View</option>
+            <option value="OPERATIONS">Production View</option>
+            <option value="RND">R&D View</option>
+            <option value="VIEWER">Manager View</option>
           </Select>
         ) : null}
 

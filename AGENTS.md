@@ -13,6 +13,15 @@ Use this file as the canonical repository guidance for Codex behavior.
 ## Mission
 This repository powers live industrial inspection workflows. Prioritize operational correctness, user clarity, traceability, and auditability.
 
+## Canonical UI Governance (Mandatory)
+- For any UI/page/layout/refactor task, you MUST read and follow:
+  - `docs/enterprise-ui-governance.md`
+- This governance file is the canonical architecture source for enterprise UI behavior.
+- If UI docs conflict, precedence is:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. module-specific docs
+
 ## Current Product Priorities
 - Mobile-first, then tablet-first UX simplification.
 - Task-first operational execution screens.
@@ -91,6 +100,17 @@ No shallow fixes:
 - do not silence with `any`
 - do not disable validations to pass builds
 - do not hide broken workflow logic behind UI-only changes
+
+UI-specific mandatory guardrails:
+- Prefer enterprise primitives/templates over custom layout creation.
+- Prefer template reuse over per-page invention.
+- Do not introduce local status chips or custom badge mappings inside pages.
+- Do not create long mixed-scroll workflow pages for process-heavy views.
+- Use stage-oriented pages with one active panel for process flows where applicable.
+- Preserve canonical route ownership for core object experiences.
+- Surface lineage and linked records consistently on relevant detail/process pages.
+- When editing a page, check if the change should be abstracted into a shared component.
+- When touching legacy pages, move them toward approved templates; do not add drift.
 
 ## Done Means
 A task is complete only when:

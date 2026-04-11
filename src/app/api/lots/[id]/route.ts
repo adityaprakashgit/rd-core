@@ -8,7 +8,11 @@ function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
 }
 
-export async function GET(request: NextRequest, context: RouteContext<"/api/lots/[id]">) {
+type LotRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function GET(request: NextRequest, context: LotRouteContext) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {

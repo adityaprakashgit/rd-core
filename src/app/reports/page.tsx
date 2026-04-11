@@ -31,15 +31,13 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
 import { FilterRail, ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
+import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
 import {
-  getDefaultReportPreferences,
   getReportDocumentTypeLabel,
   REPORT_DOCUMENT_TYPES,
-  REPORT_PREFERENCES_STORAGE_KEY,
-  sanitizeReportPreferences,
   type ReportPreferences,
 } from "@/lib/report-preferences";
 import { normalizeRole } from "@/lib/role";
@@ -94,23 +92,6 @@ function formatWeight(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "—";
 }
 
-function getStatusColor(status: string): string {
-  switch (status) {
-    case "COMPLETED":
-    case "LOCKED":
-    case "REPORT_READY":
-      return "green";
-    case "QA":
-    case "RND_RUNNING":
-      return "blue";
-    case "SAMPLING_PENDING":
-    case "IN_PROGRESS":
-      return "orange";
-    default:
-      return "gray";
-  }
-}
-
 export default function ReportsPage() {
   const toast = useToast();
   const { viewMode } = useWorkspaceView();
@@ -149,9 +130,6 @@ export default function ReportsPage() {
     url: string;
   } | null>(null);
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
-  const [reportPreferences, setReportPreferences] = useState<ReportPreferences>(() =>
-    getDefaultReportPreferences("Inspection Control Tower")
-  );
   const [selectedDocumentType, setSelectedDocumentType] = useState<ReportPreferences["defaultDocumentType"]>("EXPORT");
   const supportsShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
@@ -246,22 +224,6 @@ export default function ReportsPage() {
       void loadJobs();
     }
   }, [loadJobs, sessionRole]);
-
-  useEffect(() => {
-    const baseCompanyName = "Inspection Control Tower";
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(REPORT_PREFERENCES_STORAGE_KEY) : null;
-    const nextPreferences = stored
-      ? (() => {
-          try {
-            return sanitizeReportPreferences(JSON.parse(stored), baseCompanyName);
-          } catch {
-            return getDefaultReportPreferences(baseCompanyName);
-          }
-        })()
-      : getDefaultReportPreferences(baseCompanyName);
-    setReportPreferences(nextPreferences);
-    setSelectedDocumentType(nextPreferences.defaultDocumentType);
-  }, []);
 
   useEffect(() => {
     void loadLots();
@@ -396,13 +358,15 @@ export default function ReportsPage() {
         header: "Seal",
         render: (lot: LotRow) =>
           lot.sealNumber ? (
-            <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              {lot.sealNumber}
-            </Badge>
+            <HStack spacing={2}>
+              <WorkflowStateChip status="READY" />
+              <Text>{lot.sealNumber}</Text>
+            </HStack>
           ) : (
-            <Badge colorScheme="orange" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              Not recorded yet
-            </Badge>
+            <HStack spacing={2}>
+              <WorkflowStateChip status="MEDIA_PENDING" />
+              <Text>Not recorded yet</Text>
+            </HStack>
           ),
       },
       { id: "grossWeight", header: "Gross", isNumeric: true, render: (lot: LotRow) => formatWeight(lot.grossWeight) },
@@ -447,7 +411,6 @@ export default function ReportsPage() {
                 ? {
                     jobId: selectedJobId,
                     documentType: selectedDocumentType,
-                    reportPreferences,
                     billTo: billToAddress.trim() || selectedJob?.clientName,
                     shipTo: shipToAddress.trim() || selectedJob?.plantLocation || selectedJob?.clientName,
                     invoiceNumber: invoiceNumber.trim(),
@@ -492,7 +455,6 @@ export default function ReportsPage() {
       ewayBillDetails,
       invoiceNumber,
       lrNumber,
-      reportPreferences,
       selectedDocumentType,
       selectedItemName,
       selectedJob?.clientName,
@@ -592,10 +554,16 @@ export default function ReportsPage() {
             <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
               PREVIEW BEFORE DOWNLOAD
             </Badge>
+            <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={2.5} py={1}>
+              BRANDING: COMPANY PROFILE DEFAULTS
+            </Badge>
           </HStack>
           <Heading size="lg" color="text.primary">
             Documents & Reports
           </Heading>
+          <Text mt={1} fontSize="sm" color="text.secondary">
+            Generated PDFs use saved Company Profile branding by default unless explicit request overrides are provided.
+          </Text>
         </Box>
 
         <ProcessFlowLayout
@@ -604,7 +572,7 @@ export default function ReportsPage() {
           activeStep={
             <VStack align="stretch" spacing={4}>
               {activeStep === "setup" ? (
-                <Card variant="outline" borderRadius="2xl">
+                <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <HStack justify="space-between" align="start" flexWrap="wrap" spacing={3}>
                     <Box>
@@ -615,9 +583,7 @@ export default function ReportsPage() {
                         Select job and dispatch details
                       </Heading>
                     </Box>
-                    <Badge colorScheme={getStatusColor(selectedJob?.status ?? "PENDING")} variant="subtle" borderRadius="full" px={3} py={1}>
-                      {selectedJob?.status ?? "NO JOB"}
-                    </Badge>
+                    <WorkflowStateChip status={selectedJob?.status ?? "PENDING"} />
                   </HStack>
 
                   <Box mt={5}>
@@ -626,7 +592,7 @@ export default function ReportsPage() {
                         maxW={{ base: "full", md: "72" }}
                         value={selectedJobId}
                         onChange={(event) => setSelectedJobId(event.target.value)}
-                        borderRadius="xl"
+                        borderRadius="lg"
                         isDisabled={loadingJobs}
                       >
                         {jobs.map((job) => (
@@ -637,7 +603,7 @@ export default function ReportsPage() {
                       </Select>
                       <Select
                         maxW={{ base: "full", md: "56" }}
-                        borderRadius="xl"
+                        borderRadius="lg"
                         value={selectedDocumentType}
                         onChange={(event) =>
                           setSelectedDocumentType(event.target.value as ReportPreferences["defaultDocumentType"])
@@ -650,7 +616,7 @@ export default function ReportsPage() {
                         ))}
                       </Select>
                       <Button
-                        borderRadius="xl"
+                        borderRadius="lg"
                         onClick={() => void handlePreviewDocument("packing")}
                         isLoading={generating === "packing"}
                         isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
@@ -703,7 +669,7 @@ export default function ReportsPage() {
                     <FormControl>
                       <FormLabel fontSize="sm">Client</FormLabel>
                       <Select
-                        borderRadius="xl"
+                        borderRadius="lg"
                         value={selectedClientName}
                         onChange={(event) => setSelectedClientName(event.target.value)}
                         isDisabled={masterBusy === "load"}
@@ -734,16 +700,16 @@ export default function ReportsPage() {
                     </FormControl>
                     <FormControl>
                       <FormLabel fontSize="sm">Bill to</FormLabel>
-                      <Input borderRadius="xl" value={billToAddress} onChange={(event) => setBillToAddress(event.target.value)} />
+                      <Input borderRadius="lg" value={billToAddress} onChange={(event) => setBillToAddress(event.target.value)} />
                     </FormControl>
                     <FormControl>
                       <FormLabel fontSize="sm">Ship to</FormLabel>
-                      <Input borderRadius="xl" value={shipToAddress} onChange={(event) => setShipToAddress(event.target.value)} />
+                      <Input borderRadius="lg" value={shipToAddress} onChange={(event) => setShipToAddress(event.target.value)} />
                     </FormControl>
                     <FormControl>
                       <FormLabel fontSize="sm">Transporter</FormLabel>
                       <Select
-                        borderRadius="xl"
+                        borderRadius="lg"
                         value={selectedTransporterName}
                         onChange={(event) => setSelectedTransporterName(event.target.value)}
                         isDisabled={masterBusy === "load"}
@@ -759,7 +725,7 @@ export default function ReportsPage() {
                     <FormControl isRequired>
                       <FormLabel fontSize="sm">Invoice no</FormLabel>
                       <Input
-                        borderRadius="xl"
+                        borderRadius="lg"
                         value={invoiceNumber}
                         onChange={(event) => setInvoiceNumber(event.target.value)}
                         placeholder="Enter invoice number from ERP/accounting software"
@@ -768,7 +734,7 @@ export default function ReportsPage() {
                     <FormControl>
                       <FormLabel fontSize="sm">LR no</FormLabel>
                       <Input
-                        borderRadius="xl"
+                        borderRadius="lg"
                         value={lrNumber}
                         onChange={(event) => setLrNumber(event.target.value)}
                         placeholder="Enter LR number"
@@ -777,7 +743,7 @@ export default function ReportsPage() {
                     <FormControl>
                       <FormLabel fontSize="sm">Transporter ID</FormLabel>
                       <Input
-                        borderRadius="xl"
+                        borderRadius="lg"
                         value={transporterId}
                         onChange={(event) => setTransporterId(event.target.value)}
                         placeholder="Enter transporter ID"
@@ -786,7 +752,7 @@ export default function ReportsPage() {
                     <FormControl>
                       <FormLabel fontSize="sm">E-way bill details</FormLabel>
                       <Input
-                        borderRadius="xl"
+                        borderRadius="lg"
                         value={ewayBillDetails}
                         onChange={(event) => setEwayBillDetails(event.target.value)}
                         placeholder="Enter E-way bill no and details"
@@ -820,7 +786,7 @@ export default function ReportsPage() {
               ) : null}
 
               {activeStep === "review" ? (
-                <Card variant="outline" borderRadius="2xl">
+                <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Stack
                     direction={{ base: "column", md: "row" }}
@@ -837,7 +803,7 @@ export default function ReportsPage() {
                         Review lot data
                       </Heading>
                     </Box>
-                    <Button as="a" href="/master" variant="outline" borderRadius="xl">
+                    <Button as="a" href="/master" variant="outline" borderRadius="lg">
                       Open master data
                     </Button>
                   </Stack>
@@ -883,16 +849,14 @@ export default function ReportsPage() {
                           { label: "Total tare", value: formatWeight(totals.totalTare) },
                           { label: "Total net", value: formatWeight(totals.totalNet) },
                         ].map((item) => (
-                          <Card key={item.label} variant="outline" borderRadius="xl">
-                            <CardBody p={4}>
+                          <Box key={item.label} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
                               <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
                                 {item.label}
                               </Text>
-                              <Text fontSize="2xl" fontWeight="bold" mt={1} color="text.primary">
+                              <Text fontSize="lg" fontWeight="semibold" mt={1} color="text.primary">
                                 {item.value}
                               </Text>
-                            </CardBody>
-                          </Card>
+                          </Box>
                         ))}
                       </SimpleGrid>
                     </VStack>
@@ -910,7 +874,7 @@ export default function ReportsPage() {
               ) : null}
 
               {activeStep === "preview" ? (
-                <Card variant="outline" borderRadius="2xl">
+                <Card variant="outline" borderRadius="xl">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 3
@@ -935,13 +899,9 @@ export default function ReportsPage() {
                       View Sticker PDF
                     </Button>
                     {pdfPreview ? (
-                      <Badge colorScheme="green" variant="subtle" borderRadius="full" px={3} py={1}>
-                        Latest preview ready
-                      </Badge>
+                      <WorkflowStateChip status="PREVIEW_READY" />
                     ) : (
-                      <Badge colorScheme="gray" variant="subtle" borderRadius="full" px={3} py={1}>
-                        Generate a preview first
-                      </Badge>
+                      <WorkflowStateChip status="PREVIEW_PENDING" />
                     )}
                   </HStack>
                   <HStack mt={5}>
@@ -956,7 +916,7 @@ export default function ReportsPage() {
           }
           context={
             <VStack align="stretch" spacing={4}>
-              <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl" bg="bg.rail">
+              <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.rail">
                 <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
                   Active job
                 </Text>
@@ -977,7 +937,7 @@ export default function ReportsPage() {
                 <SectionHint label="Preview state" value={pdfPreview ? "Ready to download" : "No preview generated"} />
               </VStack>
 
-              <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl">
+              <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg">
                 <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
                   Readiness checks
                 </Text>
@@ -993,7 +953,7 @@ export default function ReportsPage() {
                 </VStack>
               </Box>
 
-              <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl">
+              <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg">
                 <Text fontSize="sm" fontWeight="semibold" color="text.primary">
                   Route ownership
                 </Text>
@@ -1042,7 +1002,7 @@ export default function ReportsPage() {
 
       <Modal isOpen={isPreviewModalOpen && Boolean(pdfPreview)} onClose={handleClosePreview} size="full" motionPreset="slideInBottom">
         <ModalOverlay bg="blackAlpha.600" />
-        <ModalContent borderRadius={{ base: 0, md: "2xl" }} overflow="hidden">
+        <ModalContent borderRadius={{ base: 0, md: "xl" }} overflow="hidden">
           <ModalHeader>
             <Stack spacing={1}>
               <Heading size="sm" color="text.primary">

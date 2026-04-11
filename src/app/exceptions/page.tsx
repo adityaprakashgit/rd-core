@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
-  Box,
   Button,
   HStack,
   Input,
@@ -363,7 +362,7 @@ export default function ManagerWorkspacePage() {
           <VStack align="stretch" spacing={5}>
             <VStack align="stretch" spacing={2}>
               <HStack justify="space-between"><Text fontWeight="semibold">Active jobs</Text><Badge variant="subtle">{activeJobsFiltered.length}</Badge></HStack>
-              <EnterpriseStickyTable><Box p={3}><EnterpriseDataTable rows={activeJobsFiltered} rowKey={(row) => row.id} emptyLabel="No active jobs." columns={[
+              <EnterpriseStickyTable><EnterpriseDataTable rows={activeJobsFiltered} rowKey={(row) => row.id} emptyLabel="No active jobs." columns={[
                 { id: "job", header: "Job Number", render: (row) => row.jobNumber },
                 { id: "lots", header: "Lots", render: (row) => row.lots },
                 { id: "stage", header: "Current Stage", render: (row) => row.currentStage },
@@ -374,12 +373,12 @@ export default function ManagerWorkspacePage() {
                 { id: "ops", header: "Operations Completed", render: (row) => row.operationsCompleted },
                 { id: "handover", header: "Handed Over to R&D", render: (row) => row.rndHandover },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
-              ]} rowActions={[{ id: "open-job", label: "Open Job Workflow", onClick: (row) => { const job = jobs.find((entry) => entry.id === row.id); if (job) router.push(`/jobs/${job.id}/workflow`); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-job", label: "Open Job Workflow", onClick: (row) => { const job = jobs.find((entry) => entry.id === row.id); if (job) router.push(`/jobs/${job.id}/workflow`); } }]} /></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>
               <HStack justify="space-between"><Text fontWeight="semibold">Lot aging</Text><Badge variant="subtle">{lotAgingFiltered.length}</Badge></HStack>
-              <EnterpriseStickyTable><Box p={3}><EnterpriseDataTable rows={lotAgingFiltered} rowKey={(row) => row.id} emptyLabel="No aging lots in scope." columns={[
+              <EnterpriseStickyTable><EnterpriseDataTable rows={lotAgingFiltered} rowKey={(row) => row.id} emptyLabel="No aging lots in scope." columns={[
                 { id: "lot", header: "Lot Number", render: (row) => row.lotNumber },
                 { id: "job", header: "Job Number", render: (row) => row.jobNumber },
                 { id: "age", header: "Age", render: (row) => `${row.ageHours}h` },
@@ -387,55 +386,55 @@ export default function ManagerWorkspacePage() {
                 { id: "milestone", header: "Current Milestone", render: (row) => row.currentMilestone },
                 { id: "sample", header: "Sample Status", render: (row) => row.sampleStatus },
                 { id: "blocker", header: "Blocker", render: (row) => row.blocker },
-              ]} rowActions={[{ id: "open-lot", label: "Open Traceability", onClick: (row) => { router.push(`/traceability/lots/${row.lotRefId}`); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-lot", label: "Open Traceability", onClick: (row) => { router.push(`/traceability/lots/${row.lotRefId}`); } }]} /></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>
               <HStack justify="space-between"><Text fontWeight="semibold">Workflow bottlenecks</Text><Badge variant="subtle">{bottlenecksFiltered.length}</Badge></HStack>
-              <EnterpriseStickyTable><Box p={3}><EnterpriseDataTable rows={bottlenecksFiltered} rowKey={(row) => row.id} emptyLabel="No workflow bottlenecks." columns={[
+              <EnterpriseStickyTable><EnterpriseDataTable rows={bottlenecksFiltered} rowKey={(row) => row.id} emptyLabel="No workflow bottlenecks." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
                 { id: "lot", header: "Lot", render: (row) => row.lotNumber },
                 { id: "stage", header: "Blocking Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
-              ]} rowActions={[{ id: "open", label: "Open Job Detail", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open", label: "Open Job Detail", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>
               <HStack justify="space-between"><Text fontWeight="semibold">Missing documents</Text><Badge variant="subtle">{missingDocsFiltered.length}</Badge></HStack>
-              <EnterpriseStickyTable><Box p={3}><EnterpriseDataTable rows={missingDocsFiltered} rowKey={(row) => row.id} emptyLabel="No missing documents in scope." columns={[
+              <EnterpriseStickyTable><EnterpriseDataTable rows={missingDocsFiltered} rowKey={(row) => row.id} emptyLabel="No missing documents in scope." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
                 { id: "lot", header: "Lot", render: (row) => row.lotNumber },
                 { id: "stage", header: "Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
-              ]} rowActions={[{ id: "open-docs", label: "Open Documents", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-docs", label: "Open Documents", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>
               <HStack justify="space-between"><Text fontWeight="semibold">Dispatch delays</Text><Badge variant="subtle">{dispatchDelaysFiltered.length}</Badge></HStack>
-              <EnterpriseStickyTable><Box p={3}><EnterpriseDataTable rows={dispatchDelaysFiltered} rowKey={(row) => row.id} emptyLabel="No dispatch delays in scope." columns={[
+              <EnterpriseStickyTable><EnterpriseDataTable rows={dispatchDelaysFiltered} rowKey={(row) => row.id} emptyLabel="No dispatch delays in scope." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
                 { id: "lot", header: "Lot", render: (row) => row.lotNumber },
                 { id: "stage", header: "Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
-              ]} rowActions={[{ id: "open-delay", label: "Open Dispatch Detail", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-delay", label: "Open Dispatch Detail", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>
               <HStack justify="space-between"><Text fontWeight="semibold">Missing COA</Text><Badge variant="subtle">{missingCoaFiltered.length}</Badge></HStack>
-              <EnterpriseStickyTable><Box p={3}><EnterpriseDataTable rows={missingCoaFiltered} rowKey={(row) => row.id} emptyLabel="No missing COA in scope." columns={[
+              <EnterpriseStickyTable><EnterpriseDataTable rows={missingCoaFiltered} rowKey={(row) => row.id} emptyLabel="No missing COA in scope." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
                 { id: "lot", header: "Lot", render: (row) => row.lotNumber },
                 { id: "stage", header: "Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
-              ]} rowActions={[{ id: "open-coa", label: "Open Documents", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></Box></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-coa", label: "Open Documents", onClick: (row) => { if (row.actionHref) router.push(row.actionHref); } }]} /></EnterpriseStickyTable>
             </VStack>
 
             {activeJobsFiltered.length + lotAgingFiltered.length + bottlenecksFiltered.length + missingDocsFiltered.length + dispatchDelaysFiltered.length + missingCoaFiltered.length === 0 ? (

@@ -10,7 +10,7 @@ import { Sidebar } from "@/layout/Sidebar";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
 import { clearStoredAuth, getStoredAuth } from "@/lib/auth-client";
 import { MOBILE_CONTENT_BOTTOM_PADDING } from "@/lib/mobile-bottom-ui";
-import { normalizeRole } from "@/lib/role";
+import { normalizeRole, type NormalizedRole } from "@/lib/role";
 import { CLIENT_AUTH_BYPASS_ENABLED } from "@/lib/runtime-flags";
 import {
   GLOBAL_SEARCH_PLACEHOLDER,
@@ -29,6 +29,13 @@ type SessionPayload = {
   } | null;
 };
 
+const ROLE_VIEW_HOME_MAP: Record<NormalizedRole, string> = {
+  ADMIN: "/admin",
+  OPERATIONS: "/userinsp",
+  RND: "/rnd",
+  VIEWER: "/exceptions",
+};
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -37,6 +44,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [roleViewOverride, setRoleViewOverride] = useState<NormalizedRole | null>(null);
 
   const loadSession = useCallback(async () => {
     setLoading(true);
@@ -81,6 +89,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const persistedRoleView = window.localStorage.getItem("enterprise-role-view");
+    const normalized = normalizeRole(persistedRoleView);
+    setRoleViewOverride(normalized);
+  }, []);
+
+  useEffect(() => {
     document.documentElement.classList.add("auth-viewport-lock");
     document.body.classList.add("auth-viewport-lock");
     return () => {
@@ -95,6 +109,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       router.push(nextView === "all" ? `${pathname}?view=all` : pathname);
     },
     [pathname, router, setViewMode]
+  );
+
+  const onRoleViewChange = useCallback(
+    (nextRole: NormalizedRole) => {
+      if (!session) {
+        return;
+      }
+      const baseRole = normalizeRole(session.role);
+      const nextOverride = baseRole === nextRole ? null : nextRole;
+      setRoleViewOverride(nextOverride);
+      if (nextOverride) {
+        window.localStorage.setItem("enterprise-role-view", nextOverride);
+      } else {
+        window.localStorage.removeItem("enterprise-role-view");
+      }
+      if (nextRole !== "ADMIN") {
+        setViewMode("my");
+      }
+      const destination = ROLE_VIEW_HOME_MAP[nextRole];
+      router.push(destination);
+    },
+    [router, session, setViewMode],
   );
 
   const handleLogout = useCallback(async () => {
@@ -135,15 +171,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const displayName = session.profile?.displayName ?? "Current User";
   const companyName = session.profile?.companyName ?? "Company";
+  const baseRole = normalizeRole(session.role);
+  const effectiveRole = roleViewOverride ?? baseRole;
   const pageDefinition = resolvePageDefinition(pathname);
   const breadcrumbs = resolveBreadcrumbs(pageDefinition, pathname);
-  const normalizedRole = normalizeRole(session.role);
+  const canSwitchRoleView = baseRole === "ADMIN";
 
   return (
     <Box h="100dvh" bg="bg.app" overflow="hidden">
       <Box display={{ base: "none", lg: "block" }} position="fixed" insetY={0} left={0} zIndex={20}>
         <Sidebar
-          role={session.role}
+          role={effectiveRole ?? session.role}
           companyName={companyName}
           displayName={displayName}
           onLogout={handleLogout}
@@ -152,24 +190,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         />
       </Box>
 
-      <Box ml={{ base: 0, lg: isSidebarCollapsed ? 20 : 64 }} h="100dvh" transition="margin-left 180ms ease" overflow="hidden">
+      <Box ml={{ base: 0, lg: isSidebarCollapsed ? 18 : 60 }} h="100dvh" transition="margin-left 180ms ease" overflow="hidden">
         <Header
-          role={session.role}
+          role={effectiveRole ?? session.role}
           displayName={displayName}
           companyName={companyName}
           onLogout={handleLogout}
           viewMode={viewMode}
           onViewModeChange={onViewModeChange}
+          canSwitchRoleView={canSwitchRoleView}
+          onRoleViewChange={onRoleViewChange}
           page={pageDefinition}
           breadcrumbs={breadcrumbs}
           searchPlaceholder={GLOBAL_SEARCH_PLACEHOLDER}
         />
 
         <Box
-          px={{ base: 4, md: 6, lg: 8 }}
-          py={{ base: 4, md: 5, lg: 6 }}
-          pb={{ base: MOBILE_CONTENT_BOTTOM_PADDING, lg: 10 }}
-          maxW="8xl"
+          px={{ base: 3, md: 5, lg: 6 }}
+          py={{ base: 3, md: 4, lg: 5 }}
+          pb={{ base: MOBILE_CONTENT_BOTTOM_PADDING, lg: 8 }}
+          maxW="7xl"
           mx="auto"
           h={{ base: "calc(100dvh - 72px)", md: "calc(100dvh - 76px)", lg: "calc(100dvh - 80px)" }}
           overflowY="auto"
@@ -180,7 +220,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </Box>
 
       <MobileBottomNav
-        role={normalizedRole}
+        role={effectiveRole}
         displayName={displayName}
         companyName={companyName}
         pathname={pathname}

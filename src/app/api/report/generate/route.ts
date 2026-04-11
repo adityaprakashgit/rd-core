@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, RndJobStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
@@ -32,13 +32,61 @@ export async function POST(req: NextRequest) {
 
     authorize(currentUser, "READ_ONLY");
 
-    const { jobId } = await req.json();
+    const payload = (await req.json()) as { jobId?: unknown; rndJobId?: unknown };
+    const requestJobId = typeof payload?.jobId === "string" && payload.jobId.trim().length > 0
+      ? payload.jobId.trim()
+      : "";
+    const rndJobId = typeof payload?.rndJobId === "string" && payload.rndJobId.trim().length > 0
+      ? payload.rndJobId.trim()
+      : "";
 
-    if (!jobId) {
+    if (!requestJobId && !rndJobId) {
       return NextResponse.json(
-        { error: "Validation Error", details: "jobId is required." },
+        { error: "Validation Error", details: "jobId or rndJobId is required." },
         { status: 400 }
       );
+    }
+
+    let lineage: { parentJobId: string; sampleId: string } | null = null;
+    let jobId = requestJobId;
+
+    if (rndJobId) {
+      const scopedRndJob = await prisma.rndJob.findUnique({
+        where: { id: rndJobId },
+        select: {
+          id: true,
+          companyId: true,
+          parentJobId: true,
+          sampleId: true,
+          status: true,
+        },
+      });
+      if (!scopedRndJob) {
+        return NextResponse.json(
+          { error: "Not Found", details: "R&D job not found." },
+          { status: 404 }
+        );
+      }
+      if (scopedRndJob.companyId !== currentUser.companyId) {
+        return NextResponse.json({ error: "Forbidden", details: "Cross-company access is not allowed." }, { status: 403 });
+      }
+      if (scopedRndJob.status !== RndJobStatus.APPROVED && scopedRndJob.status !== RndJobStatus.COMPLETED) {
+        return NextResponse.json(
+          { error: "Workflow Error", details: "Reports can be linked only for approved/completed R&D jobs." },
+          { status: 422 }
+        );
+      }
+      if (jobId && jobId !== scopedRndJob.parentJobId) {
+        return NextResponse.json(
+          { error: "Validation Error", details: "jobId does not match rndJob lineage." },
+          { status: 422 }
+        );
+      }
+      jobId = scopedRndJob.parentJobId;
+      lineage = {
+        parentJobId: scopedRndJob.parentJobId,
+        sampleId: scopedRndJob.sampleId,
+      };
     }
 
     const jobScope = await prisma.inspectionJob.findUnique({
@@ -278,11 +326,38 @@ export async function POST(req: NextRequest) {
     ) as Prisma.InputJsonValue;
 
     // 3. Save snapshot (Immutable)
-    const snapshot = await prisma.reportSnapshot.create({
-      data: {
-        jobId,
-        data: snapshotData,
-      },
+    const snapshot = await prisma.$transaction(async (tx) => {
+      const created = await tx.reportSnapshot.create({
+        data: {
+          jobId,
+          data: snapshotData,
+        },
+      });
+
+      if (rndJobId && lineage) {
+        await tx.rndReportVersion.updateMany({
+          where: {
+            companyId: currentUser.companyId,
+            parentJobId: lineage.parentJobId,
+            sampleId: lineage.sampleId,
+            precedence: "ACTIVE",
+          },
+          data: { precedence: "SUPERSEDED" },
+        });
+
+        await tx.rndReportVersion.create({
+          data: {
+            companyId: currentUser.companyId,
+            parentJobId: lineage.parentJobId,
+            sampleId: lineage.sampleId,
+            rndJobId,
+            reportSnapshotId: created.id,
+            precedence: "ACTIVE",
+          },
+        });
+      }
+
+      return created;
     });
 
     return NextResponse.json(snapshot);

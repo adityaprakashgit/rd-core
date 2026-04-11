@@ -1,5 +1,13 @@
 # UX_CLEANUP_RULES
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- This file provides operational UX cleanup constraints and examples.
+- If phrasing conflicts with architecture policy, precedence is:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. Module-specific docs
+
 ## 1. Objective
 Define strict, non-optional UI rules for operational mobile and tablet screens in the industrial inspection ERP so daily users can complete work quickly with low confusion.
 
@@ -7,8 +15,9 @@ Stage order used across all screens and documents:
 `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 
 Device policy lock:
-- Desktop-first shell for registry and oversight surfaces.
-- Mobile/tablet task-first behavior for execution stages.
+- Registry/oversight screens may use dense enterprise list layouts when actionable.
+- Process-heavy execution stages MUST use mobile/tablet task-first behavior.
+- Workflow orientation MUST be visible without relying on long page scrolling.
 
 ## 2. What should never be shown on operational mobile screens
 - KPI cards, trend charts, dashboard widgets, scorecards, productivity graphs.
@@ -24,7 +33,7 @@ Device policy lock:
 - `Material Name`
 - `Current Stage`
 - `Status` only when it affects current action.
-- Current step title in plain operational language.
+- Current stage title in plain operational language.
 - Single primary CTA for current task.
 - Inline validation and retry actions for failed operations.
 
@@ -55,6 +64,7 @@ Device policy lock:
 - Primary CTA must be verb-first and specific.
 - Secondary actions must be visible but visually lighter.
 - Avoid branching choices before required task completion.
+- Process-heavy pages must show a clear stage header/tabs and one active stage panel.
 
 ## 8. Rules for image capture cards
 Use these exact categories:
@@ -109,6 +119,13 @@ Tablet:
 
 Shared rule:
 - Platform differences are layout-only, not logic differences.
+
+## 14. Governance Prohibitions (UX Layer)
+- No one-off workflow layout when approved template exists.
+- No local status/badge mapping logic inside pages.
+- No duplicate timeline/history families for same use case.
+- No competing canonical routes for the same object experience.
+- No process page without explicit stage ownership and next action visibility.
 
 ## 12. Examples of bad UI patterns
 - KPI tiles on execution screens.

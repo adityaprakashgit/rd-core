@@ -30,6 +30,21 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## UI Architecture Governance
+
+For enterprise UI implementation standards and migration direction, use:
+
+- Canonical UI governance: [`docs/enterprise-ui-governance.md`](docs/enterprise-ui-governance.md)
+- Agent execution rules: [`AGENTS.md`](AGENTS.md)
+- Supporting revamp references:
+  - [`UI_REVAMP_PRD.md`](UI_REVAMP_PRD.md)
+  - [`UI_REVAMP_COMPONENT_SYSTEM.md`](UI_REVAMP_COMPONENT_SYSTEM.md)
+
+When guidance conflicts, follow:
+1. `docs/enterprise-ui-governance.md`
+2. `AGENTS.md`
+3. module-specific/supporting docs
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

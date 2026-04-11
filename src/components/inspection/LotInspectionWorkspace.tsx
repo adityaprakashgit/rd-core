@@ -527,7 +527,7 @@ export function LotInspectionWorkspace({
     const issueValidationErrors = getIssueDraftValidationErrors(issueDrafts);
 
     return (
-      <Card variant="outline" borderRadius="2xl" ref={exceptionSummaryRef}>
+      <Card variant="outline" borderRadius="xl" ref={exceptionSummaryRef}>
         <CardBody p={6}>
           <VStack align="stretch" spacing={4}>
             <HStack justify="space-between" align="start">
@@ -616,10 +616,10 @@ export function LotInspectionWorkspace({
             ))}
 
             {issueValidationErrors.length > 0 ? (
-              <Box borderRadius="xl" bg="orange.50" borderWidth="1px" borderColor="orange.200" p={3}>
+              <Box borderRadius="lg" bg="bg.rail" borderWidth="1px" borderColor="border.default" p={3}>
                 <HStack align="start" spacing={2}>
                   <Icon as={AlertTriangle} boxSize={4} color="orange.600" mt={0.5} />
-                  <Text fontSize="sm" color="orange.900">{issueValidationErrors[0]}</Text>
+                  <Text fontSize="sm" color="text.primary">{issueValidationErrors[0]}</Text>
                 </HStack>
               </Box>
             ) : null}
@@ -632,7 +632,7 @@ export function LotInspectionWorkspace({
   function renderReviewPanel() {
     return (
       <VStack align="stretch" spacing={4}>
-        <Card variant="outline" borderRadius="2xl">
+        <Card variant="outline" borderRadius="xl">
           <CardBody p={6}>
             <VStack align="stretch" spacing={4}>
               <HStack justify="space-between" align="start" flexWrap="wrap">
@@ -654,7 +654,7 @@ export function LotInspectionWorkspace({
                 <SectionHint label="Sampling" value={payload?.inspection?.decisionStatus === "READY_FOR_SAMPLING" ? "Open" : "Blocked"} />
               </SimpleGrid>
 
-              <Box borderRadius="xl" bg={`${recommendationTone.colorScheme}.50`} borderWidth="1px" borderColor={`${recommendationTone.colorScheme}.200`} p={4}>
+              <Box borderRadius="lg" bg="bg.rail" borderWidth="1px" borderColor="border.default" p={4}>
                 <HStack align="start" spacing={3}>
                   <Icon as={recommendationTone.icon} boxSize={5} color={`${recommendationTone.colorScheme}.600`} mt={0.5} />
                   <VStack align="stretch" spacing={1}>
@@ -685,10 +685,10 @@ export function LotInspectionWorkspace({
               </FormControl>
 
               {reviewErrors.length > 0 ? (
-                <Box borderRadius="xl" bg="orange.50" borderWidth="1px" borderColor="orange.200" p={3}>
+                <Box borderRadius="lg" bg="bg.rail" borderWidth="1px" borderColor="border.default" p={3}>
                   <HStack align="start" spacing={2}>
                     <Icon as={AlertTriangle} boxSize={4} color="orange.600" mt={0.5} />
-                    <Text fontSize="sm" color="orange.900">
+                    <Text fontSize="sm" color="text.primary">
                       {reviewErrors[0]}
                     </Text>
                   </HStack>
@@ -707,7 +707,7 @@ export function LotInspectionWorkspace({
     const uploadError = evidenceErrors[LOT_OVERVIEW_CATEGORY] || null;
 
     return (
-      <Card variant="outline" borderRadius="2xl">
+      <Card variant="outline" borderRadius="xl">
         <CardBody p={6}>
           <VStack align="stretch" spacing={5}>
             <HStack justify="space-between" align="start" flexWrap="wrap">
@@ -763,8 +763,8 @@ export function LotInspectionWorkspace({
               borderWidth="1px"
               borderStyle="dashed"
               borderColor={uploadError ? "red.300" : hasLotOverviewPhoto ? "green.300" : "orange.300"}
-              bg={hasLotOverviewPhoto ? "green.50" : "orange.50"}
-              borderRadius="2xl"
+              bg="bg.rail"
+              borderRadius="lg"
               overflow="hidden"
               cursor="pointer"
               onClick={() => fileInputsRef.current[`${LOT_OVERVIEW_CATEGORY}:camera`]?.click()}
@@ -854,7 +854,7 @@ export function LotInspectionWorkspace({
     }
 
     return (
-      <Card variant="outline" borderRadius="2xl">
+      <Card variant="outline" borderRadius="xl">
         <CardBody p={6}>
           <VStack align="stretch" spacing={4}>
             <HStack justify="space-between" align="start">
@@ -914,7 +914,7 @@ export function LotInspectionWorkspace({
                   </Badge>
                 ) : null}
               </HStack>
-              <Text fontSize="2xl" fontWeight="bold" color="text.primary" mt={2}>
+              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
                 Guided Lot Inspection
               </Text>
               <Text fontSize="sm" color="text.secondary">
@@ -925,31 +925,31 @@ export function LotInspectionWorkspace({
         </HStack>
 
         <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody>
               <Text fontSize="sm" color="text.secondary">Inspection state</Text>
-              <Text fontSize="2xl" fontWeight="bold">{payload.inspection ? "Active" : "Not started"}</Text>
+              <Text fontSize="xl" fontWeight="bold">{payload.inspection ? "Active" : "Not started"}</Text>
               <Text fontSize="sm" color="text.secondary">Start, capture, then review</Text>
             </CardBody>
           </Card>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody>
               <Text fontSize="sm" color="text.secondary">Lot overview photo</Text>
-              <Text fontSize="2xl" fontWeight="bold">{hasLotOverviewPhoto ? "Done" : "Pending"}</Text>
+              <Text fontSize="xl" fontWeight="bold">{hasLotOverviewPhoto ? "Done" : "Pending"}</Text>
               <Text fontSize="sm" color="text.secondary">Only required inspection proof</Text>
             </CardBody>
           </Card>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody>
               <Text fontSize="sm" color="text.secondary">Issues captured</Text>
-              <Text fontSize="2xl" fontWeight="bold">{issueDrafts.length}</Text>
+              <Text fontSize="xl" fontWeight="bold">{issueDrafts.length}</Text>
               <Text fontSize="sm" color="text.secondary">Add only when hold or reject is needed</Text>
             </CardBody>
           </Card>
-          <Card variant="outline" borderRadius="2xl">
+          <Card variant="outline" borderRadius="xl">
             <CardBody>
               <Text fontSize="sm" color="text.secondary">Sampling gate</Text>
-              <Text fontSize="2xl" fontWeight="bold">{payload.inspection?.decisionStatus === "READY_FOR_SAMPLING" ? "Open" : "Blocked"}</Text>
+              <Text fontSize="xl" fontWeight="bold">{payload.inspection?.decisionStatus === "READY_FOR_SAMPLING" ? "Open" : "Blocked"}</Text>
               <Text fontSize="sm" color="text.secondary">Opens after pass approval</Text>
             </CardBody>
           </Card>
@@ -961,7 +961,7 @@ export function LotInspectionWorkspace({
           activeStep={
             <VStack align="stretch" spacing={4}>
               {!payload.inspection ? (
-                <Card variant="outline" borderRadius="2xl">
+                <Card variant="outline" borderRadius="xl">
                   <CardBody p={6}>
                     <VStack align="stretch" spacing={4}>
                       <Text fontSize="lg" fontWeight="bold">Lot ready for inspection</Text>
@@ -986,7 +986,7 @@ export function LotInspectionWorkspace({
           }
           context={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={5}>
                   <VStack align="stretch" spacing={3}>
                     <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
@@ -1001,7 +1001,7 @@ export function LotInspectionWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="2xl">
+              <Card variant="outline" borderRadius="xl">
                 <CardBody p={5}>
                   <VStack align="stretch" spacing={3}>
                     <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
@@ -1017,7 +1017,7 @@ export function LotInspectionWorkspace({
               </Card>
 
               {payload.inspection && isReviewStep ? (
-                <Card variant="outline" borderRadius="2xl" display={{ base: "none", xl: "block" }}>
+                <Card variant="outline" borderRadius="xl" display={{ base: "none", xl: "block" }}>
                   <CardBody p={5}>
                     <VStack align="stretch" spacing={3}>
                       <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
@@ -1069,7 +1069,7 @@ export function LotInspectionWorkspace({
                   </CardBody>
                 </Card>
               ) : (
-                <Card variant="outline" borderRadius="2xl" display={{ base: "none", xl: "block" }}>
+                <Card variant="outline" borderRadius="xl" display={{ base: "none", xl: "block" }}>
                   <CardBody p={5}>
                     <VStack align="stretch" spacing={3}>
                       <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">

@@ -11,6 +11,18 @@ import {
   LEGACY_DEFAULT_INSPECTION_ITEM_KEYS,
 } from "@/lib/inspection-checklist";
 import { getIssueDraftValidationErrors } from "@/lib/inspection-workspace";
+import {
+  getRequiredProofFailureCode,
+  resolveEvidenceCategoriesForLot,
+  resolveMissingRequiredEvidenceCategories,
+  requiresRequiredImageProofForDecision,
+  resolveRequiredImageUploadCategories,
+} from "@/lib/image-proof-policy";
+import {
+  getEvidenceCategoryLabel,
+  normalizeEvidenceCategoryKey,
+  type CanonicalEvidenceCategory,
+} from "@/lib/evidence-definition";
 import { buildModuleWorkflowSettingsCreate, canApproveFinalDecision, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
@@ -41,18 +53,9 @@ const inspectionInclude = {
   },
 } as const;
 
-const imageCategoryMap: Record<string, string> = {
-  "Bag photo with visible LOT no": "BAG_WITH_LOT_NO",
-  "Material in bag": "MATERIAL_VISIBLE",
-  "During Sampling Photo": "SAMPLING_IN_PROGRESS",
-  "Sample Completion": "SEALED_BAG",
-  "Seal on bag": "SEAL_CLOSEUP",
-  "Bag condition": "BAG_CONDITION",
-  "Whole Job bag palletized and packed": "LOT_OVERVIEW",
-};
 
-function jsonError(error: string, details: string, status: number) {
-  return NextResponse.json({ error, details }, { status });
+function jsonError(error: string, details: string, status: number, code = "INSPECTION_EXECUTION_ERROR") {
+  return NextResponse.json({ error, details, code }, { status });
 }
 
 function mapDecisionOutcome(decisionStatus: InspectionDecisionStatus | string | null | undefined) {
@@ -66,10 +69,6 @@ function mapDecisionOutcome(decisionStatus: InspectionDecisionStatus | string | 
     return "REJECT";
   }
   return null;
-}
-
-function resolveRequiredMediaCategoriesFromSettings(requiredImageCategories: string[]) {
-  return requiredImageCategories.map((label) => imageCategoryMap[label] ?? label.toUpperCase().replaceAll(" ", "_"));
 }
 
 async function ensureChecklistSeeded(tx: PrismaLike) {
@@ -149,7 +148,7 @@ async function getLotScope(tx: PrismaLike, lotId: string, companyId: string) {
 async function buildInspectionPayload(tx: PrismaLike, lotId: string, companyId: string) {
   await ensureChecklistSeeded(tx);
   const workflowPolicy = await getWorkflowPolicy(tx, companyId);
-  const requiredMediaCategories = resolveRequiredMediaCategoriesFromSettings(workflowPolicy.images.requiredImageCategories);
+  const requiredMediaCategories = resolveRequiredImageUploadCategories(workflowPolicy.images.requiredImageCategories);
   const lot = await getLotScope(tx, lotId, companyId);
   const checklistItems = await tx.inspectionChecklistItemMaster.findMany({
     where: { isActive: true },
@@ -381,19 +380,14 @@ export async function PATCH(request: NextRequest) {
       if (decisionStatus && decisionStatus !== "PENDING" && !canApproveFinalDecision(currentUser.role, workflowPolicy.workflow.finalDecisionApproverPolicy)) {
         throw new Error("DECISION_APPROVER_REQUIRED");
       }
-      if ((decisionStatus === "ON_HOLD" || decisionStatus === "REJECTED") && !overallRemark) {
+      if (
+        (decisionStatus === "ON_HOLD" || decisionStatus === "REJECTED") &&
+        workflowPolicy.approval.holdRejectNotesMandatory &&
+        !overallRemark
+      ) {
         throw new Error("DECISION_NOTE_REQUIRED");
       }
-      if (decisionStatus) {
-        const capturedCategories = new Set((lot.mediaFiles ?? []).map((file) => file.category));
-        const requiredMediaCategories = resolveRequiredMediaCategoriesFromSettings(workflowPolicy.images.requiredImageCategories);
-        const missingCategories = requiredMediaCategories.filter((category) => {
-          return !capturedCategories.has(category);
-        });
-        if (missingCategories.length > 0) {
-          throw new Error(`VALIDATION:Missing required images: ${missingCategories.join(", ")}`);
-        }
-      }
+
 
       await ensureChecklistSeeded(tx);
       const checklistItems = await tx.inspectionChecklistItemMaster.findMany({
@@ -530,8 +524,17 @@ export async function PATCH(request: NextRequest) {
         responses: refreshed.responses as InspectionChecklistResponse[],
         issues: refreshed.issues as InspectionIssue[],
         mediaCategories: refreshed.mediaFiles.map((file) => file.category),
-        requiredMediaCategories: resolveRequiredMediaCategoriesFromSettings(workflowPolicy.images.requiredImageCategories),
+        requiredMediaCategories: resolveRequiredImageUploadCategories(workflowPolicy.images.requiredImageCategories),
       });
+      const resolvedEvidence = resolveEvidenceCategoriesForLot({
+        lot,
+        inspectionMedia: refreshed.mediaFiles,
+        lotMedia: lot.mediaFiles,
+      });
+      const missingRequiredCategories = resolveMissingRequiredEvidenceCategories(
+        workflowPolicy.images.requiredImageCategories,
+        resolvedEvidence,
+      );
 
       const nextOverallRemark = overallRemarkProvided ? overallRemark : refreshed.overallRemark;
       const nextDecisionStatus = decisionStatus ?? (refreshed.decisionStatus as InspectionDecisionStatus);
@@ -562,6 +565,9 @@ export async function PATCH(request: NextRequest) {
 
       if ((issueDraftErrors.length > 0 || validationErrors.length > 0) && nextDecisionStatus !== "PENDING") {
         throw new Error(`VALIDATION:${[...issueDraftErrors, ...validationErrors].join(" ")}`);
+      }
+      if (requiresRequiredImageProofForDecision(decisionStatus) && missingRequiredCategories.length > 0) {
+        throw new Error(`PROOF_REQUIRED:${missingRequiredCategories.join(" | ")}`);
       }
 
       const nextInspectionStatus = nextDecisionStatus && nextDecisionStatus !== "PENDING" ? "COMPLETED" : "IN_PROGRESS";
@@ -659,18 +665,33 @@ export async function PATCH(request: NextRequest) {
 
     const message = error instanceof Error ? error.message : "Failed to save inspection.";
     if (message === "JOB_LOCKED") {
-      return jsonError("Forbidden", "This job is LOCKED. No inspection changes are allowed.", 403);
+      return jsonError("Forbidden", "This job is LOCKED. No inspection changes are allowed.", 403, "INSPECTION_JOB_LOCKED");
     }
     if (message.startsWith("VALIDATION:")) {
-      return jsonError("Validation Error", message.replace("VALIDATION:", "").trim(), 422);
+      return jsonError("Validation Error", message.replace("VALIDATION:", "").trim(), 422, "INSPECTION_VALIDATION_FAILED");
+    }
+    if (message.startsWith("PROOF_REQUIRED:")) {
+      const missingCategories = message
+        .replace("PROOF_REQUIRED:", "")
+        .trim()
+        .split(" | ")
+        .map((entry) => normalizeEvidenceCategoryKey(entry))
+        .filter((entry): entry is CanonicalEvidenceCategory => Boolean(entry));
+      const missingLabels = missingCategories.map((entry) => getEvidenceCategoryLabel(entry));
+      return jsonError(
+        "Validation Error",
+        `Upload required proof before submission: ${missingLabels.join(", ")}.`,
+        422,
+        getRequiredProofFailureCode(missingCategories),
+      );
     }
     if (message === "DECISION_APPROVER_REQUIRED") {
-      return jsonError("Forbidden", "Only the configured Manager/Admin approver can pass, hold, or reject the final decision.", 403);
+      return jsonError("Forbidden", "Only the configured Manager/Admin approver can pass, hold, or reject the final decision.", 403, "DECISION_APPROVER_REQUIRED");
     }
     if (message === "DECISION_NOTE_REQUIRED") {
-      return jsonError("Validation Error", "Notes are required for Hold and Reject decisions.", 400);
+      return jsonError("Validation Error", "Notes are required for Hold and Reject decisions.", 400, "DECISION_NOTE_REQUIRED");
     }
 
-    return jsonError("System Error", message, 500);
+    return jsonError("System Error", message, 500, "INSPECTION_PATCH_FAILED");
   }
 }

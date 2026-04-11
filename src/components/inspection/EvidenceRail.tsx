@@ -66,9 +66,9 @@ export function EvidenceRail({
           <Box
             key={item.id}
             borderWidth="1px"
-            borderColor={isNextMissing ? "orange.300" : "border.default"}
-            bg={isNextMissing ? "orange.50" : "transparent"}
-            borderRadius="xl"
+            borderColor={isNextMissing ? "border.strong" : "border.default"}
+            bg={isNextMissing ? "bg.rail" : "transparent"}
+            borderRadius="lg"
             p={4}
           >
             <VStack align="stretch" spacing={3}>
@@ -85,9 +85,7 @@ export function EvidenceRail({
                         <Text as="span">{statusMeta.label}</Text>
                       </HStack>
                     </Badge>
-                    {isNextMissing ? (
-                      <Badge colorScheme="orange" variant="solid">Next missing evidence</Badge>
-                    ) : null}
+                    {isNextMissing ? <Badge colorScheme="gray" variant="subtle">Next missing evidence</Badge> : null}
                   </HStack>
                   {item.note ? (
                     <Text fontSize="sm" color="text.secondary" mt={1}>
@@ -106,7 +104,7 @@ export function EvidenceRail({
               )}
 
               {item.error ? (
-                <Box borderRadius="md" bg="red.50" borderWidth="1px" borderColor="red.100" p={3}>
+                <Box borderRadius="md" bg="bg.rail" borderWidth="1px" borderColor="red.200" p={3}>
                   <Text fontSize="sm" color="red.700">{item.error}</Text>
                   {onClearError ? (
                     <Button mt={2} size="xs" variant="ghost" onClick={() => onClearError(item.id)}>

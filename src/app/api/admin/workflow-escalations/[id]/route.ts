@@ -34,9 +34,13 @@ function parseStatus(value: unknown): WorkflowEscalationStatus | null {
   }
 }
 
+type EscalationRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
 export async function PATCH(
   request: NextRequest,
-  context: RouteContext<"/api/admin/workflow-escalations/[id]">,
+  context: EscalationRouteContext,
 ) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);

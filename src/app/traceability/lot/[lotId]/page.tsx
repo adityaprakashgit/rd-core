@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Badge,
+  Box,
   Button,
-  Card,
-  CardBody,
   Grid,
   GridItem,
   HStack,
@@ -24,6 +23,7 @@ import {
   PageActionBar,
   PageIdentityBar,
 } from "@/components/enterprise/EnterprisePatterns";
+import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 
 type TraceabilityPayload = {
@@ -82,7 +82,21 @@ type TraceabilityPayload = {
   coa: {
     available: boolean;
     latestSnapshotId: string | null;
+    previousSnapshotIds: string[];
     generatedAt: string | null;
+  };
+  reports: {
+    active: {
+      snapshotId: string | null;
+      rndJobNumber: string | null;
+      generatedAt: string | null;
+    };
+    previous: Array<{
+      snapshotId: string;
+      rndJobNumber: string;
+      generatedAt: string;
+      status: "Previous Report";
+    }>;
   };
   relatedDocuments: Array<{
     id: string;
@@ -164,8 +178,8 @@ export default function LotTraceabilityPage() {
       { label: "Job Number", value: data.lot.jobNumber, href: `/operations/job/${data.lot.jobId}` },
       { label: "Job Ref", value: data.lot.jobReferenceNumber },
       { label: "Lot Number", value: data.lot.lotNumber, href: `/operations/job/${data.lot.jobId}/lot/${data.lot.id}` },
-      { label: "Current Step", value: data.lot.currentStep, tone: "blue" },
-      { label: "Status", value: data.lot.status, tone: "purple" },
+      { label: "Current Stage", value: data.lot.currentStep },
+      { label: "Status", value: data.lot.status },
       { label: "Client", value: data.lot.clientName },
     ];
   }, [data]);
@@ -183,10 +197,8 @@ export default function LotTraceabilityPage() {
           status={
             data ? (
               <HStack spacing={2}>
-                <Badge colorScheme="blue">{data.lot.currentStep}</Badge>
-                <Badge colorScheme={data.coa.available ? "green" : "orange"}>
-                  {data.coa.available ? "COA Available" : "COA Pending"}
-                </Badge>
+                <WorkflowStateChip status={data.lot.currentStep} />
+                <WorkflowStateChip status={data.coa.available ? "COA_AVAILABLE" : "COA_PENDING"} />
               </HStack>
             ) : null
           }
@@ -211,7 +223,7 @@ export default function LotTraceabilityPage() {
         />
 
         {loading ? (
-          <Card variant="outline"><CardBody><Text color="text.secondary">Loading traceability...</Text></CardBody></Card>
+          <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}><Text color="text.secondary">Loading traceability...</Text></Box>
         ) : null}
 
         {error ? (
@@ -222,8 +234,7 @@ export default function LotTraceabilityPage() {
           <Grid templateColumns={{ base: "1fr", xl: "minmax(0,1fr) 320px" }} gap={5}>
             <GridItem>
               <VStack align="stretch" spacing={4}>
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>Inspection</Text>
                     <EnterpriseDataTable
                       rows={data.inspection}
@@ -237,11 +248,9 @@ export default function LotTraceabilityPage() {
                       ]}
                       emptyLabel="No inspection record yet."
                     />
-                  </CardBody>
-                </Card>
+                  </Box>
 
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>Samples</Text>
                     <EnterpriseDataTable
                       rows={data.samples}
@@ -255,11 +264,9 @@ export default function LotTraceabilityPage() {
                       ]}
                       emptyLabel="No sample linked to this lot."
                     />
-                  </CardBody>
-                </Card>
+                  </Box>
 
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>R&D tests</Text>
                     <EnterpriseDataTable
                       rows={data.rdTests}
@@ -272,11 +279,9 @@ export default function LotTraceabilityPage() {
                       ]}
                       emptyLabel="No R&D trials linked yet."
                     />
-                  </CardBody>
-                </Card>
+                  </Box>
 
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>Packets</Text>
                     <EnterpriseDataTable
                       rows={data.packets}
@@ -290,11 +295,9 @@ export default function LotTraceabilityPage() {
                       ]}
                       emptyLabel="No packets linked to this lot."
                     />
-                  </CardBody>
-                </Card>
+                  </Box>
 
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>Dispatches</Text>
                     <EnterpriseDataTable
                       rows={data.dispatches}
@@ -306,26 +309,26 @@ export default function LotTraceabilityPage() {
                       ]}
                       emptyLabel="No dispatch-ready packets yet."
                     />
-                  </CardBody>
-                </Card>
+                  </Box>
 
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>Certificate of Analysis</Text>
                     <HStack justify="space-between" flexWrap="wrap" spacing={3}>
-                      <Badge colorScheme={data.coa.available ? "green" : "orange"}>
-                        {data.coa.available ? "Available" : "Not available"}
+                      <WorkflowStateChip status={data.coa.available ? "COA_AVAILABLE" : "COA_PENDING"} />
+                      <Badge variant="subtle" colorScheme={data.reports.active.snapshotId ? "green" : "gray"}>
+                        {data.reports.active.snapshotId ? "Active Report" : "No Active Report"}
                       </Badge>
+                      <Text fontSize="sm" color="text.secondary">
+                        Previous Reports: {data.reports.previous.length}
+                      </Text>
                       <Text fontSize="sm" color="text.secondary">Generated: {toDateText(data.coa.generatedAt)}</Text>
                       <Button as={Link} href={data.coa.latestSnapshotId ? `/api/report/${data.coa.latestSnapshotId}` : "#"} isDisabled={!data.coa.latestSnapshotId} size="sm" variant="outline">
                         View PDF
                       </Button>
                     </HStack>
-                  </CardBody>
-                </Card>
+                  </Box>
 
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>Related documents</Text>
                     <EnterpriseDataTable
                       rows={data.relatedDocuments}
@@ -343,11 +346,9 @@ export default function LotTraceabilityPage() {
                       ]}
                       emptyLabel="No related documents found."
                     />
-                  </CardBody>
-                </Card>
+                  </Box>
 
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <Text fontSize="sm" color="text.secondary" mb={3}>Audit timeline</Text>
                     <HistoryTimeline
                       events={data.auditTimeline.map((event) => ({
@@ -357,16 +358,14 @@ export default function LotTraceabilityPage() {
                         at: toDateText(event.at),
                       }))}
                     />
-                  </CardBody>
-                </Card>
+                  </Box>
               </VStack>
             </GridItem>
 
             <GridItem>
               <Stack spacing={4} position={{ xl: "sticky" }} top={{ xl: "96px" }}>
                 <LinkedRecordsPanel items={linkedItems} />
-                <Card variant="outline">
-                  <CardBody>
+                <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                     <VStack align="stretch" spacing={2}>
                       <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">Lifecycle</Text>
                       {[
@@ -385,8 +384,7 @@ export default function LotTraceabilityPage() {
                         </HStack>
                       ))}
                     </VStack>
-                  </CardBody>
-                </Card>
+                  </Box>
               </Stack>
             </GridItem>
           </Grid>

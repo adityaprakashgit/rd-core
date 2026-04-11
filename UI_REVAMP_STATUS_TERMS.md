@@ -1,5 +1,13 @@
 # UI_REVAMP_STATUS_TERMS
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- This file defines approved terminology and status language inventory.
+- If terminology or behavior guidance conflicts, follow:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. Module-specific docs
+
 ## Canonical Context
 - Stage flow: `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 - Roles: Production, R&D, Manager, Admin
@@ -10,6 +18,18 @@
   - Admin -> `ADMIN`
 - Core object: Lot
 - Exclude Playground
+
+## Workflow Semantics (Must Stay Distinct)
+- **Stage**: where the record is in the process sequence.
+- **Status**: current record state within or across stages.
+- **Next Action**: immediate action required to progress.
+- **Owner**: role/user accountable for current action.
+- **Blocker**: reason progression is currently stopped.
+
+Rules:
+- UI MUST NOT present Stage and Status as interchangeable labels.
+- Process pages MUST show current Stage + Status + Next Action together.
+- Owner and Blocker SHOULD be visible in process headers or rails when applicable.
 
 ## Approved Primary Labels
 - Job Number
@@ -52,6 +72,11 @@ Use concise operational terms only:
 - Blocked
 - Awaiting Review
 - Completed
+
+## Status Rendering Contract
+- Status presentation MUST use shared status dictionary.
+- Status chips MUST use shared `WorkflowStateChip` (or canonical successor).
+- Local per-page color/label mapping is prohibited.
 
 ## Blocker Message Pattern
 - What is blocked

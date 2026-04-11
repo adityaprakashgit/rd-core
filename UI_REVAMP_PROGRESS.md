@@ -1,7 +1,22 @@
 # UI_REVAMP_PROGRESS
 
 ## Last Updated
-2026-04-09 05:06:00 IST
+2026-04-10 00:22:00 IST
+
+## Governance Sync (Current)
+- Canonical UI architecture authority locked to `docs/enterprise-ui-governance.md`.
+- Agent enforcement locked via `AGENTS.md` (mandatory for UI/page/layout/refactor tasks).
+- Supporting revamp docs aligned to precedence model:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. Module-specific/supporting docs
+- Migration language aligned to canonical sequence:
+  - foundation lock
+  - canonical job workflow
+  - R&D detail alignment
+  - packet detail alignment
+  - traceability/document/timeline standardization
+  - legacy cleanup
 
 ## Created
 - UI_REVAMP_PRD.md
@@ -76,6 +91,23 @@
 - src/app/settings/page.tsx (settings UI reorganized around Workflow, Image, Seal, Sampling, Packet, and UI policy groups)
 - src/app/api/inspection/lots/route.ts, src/app/api/inspection/sample-management/route.ts, src/app/api/inspection/execution/route.ts, src/app/api/rd/packet/route.ts (server-side enforcement of settings-driven numbering, sample IDs, required proof, decision ownership, seal edit policy, packet lock policy, and packet weight requirements)
 - src/app/api/jobs/[id]/workflow/route.ts, src/components/jobs/UnifiedJobWorkflow.tsx (unified workflow payload expanded with grouped policy, next action, blockers, and workflow context)
+- prisma/schema.prisma, prisma/migrations/20260409113000_module_settings_admin_surface/migration.sql (module settings policy expansion + new company-scoped profile/branding settings model)
+- src/lib/module-workflow-policy.ts (grouped policy expanded for workflow, numbering, image hidden buckets, approval notifications, and access controls)
+- src/lib/company-profile-settings.ts, src/app/api/settings/company-profile/route.ts (new persisted company profile/branding settings contract)
+- src/app/admin/settings/workflow/page.tsx (new canonical admin module settings page with 9 policy groups and enterprise layout)
+- src/app/settings/page.tsx (compatibility redirect to canonical `/admin/settings/workflow`)
+- src/lib/ui-navigation.ts (settings destination + breadcrumbs aligned to canonical admin settings route)
+- src/lib/packet-management.ts, src/app/api/rd/packet/route.ts, src/app/api/inspection/execution/route.ts (settings-driven enforcement for packet ID prefix/format, submit-to-R&D toggle, and hold/reject note policy)
+- src/app/api/inspection/sample-management/route.ts (seal edit authorization honors role-allowlist fallback policy)
+- src/app/admin/settings/company/page.tsx (new dedicated Company Profile + Branding workspace with logo upload, color suggestions, and report/packing/COA previews)
+- src/app/admin/company-profile/page.tsx (compatibility alias redirect to `/admin/settings/company`)
+- src/app/admin/settings/workflow/page.tsx (company branding editor removed; workflow page now links to dedicated Company Profile settings)
+- src/app/api/settings/company-profile/logo/route.ts (admin-only logo upload endpoint used by Company Profile settings UI)
+- src/lib/branding-color-suggestions.ts (client-side logo palette extraction for optional manual color suggestions)
+- src/lib/ui-navigation.ts (settings active matching and page definitions updated for Company Profile route)
+- src/app/api/admin/workflow-escalations/[id]/route.ts, src/app/api/jobs/[id]/archive/route.ts, src/app/api/jobs/[id]/assign/route.ts, src/app/api/jobs/[id]/workflow/route.ts, src/app/api/lots/[id]/assign/route.ts, src/app/api/lots/[id]/route.ts, src/app/api/lots/[id]/seal/route.ts, src/app/api/packets/[id]/route.ts, src/app/api/samples/[id]/route.ts (replaced ambient `RouteContext` usage with explicit route-context typing)
+- src/app/admin/settings/company/page.tsx (upload-only color-suggestion policy copy locked; URL logos remain supported for branding and preview)
+- src/types/next-route-context.d.ts (removed temporary global route-context shim)
 
 ## Completed
 - IA definition completed (workflow-first + role-specific).
@@ -87,6 +119,8 @@
 - Unified Job Workflow refactor completed with canonical `/jobs/[jobId]/workflow` execution routing and legacy route compatibility redirects.
 - Workflow settings and master-data controls added for client details, container types, numbering policy, image policy, seal policy, and final-decision approver policy.
 - Module Settings architecture implemented as a grouped, company-scoped policy contract with server-side workflow enforcement.
+- Admin Module Settings page completed on canonical `/admin/settings/workflow` route with persisted company profile/branding settings and compatibility redirect from `/settings`.
+- Remaining follow-ups closed: explicit route-handler typing applied and branding color suggestions locked to upload-only behavior.
 
 ## Blocked
 - No planning-stage blockers.
@@ -111,6 +145,7 @@
 - Permission/scoping/gating logic preserved.
 - Playground remains excluded.
 - Lot remains the primary traceable object.
+- Status semantics and badge rendering are governed by shared dictionary + `WorkflowStateChip`; local page mapping is disallowed.
 
 ## Audit Coverage Snapshot
 - Global app shell and navigation reviewed.
@@ -128,3 +163,33 @@
 - Final hardening re-run completed after global search + navigation/a11y + `Awaiting Review` terminology lock: lint warnings unchanged, typecheck pass, build pass.
 - Final closure re-run completed after `DetailTabsLayout` adoption on pending detail pages and dispatch blocker hardening: lint warnings unchanged, typecheck pass, build pass.
 - Module-settings architecture re-run completed after grouped policy contract and server-side enforcement: lint warnings unchanged, typecheck pass, build pass.
+- Module-settings route and persistence hardening re-run completed: lint warnings unchanged, `npx tsc --noEmit` pass, build pass.
+
+## Image-Proof Settings Closure (Final)
+- Root cause closed: some company rows had all three image buckets empty (`required`, `optional`, `hidden`), which made all categories appear as `Not Used`.
+- Runtime guard locked:
+  - `repairEmptyImagePolicyBuckets()` now repairs buckets only when all three are empty.
+  - valid custom and partial admin configurations are preserved unchanged.
+- Admin UX clarified on `/admin/settings/workflow`:
+  - explicit `Not Used` definition,
+  - explicit required-proof impact (blocks Submit for Decision and Pass),
+  - `Restore recommended image defaults` action,
+  - summary rail microcopy for invalid all-empty bucket state.
+- Migration backfill added:
+  - `prisma/migrations/20260410000623_backfill_empty_image_policy_buckets/migration.sql`
+  - updates only rows where all three image buckets are empty.
+- Test coverage extended:
+  - `src/lib/module-workflow-policy.test.ts`
+  - `src/app/api/settings/module-workflow/route.test.ts`
+  - `src/lib/image-proof-policy.test.ts` retained in run set.
+
+### Migration Runbook
+1. Apply migrations in target environment:
+   - `npx prisma migrate deploy`
+2. Verify no all-empty bucket rows remain:
+   - `SELECT COUNT(*) FROM "ModuleWorkflowSettings" WHERE COALESCE(array_length("requiredImageCategories", 1), 0) = 0 AND COALESCE(array_length("optionalImageCategories", 1), 0) = 0 AND COALESCE(array_length("hiddenImageCategories", 1), 0) = 0;`
+3. Expected result: `0`
+
+### Rollback Note
+- No destructive migration behavior.
+- Backfill updates only all-empty rows and does not alter intentional non-empty admin policies.

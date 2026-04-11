@@ -10,7 +10,6 @@ import { buildReportValidation } from "@/lib/report-validation";
 import {
   getReportDocumentTypeLabel,
   sanitizeReportDocumentType,
-  sanitizeReportPreferences,
 } from "@/lib/report-preferences";
 import {
   getExportPolicyBlockReason,
@@ -18,6 +17,7 @@ import {
   isExportStageAllowed,
 } from "@/lib/report-export-policy";
 import { getEvidenceCategoryLabel } from "@/lib/evidence-definition";
+import { resolveDocumentBrandingContext } from "@/lib/document-branding-context";
 
 function escapeHtml(value: string): string {
   return value
@@ -514,7 +514,12 @@ export async function POST(req: NextRequest) {
     }
 
     const baseCompanyName = currentUser.profile?.companyName ?? "Inspection Control Tower";
-    const reportPreferences = sanitizeReportPreferences(body.reportPreferences, baseCompanyName);
+    const { reportPreferences } = await resolveDocumentBrandingContext(prisma, {
+      companyId: currentUser.companyId,
+      fallbackCompanyName: baseCompanyName,
+      requestReportPreferences: body.reportPreferences,
+      documentKind: "report",
+    });
     const documentType = sanitizeReportDocumentType(body.documentType ?? reportPreferences.defaultDocumentType);
     const documentTypeLabel = getReportDocumentTypeLabel(documentType);
     const reportTitle = `${documentTypeLabel.toUpperCase()} INSPECTION & ANALYSIS REPORT`;
@@ -755,9 +760,9 @@ export async function POST(req: NextRequest) {
         job.lots.map(async (lot) => {
           const cards = await Promise.all(
             [
-              lot.bagPhotoUrl ? { label: getEvidenceCategoryLabel("BAG"), url: lot.bagPhotoUrl } : null,
+              lot.bagPhotoUrl ? { label: getEvidenceCategoryLabel("BAG_WITH_LOT_NO"), url: lot.bagPhotoUrl } : null,
               lot.samplingPhotoUrl ? { label: getEvidenceCategoryLabel("SAMPLING_IN_PROGRESS"), url: lot.samplingPhotoUrl } : null,
-              lot.sealPhotoUrl ? { label: getEvidenceCategoryLabel("SEAL"), url: lot.sealPhotoUrl } : null,
+              lot.sealPhotoUrl ? { label: getEvidenceCategoryLabel("SEALED_BAG"), url: lot.sealPhotoUrl } : null,
             ]
               .filter((item): item is { label: string; url: string } => Boolean(item))
               .map(async (item) => ({ label: item.label, dataUrl: await toDataUrl(item.url) }))

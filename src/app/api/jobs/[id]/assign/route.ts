@@ -14,7 +14,11 @@ function isAuthorizationError(error: unknown): error is AuthorizationError {
   return error instanceof AuthorizationError;
 }
 
-export async function POST(request: NextRequest, context: RouteContext<"/api/jobs/[id]/assign">) {
+type JobAssignRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function POST(request: NextRequest, context: JobAssignRouteContext) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
-  Box,
   Button,
   FormControl,
   FormLabel,
@@ -365,9 +364,7 @@ export default function AdminWorkspacePage() {
                 <Text fontWeight="semibold">Milestone health</Text>
                 <Badge variant="subtle">{milestoneHealthRows.length}</Badge>
               </HStack>
-              <EnterpriseStickyTable>
-                <Box p={3}>
-                  <EnterpriseDataTable
+              <EnterpriseStickyTable><EnterpriseDataTable
                     rows={milestoneHealthRows}
                     rowKey={(row) => row.id}
                     emptyLabel="No active milestone health items."
@@ -386,7 +383,6 @@ export default function AdminWorkspacePage() {
                       },
                     ]}
                   />
-                </Box>
               </EnterpriseStickyTable>
             </VStack>
 
@@ -402,9 +398,7 @@ export default function AdminWorkspacePage() {
                   <Text fontWeight="semibold">{section.title}</Text>
                   <Badge variant="subtle">{section.rows.length}</Badge>
                 </HStack>
-                <EnterpriseStickyTable>
-                  <Box p={3}>
-                    <EnterpriseDataTable
+                <EnterpriseStickyTable><EnterpriseDataTable
                       rows={section.rows}
                       rowKey={(row) => row.id}
                       emptyLabel={`No ${section.title.toLowerCase()} items.`}
@@ -430,7 +424,6 @@ export default function AdminWorkspacePage() {
                         },
                       ]}
                     />
-                  </Box>
                 </EnterpriseStickyTable>
               </VStack>
             ))}
@@ -440,9 +433,7 @@ export default function AdminWorkspacePage() {
                 <Text fontWeight="semibold">Escalation queue</Text>
                 <Badge variant="subtle">{escalationRows.length}</Badge>
               </HStack>
-              <EnterpriseStickyTable>
-                <Box p={3}>
-                  <EnterpriseDataTable
+              <EnterpriseStickyTable><EnterpriseDataTable
                     rows={escalationRows}
                     rowKey={(row) => row.id}
                     emptyLabel="No escalations found."
@@ -479,7 +470,6 @@ export default function AdminWorkspacePage() {
                       },
                     ]}
                   />
-                </Box>
               </EnterpriseStickyTable>
             </VStack>
 
@@ -491,10 +481,10 @@ export default function AdminWorkspacePage() {
 
         <Modal isOpen={activeEscalation !== null} onClose={() => setActiveEscalation(null)} isCentered>
           <ModalOverlay />
-          <ModalContent>
-            <ModalHeader>Resolve Escalation</ModalHeader>
+          <ModalContent borderRadius="xl" borderWidth="1px" borderColor="border.default">
+            <ModalHeader pb={3}>Resolve Escalation</ModalHeader>
             <ModalCloseButton />
-            <ModalBody>
+            <ModalBody py={4}>
               <VStack align="stretch" spacing={3}>
                 <Text fontSize="sm" color="text.secondary">{activeEscalation?.title}</Text>
                 <FormControl>
@@ -507,7 +497,7 @@ export default function AdminWorkspacePage() {
                 </FormControl>
               </VStack>
             </ModalBody>
-            <ModalFooter>
+            <ModalFooter borderTopWidth="1px" borderColor="border.default" pt={3}>
               <HStack spacing={2}>
                 <Button variant="outline" onClick={() => setActiveEscalation(null)}>
                   Cancel

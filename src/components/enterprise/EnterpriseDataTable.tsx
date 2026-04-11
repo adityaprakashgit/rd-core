@@ -84,24 +84,24 @@ export function EnterpriseDataTable<RowType>({
   );
 
   return (
-    <VStack align="stretch" spacing={3}>
-      <HStack spacing={2} flexWrap="wrap">
+    <VStack align="stretch" spacing={2.5}>
+      <HStack spacing={1.5} flexWrap="wrap">
         {filters.map((filter) => (
           <Badge
             key={filter.id}
             colorScheme="brand"
             variant="subtle"
-            borderRadius="full"
-            px={3}
-            py={1}
+            borderRadius="md"
+            px={2}
+            py={0.5}
           >
             {filter.label}: {filter.value}
           </Badge>
         ))}
       </HStack>
 
-      <Box borderWidth="1px" borderColor="border.default" borderRadius="2xl" overflow="hidden" bg="bg.surface">
-        <VStack display={{ base: "flex", md: "none" }} align="stretch" spacing={3} p={3}>
+      <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" overflow="hidden" bg="bg.surface">
+        <VStack display={{ base: "flex", md: "none" }} align="stretch" spacing={2.5} p={2.5}>
           {rows.length === 0 ? (
             <Card variant="outline">
               <CardBody>
@@ -112,34 +112,39 @@ export function EnterpriseDataTable<RowType>({
             </Card>
           ) : (
             mobileRows.map((row) => (
-              <Card key={rowKey(row)} variant="outline">
-                <CardBody>
-                  <VStack align="stretch" spacing={3}>
+                <Card key={rowKey(row)} variant="outline" borderRadius="lg">
+                  <CardBody>
+                  <VStack align="stretch" spacing={2.5}>
                     <Box>
-                      <Text fontSize="md" fontWeight="bold" color="text.primary">
+                      <Box
+                        fontSize="md"
+                        fontWeight="bold"
+                        color="text.primary"
+                        lineHeight="short"
+                      >
                         {recordCard?.title(row) ?? columns[0]?.render(row)}
-                      </Text>
+                      </Box>
                       {recordCard?.subtitle ? (
-                        <Text fontSize="sm" color="text.secondary">
+                        <Box fontSize="sm" color="text.secondary">
                           {recordCard.subtitle(row)}
-                        </Text>
+                        </Box>
                       ) : null}
                     </Box>
 
-                    <VStack align="stretch" spacing={2}>
+                    <VStack align="stretch" spacing={1.5}>
                       {(recordCard?.fields ??
                         columns.slice(1, 4).map((column) => ({
                           id: column.id,
                           label: String(column.header),
                           render: column.render,
                         }))).map((field) => (
-                        <HStack key={field.id} justify="space-between" align="start" spacing={4}>
+                        <HStack key={field.id} justify="space-between" align="start" spacing={3}>
                           <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
                             {field.label}
                           </Text>
-                          <Text fontSize="sm" color="text.primary" textAlign="right">
+                          <Box fontSize="xs" color="text.primary" textAlign="right">
                             {field.render(row)}
-                          </Text>
+                          </Box>
                         </HStack>
                       ))}
                     </VStack>
@@ -147,7 +152,7 @@ export function EnterpriseDataTable<RowType>({
                     {rowActions.length > 0 ? (
                       <>
                         <Divider />
-                        <HStack spacing={2} flexWrap="wrap">
+                        <HStack spacing={1.5} flexWrap="wrap">
                           {rowActions.map((action) => (
                             <Button
                               key={action.id}
@@ -155,7 +160,7 @@ export function EnterpriseDataTable<RowType>({
                               isDisabled={action.isDisabled?.(row) ?? false}
                               size="sm"
                               variant="outline"
-                              minH="44px"
+                              minH="36px"
                             >
                               {action.label}
                             </Button>
@@ -188,8 +193,8 @@ export function EnterpriseDataTable<RowType>({
           ) : null}
         </VStack>
 
-        <TableContainer display={{ base: "none", md: "block" }}>
-          <Table variant="simple" size="sm" role="table">
+          <TableContainer display={{ base: "none", md: "block" }}>
+            <Table variant="simple" size="sm" role="table">
             <Thead>
               <Tr>
                 {columns.map((column) => (
@@ -247,7 +252,7 @@ export function EnterpriseDataTable<RowType>({
             </Tbody>
           </Table>
           {rows.length > desktopSize ? (
-            <HStack justify="flex-end" spacing={3} px={4} py={3} borderTopWidth="1px" borderColor="border.default">
+            <HStack justify="flex-end" spacing={2} px={3} py={2.5} borderTopWidth="1px" borderColor="border.default">
               <Button size="sm" variant="outline" onClick={() => setDesktopPage((current) => Math.max(1, current - 1))} isDisabled={currentDesktopPage <= 1}>
                 Prev
               </Button>

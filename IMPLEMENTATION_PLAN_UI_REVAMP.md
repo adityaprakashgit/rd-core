@@ -1,5 +1,14 @@
 # IMPLEMENTATION_PLAN_UI_REVAMP
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- Agent enforcement is defined in `AGENTS.md`.
+- This file is an implementation planning reference and MUST remain subordinate to canonical governance.
+- If wording conflicts, precedence is:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. supporting/module docs
+
 ## 1. Current UI problems
 - Operational screens contain dashboard/KPI clutter that does not help immediate execution.
 - Task flow is fragmented across screens with mixed priorities.
@@ -14,6 +23,17 @@
 - Keep only action-driving values visible.
 - Standardize labels and CTA names.
 - Remove KPI and dashboard content from operational mobile/tablet routes.
+- Enforce workflow semantics clarity: Stage, Status, Next Action, Owner, Blocker.
+- Enforce Object Process Template on workflow-heavy detail pages.
+
+## 2A. Shared Workflow Semantics (Mandatory)
+- **Stage** = process position.
+- **Status** = record state.
+- **Next Action** = immediate required action.
+- **Owner** = accountable role/user.
+- **Blocker** = condition preventing progression.
+
+These terms MUST remain distinct in all planning, implementation, and UI copy for workflow-heavy surfaces.
 
 ## 3. Shared layout strategy
 - Shared stage header with only:
@@ -22,9 +42,13 @@
   - Material Name
   - Current Stage
   - actionable Status
+  - Next Action
+  - Owner (when assignment/accountability is relevant)
+  - Blocker (when progression is blocked)
 - Shared task container with one dominant primary CTA.
 - Shared inline validation block near failing control.
 - Shared collapsible details panel for non-actionable metadata.
+- Workflow-heavy detail pages MUST use sticky/non-scroll-dependent stage tabs and one active stage panel at a time.
 
 ## 4. Mobile component strategy
 - Single-column page templates for all operational stages.
@@ -85,7 +109,7 @@ Implementation rules:
 - Show PDF states: `Generating`, `Ready`, `Failed`.
 
 ## 10. Responsive behavior plan
-- Define breakpoints for desktop-first enterprise shell pages and mobile/tablet task-execution pages.
+- Define breakpoints for registry/oversight enterprise list pages and task-first execution/process pages.
 - Keep behavior logic identical across devices.
 - Only layout changes by breakpoint, not workflow rules.
 - Keep stage context visible without introducing clutter.
@@ -105,12 +129,12 @@ Implementation rules:
 
 ## 13. Rollout/migration sequence
 1. Shared layout and label foundation.
-2. Job/Lot task-first screens.
-3. Image capture card migration.
-4. Final Pass seal scan-first migration.
-5. Lab Testing task cleanup.
-6. Report and Packing List PDF action cleanup.
-7. Remove remaining KPI/dashboard clutter from operational routes.
+2. Canonical Job workflow alignment.
+3. R&D detail alignment to Object Process Template.
+4. Packet detail alignment to Object Process Template.
+5. Image capture + Final Pass seal scan-first alignment.
+6. Traceability/document/timeline standardization.
+7. Legacy wording/layout drift cleanup in revamp docs and routes.
 
 ## 14. Testing plan
 - Content and label tests for exact CTA names.

@@ -63,7 +63,7 @@ export type MobileTabDefinition = {
 const HOME_DESTINATIONS: Record<NormalizedRole, string> = {
   ADMIN: "/admin",
   OPERATIONS: "/userinsp",
-  RND: "/userrd",
+  RND: "/rnd",
   VIEWER: "/exceptions",
 };
 
@@ -86,7 +86,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     href: "/userinsp",
     icon: Home,
     roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/(userinsp|userrd|exceptions|admin)$/,
+    activeMatch: /^\/(userinsp|rnd|userrd|exceptions|admin)$/,
     mobileTabGroup: "home",
     mobilePriority: 1,
     mobileLabel: "Home",
@@ -121,16 +121,16 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   {
     id: "rnd",
     label: "R&D",
-    href: "/userrd",
+    href: "/rnd",
     icon: FlaskConical,
     roles: ["ADMIN", "RND", "VIEWER"],
-    activeMatch: /^\/userrd(\/|$)/,
+    activeMatch: /^\/(rnd|userrd)(\/|$)/,
     mobileTabGroup: "queue",
     mobilePriority: 4,
     roleDestinationMap: {
-      ADMIN: "/userrd",
-      RND: "/userrd",
-      VIEWER: "/userrd",
+      ADMIN: "/rnd",
+      RND: "/rnd",
+      VIEWER: "/rnd",
     },
   },
   {
@@ -168,10 +168,10 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   {
     id: "settings",
     label: "Settings",
-    href: "/settings",
+    href: "/admin/settings/workflow",
     icon: Settings,
     roles: ["ADMIN"],
-    activeMatch: /^\/settings(\/|$)/,
+    activeMatch: /^\/(settings|admin\/settings\/(workflow|company)|admin\/company-profile)(\/|$)/,
     mobileTabGroup: "more",
     mobilePriority: 8,
   },
@@ -231,8 +231,8 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
     title: "Home",
     subtitle: "R&D workspace for pending samples, active testing, and review handoffs.",
     moduleId: "home",
-    matcher: /^\/userrd$/,
-    breadcrumbs: [{ label: "Home", href: "/userrd" }],
+    matcher: /^\/(rnd|userrd)$/,
+    breadcrumbs: [{ label: "Home", href: "/rnd" }],
   },
   {
     id: "home-manager",
@@ -329,10 +329,10 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
     title: "R&D",
     subtitle: "Sample testing board, result capture, and approval handoff for active analytical work.",
     moduleId: "rnd",
-    matcher: /^\/userrd\/job\/[^/]+$/,
+    matcher: /^\/(rnd\/jobs\/[^/]+|userrd\/job\/[^/]+)$/,
     breadcrumbs: [
-      { label: "R&D", href: "/userrd" },
-      { label: "Sample Testing Board" },
+      { label: "R&D", href: "/rnd" },
+      { label: "R&D Job Detail" },
     ],
   },
   {
@@ -399,7 +399,7 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
     moduleId: "rnd",
     matcher: /^\/samples\/[^/]+$/,
     breadcrumbs: [
-      { label: "R&D", href: "/userrd" },
+      { label: "R&D", href: "/rnd" },
       { label: "Sample Detail" },
     ],
   },
@@ -416,11 +416,27 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
   },
   {
     id: "workspace-config-home",
-    title: "Settings",
-    subtitle: "Company-scoped workflow rules, numbering behavior, proof requirements, and seal policy.",
+    title: "Module Settings",
+    subtitle: "Company-scoped workflow, numbering, proof, approval, and access policies.",
     moduleId: "settings",
-    matcher: /^\/settings$/,
-    breadcrumbs: [{ label: "Settings", href: "/settings" }],
+    matcher: /^\/(settings|admin\/settings\/workflow)$/,
+    breadcrumbs: [
+      { label: "Admin", href: "/admin" },
+      { label: "Settings", href: "/admin/settings/workflow" },
+      { label: "Module Settings" },
+    ],
+  },
+  {
+    id: "company-profile-settings",
+    title: "Company Profile",
+    subtitle: "Company identity, logo, colors, and document branding defaults for report, packing list, and COA output.",
+    moduleId: "settings",
+    matcher: /^\/(admin\/settings\/company|admin\/company-profile)$/,
+    breadcrumbs: [
+      { label: "Admin", href: "/admin" },
+      { label: "Settings", href: "/admin/settings/workflow" },
+      { label: "Company Profile" },
+    ],
   },
   {
     id: "status-home",
@@ -515,7 +531,7 @@ export function getMobileTabDefinitions(role: NormalizedRole | null | undefined)
         label: "Home",
         href: homeHref,
         icon: Home,
-        activeMatch: /^\/userrd$/,
+        activeMatch: /^\/(rnd|userrd)$/,
       },
       {
         id: "queue",
@@ -585,7 +601,7 @@ export function getMobileTabDefinitions(role: NormalizedRole | null | undefined)
       id: "more",
       label: "More",
       icon: Ellipsis,
-      activeMatch: /^\/(jobs|settings|admin|master|userrd|rd)(\/|$)/,
+      activeMatch: /^\/(jobs|settings|admin|master|rnd|userrd|rd)(\/|$)/,
       isMore: true,
     },
   ];

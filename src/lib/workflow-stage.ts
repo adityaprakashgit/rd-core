@@ -2,6 +2,7 @@ import type { InspectionJob, InspectionLot, SampleRecord, Sampling } from "@/typ
 import type { WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import { isLotDetailCaptured, isLotReadyForNextStage } from "@/lib/intake-workflow";
 import { deriveSampleStatus } from "@/lib/sample-management";
+import { getStatusPresentation } from "@/lib/status-presentation";
 
 export type CanonicalWorkflowStage =
   | "intake"
@@ -12,15 +13,33 @@ export type CanonicalWorkflowStage =
   | "complete"
   | "blocked";
 
-export type WorkflowStatusTone = "gray" | "orange" | "blue" | "purple" | "teal" | "green" | "red";
+export type WorkflowStatusTone = "gray" | "orange" | "blue" | "purple" | "teal" | "green" | "red" | "yellow";
 
 export type WorkflowPresentation = {
   stage: CanonicalWorkflowStage;
+  status: string;
   label: string;
   tone: WorkflowStatusTone;
   summary: string;
   nextAction: string;
 };
+
+function buildWorkflowPresentation(input: {
+  stage: CanonicalWorkflowStage;
+  status: string;
+  summary: string;
+  nextAction: string;
+}): WorkflowPresentation {
+  const presentation = getStatusPresentation(input.status);
+  return {
+    stage: input.stage,
+    status: input.status,
+    label: presentation.label,
+    tone: presentation.tone,
+    summary: input.summary,
+    nextAction: input.nextAction,
+  };
+}
 
 export function getSamplingRecord(lot: InspectionLot | null | undefined): Sampling | null {
   const samplingValue = lot?.sampling as Sampling | Sampling[] | null | undefined;
@@ -68,98 +87,88 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
   switch (job.status) {
     case "COMPLETED":
     case "DISPATCHED":
-      return {
+      return buildWorkflowPresentation({
         stage: "complete",
-        label: "Completed",
-        tone: "green",
+        status: "COMPLETED",
         summary: "Workflow closed and ready for downstream reference.",
         nextAction: "View documents",
-      };
+      });
     case "REPORT_READY":
-      return {
+      return buildWorkflowPresentation({
         stage: "reporting",
-        label: "Report Ready",
-        tone: "teal",
+        status: "REPORT_READY",
         summary: "Operational work is finished and reporting is the active step.",
         nextAction: "Open reports",
-      };
+      });
     case "RND_RUNNING":
-      return {
+      return buildWorkflowPresentation({
         stage: "lab",
-        label: "Lab Running",
-        tone: "purple",
+        status: "RND_RUNNING",
         summary: "Sampling is complete and lab analysis is the active stage.",
         nextAction: "Continue lab review",
-      };
+      });
     case "QA":
     case "LOCKED":
-      return {
+      return buildWorkflowPresentation({
         stage: job.status === "LOCKED" ? "reporting" : "lab",
-        label: job.status === "LOCKED" ? "Locked" : "QA Review",
-        tone: job.status === "LOCKED" ? "green" : "blue",
+        status: job.status === "LOCKED" ? "LOCKED" : "QA",
         summary: job.status === "LOCKED"
           ? "Job is sealed and waiting for reporting or release."
           : "Evidence capture is complete and QA review is active.",
         nextAction: job.status === "LOCKED" ? "Open reports" : "Review QA",
-      };
+      });
     case "SAMPLING_PENDING":
-      return {
+      return buildWorkflowPresentation({
         stage: "sampling",
-        label: "Sampling Pending",
-        tone: "orange",
+        status: "SAMPLING_PENDING",
         summary: "A lot is not yet approved for sampling and blocks lab progression.",
         nextAction: "Finish sampling",
-      };
+      });
     case "IN_PROGRESS":
-      return {
+      return buildWorkflowPresentation({
         stage: completedLots === totalLots && totalLots > 0 ? "lab" : startedLots > 0 ? "sampling" : "lot_capture",
-        label: completedLots === totalLots && totalLots > 0 ? "Sampling Complete" : startedLots > 0 ? "Inspection Live" : "Lot Intake",
-        tone: completedLots === totalLots && totalLots > 0 ? "blue" : startedLots > 0 ? "orange" : "gray",
+        status: completedLots === totalLots && totalLots > 0 ? "READY_FOR_PACKETING" : startedLots > 0 ? "INSPECTION_IN_PROGRESS" : "LOT_CAPTURE",
         summary: completedLots === totalLots && totalLots > 0
           ? "Sampling evidence is complete and the job can move into analysis."
           : startedLots > 0
             ? "Inspection, exception capture, or evidence review is underway."
             : "Job is active but lot intake is still the primary task.",
         nextAction: completedLots === totalLots && totalLots > 0 ? "Open lab workspace" : "Continue inspection",
-      };
+      });
     default:
       if (totalLots === 0) {
-        return {
+        return buildWorkflowPresentation({
           stage: "intake",
-          label: "Intake",
-          tone: "gray",
+          status: "INTAKE",
           summary: "Job exists but no lots have been registered yet.",
           nextAction: "Add first lot",
-        };
+        });
       }
 
       if (completedLots === totalLots) {
-        return {
+        return buildWorkflowPresentation({
           stage: "lab",
-          label: "Ready for Lab",
-          tone: "blue",
+          status: "READY_FOR_PACKETING",
           summary: "All lots have complete evidence and can move to lab review.",
           nextAction: "Open lab workspace",
-        };
+        });
       }
 
       if (startedLots > 0) {
-        return {
+        return buildWorkflowPresentation({
           stage: "sampling",
-          label: "Inspection Live",
-          tone: "orange",
+          status: "INSPECTION_IN_PROGRESS",
           summary: "At least one lot has started inspection or evidence capture.",
           nextAction: "Continue inspection",
-        };
+        });
       }
 
-      return {
+      return buildWorkflowPresentation({
         stage: "lot_capture",
-        label: "Lot Intake",
-        tone: "gray",
+        status: "LOT_CAPTURE",
         summary: "Lots are registered, but inspection work has not started.",
         nextAction: "Open next lot",
-      };
+      });
   }
 }
 
@@ -199,7 +208,7 @@ export function buildWorkflowSteps(job: InspectionJob): WorkflowStep[] {
 export function getWorkflowStepRoute(jobId: string, stepId: string) {
   switch (stepId) {
     case "lab":
-      return `/userrd/job/${jobId}`;
+      return "/rnd";
     case "reporting":
     case "complete":
       return "/reports";

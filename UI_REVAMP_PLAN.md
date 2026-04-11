@@ -1,5 +1,13 @@
 # UI_REVAMP_PLAN
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- This plan is an execution roadmap and MUST align with canonical governance.
+- If wording conflicts, follow:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. Module-specific planning docs
+
 ## Objective
 Deliver a practical, implementation-ready UI revamp roadmap that improves workflow clarity and speed while preserving traceability and controls.
 
@@ -28,8 +36,10 @@ Runtime mapping:
 - Exclude Playground.
 - Keep Lot as primary traceable object.
 - Remove KPI-heavy/dashboard clutter from operational screens.
-- Device policy: desktop-first shell for registry/oversight, mobile/tablet task-first execution surfaces.
+- Device policy: role-home queues and registries MAY use dense enterprise layout; process-heavy execution surfaces MUST remain mobile/tablet task-first.
 - Preserve permissions, validations, traceability, and auditability.
+- Workflow-heavy pages MUST use stage-oriented navigation and MUST NOT rely on long mixed-scroll sections.
+- Status rendering MUST use shared status dictionary + `WorkflowStateChip` (or canonical successor).
 - Keep exact PDF action labels:
   - `Download Report PDF`
   - `Download Packing List PDF`
@@ -39,29 +49,33 @@ Runtime mapping:
 
 ## Phased Roadmap
 ### Phase 1: Foundations
-- Finalize shared terms, statuses, and CTA labels.
-- Define shared layout pattern for mobile/tablet task screens.
-- Define screen-level visibility rules (show/hide).
+- Lock shell/template contract from canonical governance.
+- Finalize shared terms, statuses, and CTA labels through central dictionary.
+- Define screen-level visibility rules (show/hide) and stage ownership checks.
 
-### Phase 2: Job + Lot Flow
-- Standardize Job creation and Lot management screens.
-- Ensure Lot-centric context is visible and actionable.
-- Enforce stage progression and blocker messaging.
+### Phase 2: Canonical Job Workflow
+- Refactor Job/Lot execution into canonical stage-oriented process experience.
+- Ensure Lot-centric context is visible and actionable with lineage links.
+- Enforce one-active-panel stage behavior and blocker messaging.
 
 ### Phase 3: Inspection + Evidence
 - Standardize Images and Final Pass UX.
 - Enforce camera-first image capture and required evidence categories.
 - Enforce seal flow with scan-first and manual fallback.
 
-### Phase 4: R&D + Packet Management
-- Align lab testing and packet-management interactions to stage progression.
-- Keep operational forms concise and blocker-driven.
+### Phase 4: R&D Detail Alignment
+- Align R&D detail/process pages to the approved Object Process Template.
+- Keep operational forms concise, blocker-driven, and stage-owned.
 
-### Phase 5: Document Retrieval
-- Standardize Report and Packing List actions.
-- Ensure document states and retrieval actions are explicit and fast.
+### Phase 5: Packet Detail Alignment
+- Align packet detail/process pages to the same stage-oriented template family.
+- Standardize packet stage/status/owner/next-action semantics.
 
-### Phase 6: Hardening
+### Phase 6: Traceability + Document + Timeline Standardization
+- Standardize linked-record rails and lineage visibility patterns.
+- Consolidate timeline/history and document action blocks.
+
+### Phase 7: Legacy Cleanup + Hardening
 - Run UI consistency pass against all modules.
 - Validate role-based visibility and permissions.
 - Validate traceability and audit event coverage at flow boundaries.

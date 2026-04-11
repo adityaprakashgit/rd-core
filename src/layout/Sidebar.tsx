@@ -50,13 +50,13 @@ export function Sidebar({
       bg="bg.surface"
       borderRightWidth="1px"
       borderColor="border.default"
-      w={{ base: "full", lg: collapsed ? 20 : 64 }}
+      w={{ base: "full", lg: collapsed ? 18 : 60 }}
       transition="width 180ms ease"
       h="full"
-      px={collapsed ? 2 : 3}
-      py={4}
+      px={collapsed ? 1.5 : 2.5}
+      py={3}
     >
-      <VStack align="stretch" spacing={6} h="full">
+      <VStack align="stretch" spacing={4} h="full">
         <HStack justify="space-between" px={1}>
           <VStack align="start" spacing={0} minW={0}>
             <Text fontSize={collapsed ? "xs" : "sm"} fontWeight="bold" color="text.primary" noOfLines={1}>
@@ -82,7 +82,7 @@ export function Sidebar({
 
         <Divider borderColor="border.default" />
 
-        <VStack align="stretch" spacing={1.5} flex={1}>
+        <VStack align="stretch" spacing={1} flex={1}>
           {visibleModules.map((item) => {
             const active = isModuleActive(item, pathname, normalizedRole as NormalizedRole | null);
             const destination = resolveModuleHref(item, normalizedRole as NormalizedRole | null);
@@ -100,15 +100,15 @@ export function Sidebar({
               <Button
                 key={item.label}
                 onClick={() => router.push(destination)}
-                px={3}
-                py={2}
+                px={2.5}
+                py={1.5}
                 borderRadius="lg"
                 w="full"
                 h="auto"
                 justifyContent={collapsed ? "center" : "flex-start"}
-                bg={active ? "brand.50" : "transparent"}
+                bg={active ? "brand.100" : "transparent"}
                 borderWidth="1px"
-                borderColor={active ? "brand.200" : "transparent"}
+                borderColor={active ? "brand.300" : "transparent"}
                 color={active ? "brand.700" : "text.primary"}
                 _hover={{ bg: active ? "brand.50" : "neutral.100" }}
                 variant="ghost"
@@ -126,7 +126,7 @@ export function Sidebar({
           })}
         </VStack>
 
-        <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="neutral.50">
+        <Box p={2.5} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="neutral.25">
           <HStack spacing={3}>
             <Avatar size="sm" name={displayName} bg="brand.500" />
             {!collapsed ? (

@@ -50,10 +50,10 @@ export function PageIdentityBar({
   right?: ReactNode;
 }) {
   return (
-    <Stack direction={{ base: "column", xl: "row" }} justify="space-between" spacing={4}>
-      <VStack align="stretch" spacing={2}>
+    <Stack direction={{ base: "column", xl: "row" }} justify="space-between" spacing={3}>
+      <VStack align="stretch" spacing={1.5}>
         {breadcrumbs.length > 0 ? (
-          <Breadcrumb fontSize="sm" color="text.secondary">
+          <Breadcrumb fontSize="xs" color="text.secondary">
             {breadcrumbs.map((crumb) => (
               <BreadcrumbItem key={`${crumb.label}-${crumb.href ?? "current"}`}>
                 {crumb.href ? <BreadcrumbLink href={crumb.href}>{crumb.label}</BreadcrumbLink> : <Text>{crumb.label}</Text>}
@@ -61,12 +61,12 @@ export function PageIdentityBar({
             ))}
           </Breadcrumb>
         ) : null}
-        <VStack align="stretch" spacing={1}>
-          <Heading size="lg" color="text.primary">
+        <VStack align="stretch" spacing={0.5}>
+          <Heading size="md" color="text.primary">
             {title}
           </Heading>
           {subtitle ? (
-            <Text color="text.secondary" fontSize="sm">
+            <Text color="text.secondary" fontSize="xs">
               {subtitle}
             </Text>
           ) : null}
@@ -92,15 +92,15 @@ export function PageActionBar({
       direction={{ base: "column", md: "row" }}
       align={{ base: "stretch", md: "center" }}
       justify="space-between"
-      spacing={3}
+      spacing={2}
       borderWidth="1px"
       borderColor="border.default"
-      borderRadius="xl"
+      borderRadius="lg"
       bg="bg.surface"
-      px={4}
-      py={3}
+      px={3}
+      py={2}
     >
-      <HStack spacing={2} flexWrap="wrap">
+      <HStack spacing={1.5} flexWrap="wrap">
         {secondaryActions}
       </HStack>
       {primaryAction ? <Box>{primaryAction}</Box> : null}
@@ -120,20 +120,20 @@ export function FilterSearchStrip({
   return (
     <Stack
       direction={{ base: "column", lg: "row" }}
-      spacing={3}
+      spacing={2}
       borderWidth="1px"
       borderColor="border.default"
-      borderRadius="xl"
+      borderRadius="lg"
       bg="bg.surface"
-      px={4}
-      py={3}
+      px={3}
+      py={2}
       align={{ base: "stretch", lg: "center" }}
       justify="space-between"
     >
-      <HStack spacing={2} flexWrap="wrap" flex="1">
+      <HStack spacing={1.5} flexWrap="wrap" flex="1">
         {filters}
       </HStack>
-      <HStack spacing={2} flexWrap="wrap">
+      <HStack spacing={1.5} flexWrap="wrap">
         {search}
         {actions}
       </HStack>
@@ -146,7 +146,7 @@ export function EnterpriseStickyTable({ children }: { children: ReactNode }) {
     <Box
       borderWidth="1px"
       borderColor="border.default"
-      borderRadius="xl"
+      borderRadius="lg"
       overflow="hidden"
       bg="bg.surface"
       sx={{
@@ -184,7 +184,7 @@ export function DetailTabsLayout({
   return (
     <Stack direction={{ base: "column", xl: "row" }} spacing={5} align="start">
       <Box flex="1" minW={0}>
-        <Tabs variant="enclosed" isLazy defaultIndex={defaultTab}>
+        <Tabs variant="line-enterprise" isLazy defaultIndex={defaultTab}>
           <TabList overflowX="auto" overflowY="hidden">
             {tabs.map((tab) => (
               <Tab key={tab.id} whiteSpace="nowrap">
@@ -217,6 +217,7 @@ export function QuickEditDrawer({
   children,
   onSave,
   isSaving,
+  isSaveDisabled,
   saveLabel = "Save",
 }: {
   isOpen: boolean;
@@ -225,6 +226,7 @@ export function QuickEditDrawer({
   children: ReactNode;
   onSave?: () => void;
   isSaving?: boolean;
+  isSaveDisabled?: boolean;
   saveLabel?: string;
 }) {
   return (
@@ -232,15 +234,15 @@ export function QuickEditDrawer({
       <DrawerOverlay />
       <DrawerContent>
         <DrawerCloseButton />
-        <DrawerHeader>{title}</DrawerHeader>
+        <DrawerHeader pb={3}>{title}</DrawerHeader>
         <DrawerBody>{children}</DrawerBody>
-        <DrawerFooter>
+        <DrawerFooter borderTopWidth="1px" borderColor="border.default">
           <HStack spacing={2}>
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
             {onSave ? (
-              <Button onClick={onSave} isLoading={isSaving}>
+              <Button onClick={onSave} isLoading={isSaving} isDisabled={isSaveDisabled}>
                 {saveLabel}
               </Button>
             ) : null}
@@ -261,7 +263,7 @@ export function ExceptionBanner({
   status?: "warning" | "error" | "info" | "success";
 }) {
   return (
-    <Alert status={status} borderRadius="xl" variant="left-accent">
+    <Alert status={status} borderRadius="lg" variant="left-accent">
       <AlertIcon />
       <Box>
         <AlertTitle>{title}</AlertTitle>
@@ -277,8 +279,8 @@ export function LinkedRecordsPanel({
   items: Array<{ label: string; value: string; href?: string; tone?: string }>;
 }) {
   return (
-    <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" bg="bg.surface" p={4}>
-      <VStack align="stretch" spacing={3}>
+    <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
+      <VStack align="stretch" spacing={2.5}>
         <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
           Linked Records
         </Text>
@@ -288,8 +290,8 @@ export function LinkedRecordsPanel({
           </Text>
         ) : (
           items.map((item) => (
-            <HStack key={`${item.label}-${item.value}`} justify="space-between" spacing={3}>
-              <Text color="text.secondary" fontSize="sm">
+            <HStack key={`${item.label}-${item.value}`} justify="space-between" spacing={2.5}>
+              <Text color="text.secondary" fontSize="xs">
                 {item.label}
               </Text>
               {item.href ? (
@@ -315,14 +317,14 @@ export function HistoryTimeline({
   events: Array<{ id: string; title: string; subtitle?: string; at?: string }>;
 }) {
   return (
-    <VStack align="stretch" spacing={3}>
+    <VStack align="stretch" spacing={2.5}>
       {events.length === 0 ? (
         <EnterpriseEmptyState title="No history yet" description="History entries will appear as actions are completed." />
       ) : (
         events.map((event) => (
-          <Box key={event.id} borderLeftWidth="2px" borderColor="border.default" pl={3} py={1}>
+          <Box key={event.id} borderLeftWidth="2px" borderColor="border.default" pl={2.5} py={0.5}>
             <HStack justify="space-between" align="start">
-              <Text fontWeight="semibold" color="text.primary">
+              <Text fontWeight="semibold" fontSize="sm" color="text.primary">
                 {event.title}
               </Text>
               {event.at ? (
@@ -332,7 +334,7 @@ export function HistoryTimeline({
               ) : null}
             </HStack>
             {event.subtitle ? (
-              <Text fontSize="sm" color="text.secondary">
+              <Text fontSize="xs" color="text.secondary">
                 {event.subtitle}
               </Text>
             ) : null}
@@ -353,7 +355,7 @@ export function EnterpriseEmptyState({
   action?: ReactNode;
 }) {
   return (
-    <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" bg="bg.surface" p={6}>
+    <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
       <VStack align="start" spacing={2}>
         <Heading size="sm">{title}</Heading>
         <Text color="text.secondary" fontSize="sm">
@@ -361,6 +363,48 @@ export function EnterpriseEmptyState({
         </Text>
         {action ? <Box pt={2}>{action}</Box> : null}
       </VStack>
+    </Box>
+  );
+}
+
+export function SettingsSection({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface">
+      <Stack
+        direction={{ base: "column", md: "row" }}
+        justify="space-between"
+        align={{ base: "stretch", md: "start" }}
+        spacing={3}
+        px={4}
+        py={3}
+        borderBottomWidth="1px"
+        borderColor="border.default"
+      >
+        <VStack align="start" spacing={0.5}>
+          <Text fontSize="sm" fontWeight="semibold" color="text.primary">
+            {title}
+          </Text>
+          {description ? (
+            <Text fontSize="xs" color="text.secondary">
+              {description}
+            </Text>
+          ) : null}
+        </VStack>
+        {actions ? <HStack spacing={2}>{actions}</HStack> : null}
+      </Stack>
+      <Box px={4} py={3}>
+        {children}
+      </Box>
     </Box>
   );
 }

@@ -1,11 +1,34 @@
 # MOBILE_TABLET_SCREEN_MAP
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- Agent enforcement is defined in `AGENTS.md`.
+- This file is a screen mapping reference and MUST remain subordinate to canonical governance.
+- If wording conflicts, precedence is:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. supporting/module docs
+
 Stage order used in every screen:
 `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 
+Canonical lineage model:
+`Job -> Lot -> Sample -> Trial -> Packet -> Dispatch -> COA`
+
 Device policy lock:
-- Desktop-first enterprise shell for registry and oversight pages.
-- Mobile/tablet task-first execution screens for stage completion.
+- Execution/process pages MUST be task-first and stage-oriented across breakpoints.
+- Registry/oversight pages MAY use dense enterprise list/table patterns.
+- Responsive differences MUST be layout-level, not workflow-logic-level.
+
+Workflow semantics lock (must remain distinct):
+- Stage = process position
+- Status = record state
+- Next Action = immediate required action
+- Owner = accountable role/user
+- Blocker = condition preventing progression
+
+Workflow-heavy detail rule:
+- Detail flows MUST follow Object Process Template behavior (sticky/non-scroll-dependent stage header/tabs, one active stage panel at a time, right rail for linked records/blockers/history/documents).
 
 ## Job Creation
 - Screen Name: Job Creation

@@ -121,6 +121,7 @@ function buildDocumentRows(input: {
         mediaFiles: Array<{ id: string; fileName: string; storageKey: string; createdAt: Date }>;
       } | null;
       sample: {
+        id: string;
         media: Array<{ id: string; mediaType: string; fileUrl: string; capturedAt: Date }>;
         packets: Array<{
           id: string;
@@ -131,14 +132,16 @@ function buildDocumentRows(input: {
       } | null;
     }>;
   }>;
+  activeSnapshotBySampleId: Map<string, string>;
+  reportStatusBySnapshotId: Map<string, string>;
 }): DocumentRegistryRow[] {
   const rows: DocumentRegistryRow[] = [];
 
   for (const job of input.jobs) {
     const jobNumber = job.inspectionSerialNumber || job.jobReferenceNumber;
-    const hasReportSnapshot = job.reportSnapshots.length > 0;
 
     for (const snapshot of job.reportSnapshots) {
+      const reportStatus = input.reportStatusBySnapshotId.get(snapshot.id) ?? "Available";
       rows.push({
         id: `report-${snapshot.id}`,
         documentType: "TEST_REPORT",
@@ -149,7 +152,7 @@ function buildDocumentRows(input: {
         lotNumber: null,
         packetId: null,
         packetCode: null,
-        status: "Available",
+        status: reportStatus,
         generatedAt: snapshot.createdAt.toISOString(),
         linkedActionUrl: `/api/report/${snapshot.id}`,
         source: "REPORT_SNAPSHOT",
@@ -165,7 +168,7 @@ function buildDocumentRows(input: {
         lotNumber: null,
         packetId: null,
         packetCode: null,
-        status: "Available",
+        status: reportStatus,
         generatedAt: snapshot.createdAt.toISOString(),
         linkedActionUrl: `/api/report/${snapshot.id}`,
         source: "REPORT_SNAPSHOT",
@@ -246,11 +249,17 @@ function buildDocumentRows(input: {
           });
         }
 
-        if (packet.allocation?.allocationStatus && hasReportSnapshot) {
-          const latestSnapshot = job.reportSnapshots[0];
-          if (latestSnapshot) {
+        const activeSnapshotId = lot.sample
+          ? input.activeSnapshotBySampleId.get(lot.sample.id) ?? null
+          : null;
+        const fallbackSnapshotId = job.reportSnapshots[0]?.id ?? null;
+        const dispatchSnapshotId = activeSnapshotId ?? fallbackSnapshotId;
+        const dispatchSnapshot = dispatchSnapshotId
+          ? job.reportSnapshots.find((snapshot) => snapshot.id === dispatchSnapshotId) ?? null
+          : null;
+        if (packet.allocation?.allocationStatus && dispatchSnapshot) {
             rows.push({
-              id: `dispatch-${packet.id}-${latestSnapshot.id}`,
+              id: `dispatch-${packet.id}-${dispatchSnapshot.id}`,
               documentType: "DISPATCH_DOCUMENT",
               documentLabel: documentTypeLabel("DISPATCH_DOCUMENT"),
               jobId: job.id,
@@ -260,11 +269,10 @@ function buildDocumentRows(input: {
               packetId: packet.id,
               packetCode: packet.packetCode,
               status: packet.allocation.allocationStatus,
-              generatedAt: latestSnapshot.createdAt.toISOString(),
-              linkedActionUrl: `/api/report/${latestSnapshot.id}`,
+              generatedAt: dispatchSnapshot.createdAt.toISOString(),
+              linkedActionUrl: `/api/report/${dispatchSnapshot.id}`,
               source: "REPORT_SNAPSHOT",
             });
-          }
         }
       }
     }
@@ -339,6 +347,7 @@ export async function GET(request: NextRequest) {
             },
             sample: {
               select: {
+                id: true,
                 media: {
                   orderBy: { capturedAt: "desc" },
                   select: {
@@ -376,7 +385,47 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const rows = buildDocumentRows({ jobs })
+    const parentJobIds = jobs.map((job) => job.id);
+    const reportVersions = parentJobIds.length
+      ? await prisma.rndReportVersion.findMany({
+          where: {
+            companyId: currentUser.companyId,
+            parentJobId: { in: parentJobIds },
+          },
+          select: {
+            sampleId: true,
+            reportSnapshotId: true,
+            precedence: true,
+            updatedAt: true,
+          },
+        })
+      : [];
+
+    const activeSnapshotBySampleId = new Map<string, { snapshotId: string; updatedAt: number }>();
+    const reportStatusBySnapshotId = new Map<string, string>();
+    for (const row of reportVersions) {
+      if (row.precedence === "ACTIVE") {
+        const prev = activeSnapshotBySampleId.get(row.sampleId);
+        const ts = row.updatedAt.getTime();
+        if (!prev || ts > prev.updatedAt) {
+          activeSnapshotBySampleId.set(row.sampleId, {
+            snapshotId: row.reportSnapshotId,
+            updatedAt: ts,
+          });
+        }
+        reportStatusBySnapshotId.set(row.reportSnapshotId, "Active Report");
+      } else if (!reportStatusBySnapshotId.has(row.reportSnapshotId)) {
+        reportStatusBySnapshotId.set(row.reportSnapshotId, "Previous Report");
+      }
+    }
+
+    const rows = buildDocumentRows({
+      jobs,
+      activeSnapshotBySampleId: new Map(
+        [...activeSnapshotBySampleId.entries()].map(([sampleId, value]) => [sampleId, value.snapshotId]),
+      ),
+      reportStatusBySnapshotId,
+    })
       .filter((row) => mapMatches(row.lotNumber, filters.lot))
       .filter((row) => mapMatches(row.packetCode, filters.packet))
       .filter((row) => (filters.documentType ? row.documentType === filters.documentType : true))

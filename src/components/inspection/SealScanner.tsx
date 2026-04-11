@@ -280,10 +280,10 @@ export function SealScanner({
         size={{ base: "full", md: "xl" }}
       >
         <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Scan seal</ModalHeader>
+        <ModalContent borderRadius={{ base: 0, md: "xl" }} borderWidth="1px" borderColor="border.default">
+          <ModalHeader pb={3}>Scan seal</ModalHeader>
           <ModalCloseButton />
-          <ModalBody>
+          <ModalBody py={4}>
             <Stack spacing={4}>
               <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" overflow="hidden" bg="black">
                 <Box
@@ -367,7 +367,7 @@ export function SealScanner({
               </Box>
 
               {scanError ? (
-                <Box borderWidth="1px" borderColor="red.200" borderRadius="xl" bg="red.50" p={3}>
+                <Box borderWidth="1px" borderColor="red.200" borderRadius="lg" bg="bg.rail" p={3}>
                   <Text fontSize="sm" color="red.700">
                     {scanError}
                   </Text>
@@ -385,7 +385,7 @@ export function SealScanner({
               ) : null}
             </Stack>
           </ModalBody>
-          <ModalFooter>
+          <ModalFooter borderTopWidth="1px" borderColor="border.default" pt={3}>
             <HStack spacing={3}>
               <Button variant="outline" onClick={onClose}>
                 Close

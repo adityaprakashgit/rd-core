@@ -25,7 +25,7 @@ export default function HomePage() {
     }
 
     if (role === "RND") {
-      router.replace("/userrd");
+      router.replace("/rnd");
       return;
     }
 

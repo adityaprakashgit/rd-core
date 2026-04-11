@@ -5,6 +5,7 @@ import {
   canApproveFinalDecision,
   toModuleWorkflowPolicy,
 } from "@/lib/module-workflow-policy";
+import { getMissingRequiredImageProofLabels } from "@/lib/image-proof-policy";
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { getCurrentUserFromRequest } from "@/lib/session";
@@ -45,6 +46,10 @@ type WorkflowMilestones = {
   handedOverToRndBy?: string | null;
   handedOverToRndTo?: string | null;
   handedOverToRndToLabel?: string | null;
+};
+
+type JobWorkflowRouteContext = {
+  params: Promise<{ id: string }>;
 };
 
 function jsonError(error: string, details: string, status: number) {
@@ -92,15 +97,24 @@ function buildWorkflowSummary(
   const sample = activeLot?.sample ?? null;
   const packets = sample?.packets ?? [];
   const inspection = activeLot?.inspection ?? null;
+  const missingRequiredImageProof = activeLot
+    ? getMissingRequiredImageProofLabels(
+        settings.images.requiredImageCategories,
+        (activeLot.mediaFiles ?? []).map((file) => file.category),
+      )
+    : [];
   const blockers: string[] = [];
 
   if (!job.lots?.length) {
     blockers.push("Add at least one lot to begin workflow execution.");
   }
-  if (activeLot && (!activeLot.mediaFiles?.length || !inspection)) {
-    blockers.push("Capture required proof and initialize inspection before decision review.");
+  if (activeLot && !inspection) {
+    blockers.push("Initialize inspection before decision review.");
   }
-  if (inspection?.decisionStatus !== "READY_FOR_SAMPLING") {
+  if (activeLot && missingRequiredImageProof.length > 0) {
+    blockers.push(`Capture required proof before decision review: ${missingRequiredImageProof.join(", ")}.`);
+  }
+  if (settings.workflow.decisionRequiredBeforeSampling && inspection?.decisionStatus !== "READY_FOR_SAMPLING") {
     blockers.push("Final decision must be passed by the configured approver before sampling.");
   }
   if (sample && !sample.homogeneousProofDone && !sample.homogenizedAt) {
@@ -115,9 +129,9 @@ function buildWorkflowSummary(
 
   const nextAction = !job.lots?.length
     ? "Add Lot"
-    : !activeLot?.mediaFiles?.length
+    : missingRequiredImageProof.length > 0
         ? "Save Images and Continue"
-      : inspection?.decisionStatus !== "READY_FOR_SAMPLING"
+      : settings.workflow.decisionRequiredBeforeSampling && inspection?.decisionStatus !== "READY_FOR_SAMPLING"
         ? canApproveFinalDecision(currentUserRole, settings.workflow.finalDecisionApproverPolicy)
           ? "Pass / Hold / Reject"
           : "Submit for Decision"
@@ -128,7 +142,9 @@ function buildWorkflowSummary(
             : packets.length === 0
               ? "Create Packets"
               : packets.some((packet: PacketRecord) => !packet.submittedToRndAt)
-                ? "Submit to R&D"
+                ? settings.workflow.submitToRndEnabled
+                  ? "Submit to R&D"
+                  : "R&D Submit Disabled"
                 : "Workflow Complete";
 
   const history = [
@@ -196,7 +212,7 @@ function buildWorkflowSummary(
   };
 }
 
-export async function GET(request: NextRequest, context: RouteContext<"/api/jobs/[id]/workflow">) {
+export async function GET(request: NextRequest, context: JobWorkflowRouteContext) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {
@@ -328,7 +344,7 @@ export async function GET(request: NextRequest, context: RouteContext<"/api/jobs
   }
 }
 
-export async function PATCH(request: NextRequest, context: RouteContext<"/api/jobs/[id]/workflow">) {
+export async function PATCH(request: NextRequest, context: JobWorkflowRouteContext) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
+import { loadRndLineageLinkage } from "@/lib/rnd-report-linkage";
 import { getCurrentUserFromRequest } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,21 @@ type TraceabilityLotResponse = {
   coa: {
     available: boolean;
     latestSnapshotId: string | null;
+    previousSnapshotIds: string[];
     generatedAt: string | null;
+  };
+  reports: {
+    active: {
+      snapshotId: string | null;
+      rndJobNumber: string | null;
+      generatedAt: string | null;
+    };
+    previous: Array<{
+      snapshotId: string;
+      rndJobNumber: string;
+      generatedAt: string;
+      status: "Previous Report";
+    }>;
   };
   relatedDocuments: Array<{
     id: string;
@@ -303,13 +318,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const relatedDocuments: TraceabilityLotResponse["relatedDocuments"] = [];
+    const reportLinkage = lot.sample
+      ? await loadRndLineageLinkage(prisma, {
+          companyId: currentUser.companyId,
+          parentJobId: lot.job.id,
+          sampleId: lot.sample.id,
+        })
+      : null;
+    const activeSnapshotId = reportLinkage?.activeReport?.reportSnapshotId ?? lot.job.reportSnapshots[0]?.id ?? null;
+    const previousSnapshotIds = (reportLinkage?.previousReports ?? []).map((row) => row.reportSnapshotId);
+    const precedenceBySnapshot = new Map<string, string>();
+    if (activeSnapshotId) precedenceBySnapshot.set(activeSnapshotId, "Active Report");
+    for (const id of previousSnapshotIds) precedenceBySnapshot.set(id, "Previous Report");
 
     for (const snapshot of lot.job.reportSnapshots) {
+      const precedence = precedenceBySnapshot.get(snapshot.id);
       relatedDocuments.push({
         id: `report-${snapshot.id}`,
         type: "Test Report",
         label: `Report Snapshot ${snapshot.id.slice(0, 8)}`,
-        status: "Available",
+        status: precedence ?? "Available",
         createdAt: snapshot.createdAt.toISOString(),
         url: `/api/report/${snapshot.id}`,
       });
@@ -408,7 +436,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       })),
       dispatches: (lot.sample?.packets ?? []).map((packet) => {
         const allocationStatus = packet.allocation?.allocationStatus ?? "BLOCKED";
-        const hasCoa = lot.job.reportSnapshots.length > 0;
+        const hasCoa = Boolean(activeSnapshotId);
         const blocked = !hasCoa
           ? "COA is not available for this lot."
           : allocationStatus === "BLOCKED"
@@ -422,9 +450,27 @@ export async function GET(request: NextRequest, context: RouteContext) {
         };
       }),
       coa: {
-        available: lot.job.reportSnapshots.length > 0,
-        latestSnapshotId: lot.job.reportSnapshots[0]?.id ?? null,
-        generatedAt: toIso(lot.job.reportSnapshots[0]?.createdAt),
+        available: Boolean(activeSnapshotId),
+        latestSnapshotId: activeSnapshotId,
+        previousSnapshotIds,
+        generatedAt: reportLinkage?.activeReport
+          ? toIso(reportLinkage.activeReport.reportSnapshot.createdAt)
+          : toIso(lot.job.reportSnapshots[0]?.createdAt),
+      },
+      reports: {
+        active: {
+          snapshotId: activeSnapshotId,
+          rndJobNumber: reportLinkage?.activeReport?.rndJob?.rndJobNumber ?? null,
+          generatedAt: reportLinkage?.activeReport
+            ? toIso(reportLinkage.activeReport.reportSnapshot.createdAt)
+            : toIso(lot.job.reportSnapshots[0]?.createdAt),
+        },
+        previous: (reportLinkage?.previousReports ?? []).map((row) => ({
+          snapshotId: row.reportSnapshotId,
+          rndJobNumber: row.rndJob.rndJobNumber,
+          generatedAt: row.reportSnapshot.createdAt.toISOString(),
+          status: "Previous Report",
+        })),
       },
       relatedDocuments: relatedDocuments
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))

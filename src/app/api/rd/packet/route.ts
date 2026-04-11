@@ -10,13 +10,13 @@ import {
   hasPacketSealAndLabel,
   isValidPacketCount,
   normalizePacketMediaType,
-  sumAllocatedPacketQuantity,
   toComparableQuantity,
   type PacketStatus,
 } from "@/lib/packet-management";
 import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationError, authorize } from "@/lib/rbac";
+import { generateRndJobNumber } from "@/lib/rnd-workflow";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { deriveSampleStatus } from "@/lib/sample-management";
 import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
@@ -94,6 +94,16 @@ function normalizeNumber(value: unknown) {
   return null;
 }
 
+function toPacketUse(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toUpperCase();
+  return ["TESTING", "RETAIN", "BACKUP", "REFERENCE", "CLIENT_RETEST", "ADDITIONAL_ANALYSIS"].includes(normalized)
+    ? normalized
+    : null;
+}
+
 async function createPacketEvent(
   tx: Prisma.TransactionClient,
   input: {
@@ -121,9 +131,14 @@ async function buildUniquePacketCode(
     inspectionSerialNumber: string | null | undefined;
     lotNumber: string | null | undefined;
     packetNo: number;
+    prefix?: string | null;
+    sequenceFormat?: string | null;
   },
 ) {
-  const baseCode = buildPacketCode(input.inspectionSerialNumber, input.lotNumber, input.packetNo);
+  const baseCode = buildPacketCode(input.inspectionSerialNumber, input.lotNumber, input.packetNo, {
+    prefix: input.prefix,
+    sequenceFormat: input.sequenceFormat,
+  });
   let nextCode = baseCode;
   let suffix = 1;
 
@@ -316,6 +331,7 @@ export async function POST(request: NextRequest) {
 
     const packets = await prisma.$transaction(async (tx) => {
       const sample = await getSampleScope(tx, sampleId, currentUser.companyId);
+      const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
       const sampleStatus = deriveSampleStatus(sample as unknown as SampleRecord);
       if (sampleStatus !== "READY_FOR_PACKETING") {
         throw new Error("SAMPLE_NOT_READY");
@@ -327,34 +343,59 @@ export async function POST(request: NextRequest) {
         const entry = (planEntries[index] ?? {}) as Record<string, unknown>;
         return {
           packetNo: highestPacketNo + index + 1,
-          packetQuantity: normalizeNumber(entry.packetQuantity),
+          packetWeight: normalizeNumber(entry.packetWeight ?? entry.packetQuantity),
           packetUnit: normalizeText(entry.packetUnit),
-          packetType: normalizeText(entry.packetType),
-          remarks: normalizeText(entry.remarks),
+          packetType: toPacketUse(entry.packetUse) ?? toPacketUse(entry.packetType),
+          remarks: normalizeText(entry.notes ?? entry.remarks),
         };
       });
 
-      const projectedQuantity =
-        sumAllocatedPacketQuantity(sample.packets as unknown as PacketRecord[]) +
-        plannedPackets.reduce((total, packet) => total + (packet.packetQuantity ?? 0), 0);
-
-      if (sample.sampleQuantity && projectedQuantity > sample.sampleQuantity) {
-        throw new Error("PACKET_QUANTITY_EXCEEDED");
+      const sampleComparable = toComparableQuantity(sample.sampleQuantity, sample.sampleUnit);
+      if (sampleComparable) {
+        const existingComparableTotal = (sample.packets as unknown as PacketRecord[]).reduce((total, packet) => {
+          const comparable = toComparableQuantity(packet.packetWeight ?? packet.packetQuantity, packet.packetUnit);
+          if (!comparable || comparable.dimension !== sampleComparable.dimension) {
+            return total;
+          }
+          return total + comparable.value;
+        }, 0);
+        const plannedComparableTotal = plannedPackets.reduce((total, packet) => {
+          const comparable = toComparableQuantity(packet.packetWeight, packet.packetUnit);
+          if (!comparable || comparable.dimension !== sampleComparable.dimension) {
+            return total;
+          }
+          return total + comparable.value;
+        }, 0);
+        const projectedQuantity = existingComparableTotal + plannedComparableTotal;
+        if (projectedQuantity > sampleComparable.value) {
+          throw new Error(
+            `PACKET_QUANTITY_EXCEEDED:${projectedQuantity} ${sampleComparable.unit}:${sampleComparable.value} ${sampleComparable.unit}`,
+          );
+        }
       }
 
       const createdPackets = [];
       for (const plan of plannedPackets) {
-        if (plan.packetQuantity !== null && plan.packetQuantity <= 0) {
+        if (plan.packetWeight === null || plan.packetWeight <= 0) {
           throw new Error("INVALID_PACKET_QUANTITY");
         }
-        if (plan.packetQuantity !== null && !plan.packetUnit) {
+        if (!plan.packetUnit) {
           throw new Error("PACKET_UNIT_REQUIRED");
+        }
+        if (!plan.packetType) {
+          throw new Error("PACKET_USE_REQUIRED");
         }
 
         const packetCode = await buildUniquePacketCode(tx, {
           inspectionSerialNumber: sample.job.inspectionSerialNumber,
           lotNumber: sample.lot.lotNumber,
           packetNo: plan.packetNo,
+          prefix: workflowPolicy.workflow.autoPacketIdGeneration
+            ? workflowPolicy.workflow.packetIdPrefix
+            : null,
+          sequenceFormat: workflowPolicy.workflow.autoPacketIdGeneration
+            ? workflowPolicy.workflow.packetIdSequenceFormat
+            : null,
         });
         const status = hasPacketDetails({
           id: "draft",
@@ -362,7 +403,7 @@ export async function POST(request: NextRequest) {
           packetNo: plan.packetNo,
           packetCode,
           packetStatus: "CREATED",
-          packetQuantity: plan.packetQuantity,
+          packetWeight: plan.packetWeight,
           packetUnit: plan.packetUnit,
           packetType: plan.packetType,
           createdAt: new Date().toISOString(),
@@ -379,7 +420,7 @@ export async function POST(request: NextRequest) {
             packetCode,
             packetNo: plan.packetNo,
             packetStatus: status,
-            packetQuantity: plan.packetQuantity,
+            packetWeight: plan.packetWeight,
             packetUnit: plan.packetUnit,
             packetType: plan.packetType,
             remarks: plan.remarks,
@@ -443,7 +484,10 @@ export async function POST(request: NextRequest) {
       return jsonError("Validation Error", "Packet quantity must be positive.", 422);
     }
     if (message === "PACKET_UNIT_REQUIRED") {
-      return jsonError("Validation Error", "Packet unit is required when quantity is entered.", 422);
+      return jsonError("Validation Error", "Packet unit is required when packet weight is entered.", 422);
+    }
+    if (message === "PACKET_USE_REQUIRED") {
+      return jsonError("Validation Error", "Packet use is required (Testing, Retain, Backup, or Reference).", 422);
     }
     if (message.startsWith("PACKET_QUANTITY_EXCEEDED:")) {
       const [, projectedRaw = "", sampleRaw = ""] = message.split(":");
@@ -488,6 +532,10 @@ export async function PATCH(request: NextRequest) {
       const packetWeight = body?.packetWeight !== undefined ? normalizeNumber(body.packetWeight) : undefined;
       const packetUnit = body?.packetUnit !== undefined ? normalizeText(body.packetUnit) : undefined;
       const packetType = body?.packetType !== undefined ? normalizeText(body.packetType) : undefined;
+      const packetUse = body?.packetUse !== undefined ? toPacketUse(body.packetUse) : undefined;
+      if (body?.packetUse !== undefined && packetUse === null) {
+        throw new Error("INVALID_PACKET_USE");
+      }
       const remarks = body?.remarks !== undefined ? normalizeText(body.remarks) : undefined;
       const sealNo = body?.sealNo !== undefined ? normalizeText(body.sealNo) : undefined;
       const labelText = body?.labelText !== undefined ? normalizeText(body.labelText) : undefined;
@@ -513,13 +561,24 @@ export async function PATCH(request: NextRequest) {
       }
 
       const nextQuantity =
-        packetWeight !== undefined ? packetWeight : packetQuantity !== undefined ? packetQuantity : currentPacket.packetQuantity;
+        packetWeight !== undefined
+          ? packetWeight
+          : packetQuantity !== undefined
+            ? packetQuantity
+            : currentPacket.packetWeight ?? currentPacket.packetQuantity;
       const nextUnit = packetUnit !== undefined ? packetUnit : currentPacket.packetUnit;
+      const nextPacketType = packetUse ?? (packetType !== undefined ? packetType : currentPacket.packetType);
       if (nextQuantity !== null && nextQuantity !== undefined && !nextUnit) {
         throw new Error("PACKET_UNIT_REQUIRED");
       }
       if (workflowPolicy.packet.packetWeightRequired && markSubmittedToRnd && (!nextQuantity || !nextUnit)) {
         throw new Error("PACKET_WEIGHT_REQUIRED");
+      }
+      if (markSubmittedToRnd && !workflowPolicy.workflow.submitToRndEnabled) {
+        throw new Error("SUBMIT_TO_RND_DISABLED");
+      }
+      if (markSubmittedToRnd && !nextPacketType) {
+        throw new Error("PACKET_USE_REQUIRED");
       }
       if (markSubmittedToRnd && !handedOverToRndTo) {
         throw new Error("RND_HANDOVER_TARGET_REQUIRED");
@@ -565,7 +624,7 @@ export async function PATCH(request: NextRequest) {
         ...(packetQuantity !== undefined ? { packetQuantity } : {}),
         ...(packetWeight !== undefined ? { packetWeight } : {}),
         ...(packetUnit !== undefined ? { packetUnit } : {}),
-        ...(packetType !== undefined ? { packetType } : {}),
+        ...(nextPacketType !== undefined ? { packetType: nextPacketType } : {}),
         ...(remarks !== undefined ? { remarks } : {}),
         ...(markSubmittedToRnd
           ? {
@@ -772,6 +831,56 @@ export async function PATCH(request: NextRequest) {
             submittedToRndAt: refreshed.submittedToRndAt,
           },
         });
+
+        const existingRndJob = await tx.rndJob.findFirst({
+          where: {
+            companyId: currentUser.companyId,
+            packetId: refreshed.id,
+            previousRndJobId: null,
+          },
+          select: { id: true },
+        });
+
+        if (!existingRndJob) {
+          const receivedAt = refreshed.submittedToRndAt ? new Date(refreshed.submittedToRndAt) : new Date();
+          const rndJobNumber = await generateRndJobNumber(tx, currentUser.companyId, receivedAt);
+          const parentJob = await tx.inspectionJob.findUnique({
+            where: { id: refreshed.jobId ?? currentPacket.jobId },
+            select: { deadline: true },
+          });
+
+          const rndJob = await tx.rndJob.create({
+            data: {
+              rndJobNumber,
+              companyId: currentUser.companyId,
+              parentJobId: refreshed.jobId ?? currentPacket.jobId,
+              lotId: refreshed.lotId ?? currentPacket.lotId,
+              sampleId: refreshed.sampleId ?? currentPacket.sampleId,
+              packetId: refreshed.id,
+              status: "CREATED",
+              jobType: "INITIAL_TEST",
+              packetUse: refreshed.packetType,
+              priority: "MEDIUM",
+              deadline: parentJob?.deadline ?? null,
+              assignedToId: handedOverToRndTo ?? null,
+              receivedAt,
+              remarks: refreshed.remarks ?? null,
+            },
+            select: { id: true, rndJobNumber: true },
+          });
+
+          await recordAuditLog(tx, {
+            jobId: refreshed.jobId ?? currentPacket.jobId,
+            userId: currentUser.id,
+            entity: "RND_JOB",
+            action: "RND_JOB_CREATED",
+            metadata: {
+              rndJobId: rndJob.id,
+              rndJobNumber: rndJob.rndJobNumber,
+              packetId: refreshed.id,
+            },
+          });
+        }
       }
 
       await recomputeJobWorkflowMilestones(tx, {
@@ -935,10 +1044,16 @@ export async function PATCH(request: NextRequest) {
       return jsonError("Validation Error", "Packet quantity must be positive.", 422);
     }
     if (message === "PACKET_UNIT_REQUIRED") {
-      return jsonError("Validation Error", "Packet unit is mandatory when quantity is provided.", 422);
+      return jsonError("Validation Error", "Packet unit is mandatory when packet weight is provided.", 422);
     }
     if (message === "PACKET_WEIGHT_REQUIRED") {
       return jsonError("Validation Error", "Every packet needs weight and unit before Submit to R&D.", 422);
+    }
+    if (message === "SUBMIT_TO_RND_DISABLED") {
+      return jsonError("Validation Error", "Submit to R&D is disabled by current company workflow policy.", 422);
+    }
+    if (message === "PACKET_USE_REQUIRED") {
+      return jsonError("Validation Error", "Packet use is required (Testing, Retain, Backup, or Reference).", 422);
     }
     if (message === "RND_HANDOVER_TARGET_REQUIRED") {
       return jsonError("Validation Error", "Select an R&D user before Submit to R&D.", 422);
@@ -948,6 +1063,9 @@ export async function PATCH(request: NextRequest) {
     }
     if (message === "PACKET_LOCKED_AFTER_RND_SUBMIT") {
       return jsonError("Forbidden", "Packet editing is locked after Submit to R&D by company policy.", 403);
+    }
+    if (message === "INVALID_PACKET_USE") {
+      return jsonError("Validation Error", "Packet use must be Testing, Retain, Backup, or Reference.", 422);
     }
     if (message === "INVALID_ALLOCATION_STATUS") {
       return jsonError("Validation Error", "Invalid packet allocation status.", 422);

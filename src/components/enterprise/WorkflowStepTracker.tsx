@@ -16,42 +16,47 @@ export type WorkflowStep = {
 
 const STEP_THEME: Record<
   WorkflowStepState,
-  { icon: LucideIcon; color: string; bg: string; border: string; badge: string }
+  { icon: LucideIcon; color: string; bg: string; border: string; badge: string; accent: string }
 > = {
   completed: {
     icon: CheckCircle2,
     color: "green.700",
-    bg: "green.50",
-    border: "green.200",
+    bg: "bg.surface",
+    border: "border.default",
     badge: "Done",
+    accent: "green.500",
   },
   current: {
     icon: CircleDot,
     color: "brand.700",
-    bg: "brand.50",
-    border: "brand.200",
+    bg: "bg.surface",
+    border: "brand.300",
     badge: "Current",
+    accent: "brand.500",
   },
   next: {
     icon: ArrowRight,
     color: "orange.700",
-    bg: "orange.50",
-    border: "orange.200",
+    bg: "bg.surface",
+    border: "border.default",
     badge: "Next",
+    accent: "orange.400",
   },
   upcoming: {
     icon: Clock3,
-    color: "gray.600",
+    color: "text.secondary",
     bg: "bg.surface",
     border: "border.default",
     badge: "Later",
+    accent: "neutral.300",
   },
   blocked: {
     icon: Clock3,
     color: "red.700",
-    bg: "red.50",
+    bg: "bg.surface",
     border: "red.200",
     badge: "Blocked",
+    accent: "red.500",
   },
 };
 
@@ -65,7 +70,7 @@ export function WorkflowStepTracker({
   compact?: boolean;
 }) {
   return (
-    <VStack align="stretch" spacing={compact ? 3 : 4}>
+    <VStack align="stretch" spacing={compact ? 2.5 : 3}>
       <HStack justify="space-between" align="center">
         <Text fontSize="sm" fontWeight="semibold" color="text.primary">
           {title}
@@ -75,10 +80,7 @@ export function WorkflowStepTracker({
         </Text>
       </HStack>
 
-      <SimpleGrid
-        minChildWidth={compact ? { base: "100%", md: "11rem", xl: "10rem" } : { base: "100%", md: "14rem" }}
-        spacing={3}
-      >
+      <SimpleGrid minChildWidth={compact ? { base: "100%", md: "11rem", xl: "10rem" } : { base: "100%", md: "14rem" }} spacing={2}>
         {steps.map((step) => {
           const theme = STEP_THEME[step.state];
           const interactive = typeof step.onClick === "function";
@@ -101,28 +103,39 @@ export function WorkflowStepTracker({
               borderWidth="1px"
               borderColor={theme.border}
               bg={theme.bg}
-              borderRadius="xl"
-              px={4}
-              py={3}
+              borderRadius="md"
+              px={3}
+              py={2}
               minW={0}
               h="full"
               w="full"
               textAlign="left"
               cursor={interactive ? "pointer" : "default"}
-              transition="transform 0.15s ease, box-shadow 0.15s ease"
-              _hover={interactive ? { transform: "translateY(-1px)", boxShadow: "sm" } : undefined}
+              transition="background-color 0.15s ease, border-color 0.15s ease"
+              boxShadow="none"
+              _hover={interactive ? { bg: "bg.surfaceElevated", borderColor: "border.strong" } : undefined}
+              position="relative"
+              _before={{
+                content: '""',
+                position: "absolute",
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: "2px",
+                bg: theme.accent,
+              }}
             >
-              <Stack spacing={2}>
+              <Stack spacing={1.5}>
                 <Stack
                   direction={{ base: "column", sm: compact ? "column" : "row" }}
                   justify="space-between"
                   align={{ base: "stretch", sm: compact ? "stretch" : "start" }}
-                  spacing={compact ? 1.5 : 2}
+                  spacing={compact ? 1 : 1.5}
                 >
                   <HStack spacing={2} align="start" minW={0} flex="1">
-                    <Icon as={theme.icon} boxSize={4.5} color={theme.color} />
+                    <Icon as={theme.icon} boxSize={4} color={theme.color} />
                     <Text
-                      fontSize="sm"
+                      fontSize="xs"
                       fontWeight="semibold"
                       color="text.primary"
                       lineHeight="1.35"
@@ -135,7 +148,7 @@ export function WorkflowStepTracker({
                   <Text
                     fontSize="xs"
                     color={theme.color}
-                    fontWeight="bold"
+                    fontWeight="semibold"
                     textTransform="uppercase"
                     whiteSpace="normal"
                     overflowWrap="anywhere"

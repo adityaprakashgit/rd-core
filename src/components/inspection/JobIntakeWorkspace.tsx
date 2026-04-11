@@ -27,7 +27,6 @@ import { DetailTabsLayout, HistoryTimeline, LinkedRecordsPanel } from "@/compone
 import { WorkflowStepTracker } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { getStoredAuth } from "@/lib/auth-client";
-import { AuditTrail } from "@/components/inspection/AuditTrail";
 import { LotIntakeWizard } from "@/components/inspection/LotIntakeWizard";
 import {
   getLotMediaFiles,
@@ -638,9 +637,8 @@ export function JobIntakeWorkspace({
               label: "History",
               content: (
                 <VStack align="stretch" spacing={4}>
-                  {isAdmin ? <AuditTrail logs={logs} /> : null}
                   <HistoryTimeline
-                    events={logs.slice(0, 12).map((log) => ({
+                    events={(isAdmin ? logs : logs.slice(0, 12)).map((log) => ({
                       id: log.id,
                       title: log.entity ? `${log.entity} · ${log.action}` : log.action,
                       subtitle: log.notes || "System trace entry",

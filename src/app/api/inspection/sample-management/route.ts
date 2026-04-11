@@ -12,7 +12,11 @@ import {
   mapSampleMediaByType,
   normalizeSampleMediaType,
 } from "@/lib/sample-management";
-import { buildModuleWorkflowSettingsCreate, canEditSeal, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
+import {
+  buildModuleWorkflowSettingsCreate,
+  canEditSealWithRoles,
+  toModuleWorkflowPolicy,
+} from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
@@ -518,7 +522,11 @@ export async function PATCH(request: NextRequest) {
         markSealed ||
         markLabeled
       ) {
-        if ((sealNo !== undefined || markSealed || markLabeled) && previous.sealLabel?.sealNo && !canEditSeal(currentUser.role, workflowPolicy.seal.sealEditPolicy)) {
+        if (
+          (sealNo !== undefined || markSealed || markLabeled) &&
+          previous.sealLabel?.sealNo &&
+          !canEditSealWithRoles(currentUser.role, workflowPolicy.seal.sealEditPolicy, workflowPolicy.seal.sealEditRoles)
+        ) {
           throw new Error("SEAL_EDIT_FORBIDDEN");
         }
         await tx.sampleSealLabel.upsert({

@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 
+import { normalizeEvidenceCategoryKey } from "@/lib/evidence-definition";
+import { resolveRequiredImageUploadCategories } from "@/lib/image-proof-policy";
 import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 
 type PrismaLike = Prisma.TransactionClient;
@@ -50,16 +52,6 @@ type WorkflowMilestoneJob = {
   handedOverToRndBy?: string | null;
   handedOverToRndTo?: string | null;
   lots?: WorkflowMilestoneLot[];
-};
-
-const IMAGE_CATEGORY_MAP: Record<string, string> = {
-  "Bag photo with visible LOT no": "BAG_WITH_LOT_NO",
-  "Material in bag": "MATERIAL_VISIBLE",
-  "During Sampling Photo": "SAMPLING_IN_PROGRESS",
-  "Sample Completion": "SEALED_BAG",
-  "Seal on bag": "SEAL_CLOSEUP",
-  "Bag condition": "BAG_CONDITION",
-  "Whole Job bag palletized and packed": "LOT_OVERVIEW",
 };
 
 function toDate(value: string | Date | null | undefined) {
@@ -140,9 +132,13 @@ export function computeJobWorkflowMilestoneUpdate(
   const allLotsOperationsComplete =
     lots.length > 0 &&
     lots.every((lot) => {
-      const capturedCategories = new Set((lot.mediaFiles ?? []).map((file) => file.category));
-      const requiredImagesDone = settings.images.requiredImageCategories.every((label) => {
-        const category = IMAGE_CATEGORY_MAP[label] ?? label.toUpperCase().replaceAll(" ", "_");
+      const capturedCategories = new Set(
+        (lot.mediaFiles ?? [])
+          .map((file) => normalizeEvidenceCategoryKey(file.category))
+          .filter((category): category is NonNullable<typeof category> => Boolean(category)),
+      );
+      const requiredCategories = resolveRequiredImageUploadCategories(settings.images.requiredImageCategories);
+      const requiredImagesDone = requiredCategories.every((category) => {
         return capturedCategories.has(category);
       });
       const decisionOutcome = lot.inspection?.decisionOutcome ?? mapDecisionOutcome(lot.inspection?.decisionStatus);

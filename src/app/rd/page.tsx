@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
-  Box,
   Button,
   FormControl,
   FormLabel,
@@ -28,6 +27,7 @@ import { useRouter } from "next/navigation";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
+import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import {
   EnterpriseStickyTable,
   FilterSearchStrip,
@@ -38,6 +38,7 @@ import {
 import { MasterAutocomplete } from "@/components/forms/MasterAutocomplete";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
+import { normalizeRole } from "@/lib/role";
 import { getJobWorkflowPresentation } from "@/lib/workflow-stage";
 import type { InspectionJob } from "@/types/inspection";
 
@@ -136,6 +137,9 @@ export default function RdPage() {
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarningPayload | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
   const [sendingDuplicateEscalation, setSendingDuplicateEscalation] = useState(false);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+
+  const isAdminUser = normalizeRole(sessionRole) === "ADMIN";
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -182,6 +186,54 @@ export default function RdPage() {
     void fetchJobs();
     void fetchReferenceData();
   }, [fetchJobs, fetchReferenceData]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadSessionRole() {
+      try {
+        const response = await fetch("/api/session/me");
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as { role?: string | null };
+        if (active) {
+          setSessionRole(payload.role ?? null);
+        }
+      } catch {
+        if (active) {
+          setSessionRole(null);
+        }
+      }
+    }
+    void loadSessionRole();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleDeleteJob(jobId: string) {
+    const confirmed = window.confirm(
+      "Delete this job from active workflow? The job will be archived and removed from active queues.",
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/archive`, { method: "POST" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { details?: string } | null;
+        throw new Error(payload?.details || "Job could not be deleted.");
+      }
+      toast({ title: "Job deleted", description: "The job has been archived.", status: "success" });
+      await fetchJobs();
+    } catch (deleteError) {
+      toast({
+        title: "Delete failed",
+        description: deleteError instanceof Error ? deleteError.message : "Delete failed.",
+        status: "error",
+      });
+    }
+  }
 
   useEffect(() => {
     const selectedItem = items.find((item) => item.itemName.toLowerCase() === materialCategory.trim().toLowerCase()) ?? null;
@@ -377,6 +429,7 @@ export default function RdPage() {
         .sort((a, b) => Number(new Date(b.updatedAt)) - Number(new Date(a.updatedAt))),
     [jobs, search, stage],
   );
+  const isCreateJobSaveDisabled = creating || !sourceName.trim() || !materialCategory.trim() || !materialType;
 
   return (
     <>
@@ -413,13 +466,15 @@ export default function RdPage() {
             filteredRows.length === 0 ? (
               <EmptyWorkState title="No jobs found" description="Create a job or change filters." />
             ) : (
-              <EnterpriseStickyTable>
-                <Box p={3}>
-                  <EnterpriseDataTable
+              <EnterpriseStickyTable><EnterpriseDataTable
                     rows={filteredRows}
                     rowKey={(row) => row.id}
                     columns={[
-                      { id: "job-id", header: "Job ID", render: (row) => <Text fontWeight="semibold">{row.inspectionSerialNumber || row.jobReferenceNumber || "—"}</Text> },
+                      {
+                        id: "job-id",
+                        header: "Job ID",
+                        render: (row) => row.inspectionSerialNumber || row.jobReferenceNumber || "—",
+                      },
                       { id: "customer", header: "Customer / Source", render: (row) => row.plantLocation ? `${row.clientName} • ${row.plantLocation}` : row.clientName },
                       { id: "lots", header: "Number of Lots", render: (row) => String(row.lots?.length ?? 0) },
                       {
@@ -427,7 +482,7 @@ export default function RdPage() {
                         header: "Current Stage",
                         render: (row) => {
                           const presentation = getJobWorkflowPresentation(row);
-                          return <Badge colorScheme={presentation.tone} variant="subtle">{presentation.label}</Badge>;
+                          return <WorkflowStateChip status={presentation.label} />;
                         },
                       },
                       {
@@ -446,9 +501,17 @@ export default function RdPage() {
                         label: "Open Inspection Queue",
                         onClick: (row) => router.push(`/jobs/${row.id}/workflow?section=images`),
                       },
+                      ...(isAdminUser
+                        ? [
+                            {
+                              id: "delete-job",
+                              label: "Delete Job",
+                              onClick: (row: InspectionJob) => void handleDeleteJob(row.id),
+                            },
+                          ]
+                        : []),
                     ]}
                   />
-                </Box>
               </EnterpriseStickyTable>
             )
           ) : null}
@@ -461,6 +524,7 @@ export default function RdPage() {
         title="Create Job"
         onSave={() => void submitJobCreate()}
         isSaving={creating}
+        isSaveDisabled={isCreateJobSaveDisabled}
         saveLabel="Create Job"
       >
         <VStack align="stretch" spacing={4}>
@@ -522,10 +586,10 @@ export default function RdPage() {
 
       <Modal isOpen={duplicateWarning !== null} onClose={() => setDuplicateWarning(null)} size="xl" isCentered>
         <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Potential duplicate job</ModalHeader>
+        <ModalContent borderRadius="xl" borderWidth="1px" borderColor="border.default">
+          <ModalHeader pb={3}>Potential duplicate job</ModalHeader>
           <ModalCloseButton />
-          <ModalBody>
+          <ModalBody py={4}>
             <VStack align="stretch" spacing={3}>
               <Text color="text.secondary">{duplicateWarning?.details}</Text>
               <Text fontSize="sm" color="text.secondary">Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours.</Text>
@@ -546,7 +610,7 @@ export default function RdPage() {
               </FormControl>
             </VStack>
           </ModalBody>
-          <ModalFooter>
+          <ModalFooter borderTopWidth="1px" borderColor="border.default" pt={3}>
             <HStack spacing={2}>
               <Button variant="ghost" onClick={() => setDuplicateWarning(null)}>Cancel</Button>
               {duplicateWarning?.canOverrideDuplicate ? (

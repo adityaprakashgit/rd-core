@@ -111,8 +111,8 @@ export function MobileBottomNav({
 
       <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
         <DrawerOverlay bg="blackAlpha.500" />
-        <DrawerContent borderTopRadius="3xl">
-          <DrawerHeader borderBottomWidth="1px" borderColor="border.default" pt={5}>
+        <DrawerContent borderTopRadius="xl" borderWidth="1px" borderColor="border.default">
+          <DrawerHeader borderBottomWidth="1px" borderColor="border.default" pt={4} pb={3}>
             <Stack spacing={0.5}>
               <Text fontSize="lg" fontWeight="bold">
                 Workspace menu
@@ -123,14 +123,14 @@ export function MobileBottomNav({
             </Stack>
           </DrawerHeader>
           <DrawerBody pb="calc(env(safe-area-inset-bottom, 0px) + 24px)">
-            <Stack spacing={5} py={4}>
-              <Box borderWidth="1px" borderColor="border.default" borderRadius="2xl" bg="bg.surface" p={4}>
+            <Stack spacing={4} py={3}>
+              <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
                 <HStack align="start" spacing={3}>
                   <Box
                     w={11}
                     h={11}
-                    borderRadius="2xl"
-                    bg="brand.50"
+                    borderRadius="lg"
+                    bg="bg.rail"
                     color="brand.700"
                     display="flex"
                     alignItems="center"

@@ -33,7 +33,7 @@ export function RegistryPageTemplate({
   content: ReactNode;
 }) {
   return (
-    <VStack align="stretch" spacing={5}>
+    <VStack align="stretch" spacing={4}>
       {summary ? <Card variant="outline"><CardBody>{summary}</CardBody></Card> : null}
       {filters ? <Card variant="outline"><CardBody>{filters}</CardBody></Card> : null}
       <Card variant="outline"><CardBody>{content}</CardBody></Card>
@@ -51,12 +51,12 @@ export function WorkbenchPageTemplate({
   rightLabel?: string;
 }) {
   return (
-    <Grid templateColumns={{ base: "1fr", xl: "minmax(0, 2fr) minmax(320px, 1fr)" }} gap={5}>
+    <Grid templateColumns={{ base: "1fr", xl: "minmax(0, 2fr) minmax(320px, 1fr)" }} gap={4}>
       <GridItem>{left}</GridItem>
       <GridItem display={{ base: "none", xl: "block" }}>
         <Card variant="outline" position="sticky" top="96px">
           <CardBody>
-            <Stack spacing={3}>
+            <Stack spacing={2.5}>
               <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
                 {rightLabel}
               </Text>
@@ -70,7 +70,7 @@ export function WorkbenchPageTemplate({
           <CardBody p={0}>
             <Accordion allowToggle defaultIndex={[0]}>
               <AccordionItem border="none">
-                <AccordionButton px={4} py={4} borderRadius="2xl" minH="56px">
+                <AccordionButton px={3} py={3} borderRadius="lg" minH="48px">
                   <Box flex="1" textAlign="left">
                     <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
                       {rightLabel}
@@ -78,7 +78,7 @@ export function WorkbenchPageTemplate({
                   </Box>
                   <AccordionIcon />
                 </AccordionButton>
-                <AccordionPanel px={4} pb={4}>
+                <AccordionPanel px={3} pb={3}>
                   {right}
                 </AccordionPanel>
               </AccordionItem>
@@ -96,7 +96,7 @@ export function ConfigurationPageTemplate({
   sections: Array<{ id: string; title: string; description?: string; content: ReactNode }>;
 }) {
   return (
-    <VStack align="stretch" spacing={4}>
+    <VStack align="stretch" spacing={3}>
       {sections.map((section) => (
         <Card key={section.id} variant="outline">
           <CardBody>
@@ -123,7 +123,7 @@ export function DocumentPageTemplate({
   preview: ReactNode;
 }) {
   return (
-    <Grid templateColumns={{ base: "1fr", xl: "360px 1fr" }} gap={5}>
+    <Grid templateColumns={{ base: "1fr", xl: "360px 1fr" }} gap={4}>
       <GridItem>
         <Card variant="outline">
           <CardBody>{controls}</CardBody>
@@ -141,13 +141,13 @@ export function DocumentPageTemplate({
 export function FilterRail({ children }: { children: ReactNode }) {
   return (
     <HStack
-      spacing={3}
-      px={4}
-      py={3}
+      spacing={2}
+      px={3}
+      py={2}
       borderWidth="1px"
       borderColor="border.default"
       bg="bg.rail"
-      borderRadius="xl"
+      borderRadius="lg"
       flexWrap="wrap"
     >
       {children}
@@ -166,9 +166,9 @@ export function MobileActionRail({ children }: { children: ReactNode }) {
     >
       <Stack
         direction={{ base: "column", sm: "row" }}
-        spacing={3}
-        px={3}
-        py={3}
+        spacing={2}
+        px={2.5}
+        py={2.5}
         align="stretch"
         flexWrap="wrap"
         {...mobileBottomSurfaceStyle}
@@ -176,7 +176,7 @@ export function MobileActionRail({ children }: { children: ReactNode }) {
           ...mobileBottomInteractiveSx,
           "& .chakra-button, & .chakra-icon-button": {
             width: "100%",
-            minH: "52px",
+            minH: "44px",
             whiteSpace: "normal",
             textAlign: "center",
             lineHeight: "1.2",
@@ -211,17 +211,17 @@ export function ProcessFlowLayout({
   mobileActions?: ReactNode;
 }) {
   return (
-    <VStack align="stretch" spacing={5}>
+    <VStack align="stretch" spacing={4}>
       {header ?? null}
       <Card variant="outline">
         <CardBody>{tracker}</CardBody>
       </Card>
-      <Grid templateColumns={{ base: "1fr", xl: "minmax(0, 2fr) minmax(320px, 1fr)" }} gap={5}>
+      <Grid templateColumns={{ base: "1fr", xl: "minmax(0, 2fr) minmax(320px, 1fr)" }} gap={4}>
         <GridItem>{activeStep}</GridItem>
         <GridItem display={{ base: "none", xl: "block" }}>
           <Card variant="outline" position="sticky" top="96px">
             <CardBody>
-              <Stack spacing={3}>
+              <Stack spacing={2.5}>
                 <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
                   {contextLabel}
                 </Text>
@@ -235,7 +235,7 @@ export function ProcessFlowLayout({
             <CardBody p={0}>
               <Accordion allowToggle>
                 <AccordionItem border="none">
-                  <AccordionButton px={4} py={4} borderRadius="2xl" minH="56px">
+                  <AccordionButton px={3} py={3} borderRadius="lg" minH="48px">
                     <Box flex="1" textAlign="left">
                       <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
                         {contextLabel}
@@ -243,7 +243,7 @@ export function ProcessFlowLayout({
                     </Box>
                     <AccordionIcon />
                   </AccordionButton>
-                  <AccordionPanel px={4} pb={4}>
+                  <AccordionPanel px={3} pb={3}>
                     {context}
                   </AccordionPanel>
                 </AccordionItem>

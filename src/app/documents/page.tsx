@@ -220,6 +220,8 @@ export default function DocumentRegistryPage() {
               <Select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
                 <option value="">All</option>
                 <option value="Available">Available</option>
+                <option value="Active Report">Active Report</option>
+                <option value="Previous Report">Previous Report</option>
                 <option value="BLOCKED">Blocked</option>
                 <option value="ALLOCATED">Allocated</option>
                 <option value="USED">Used</option>

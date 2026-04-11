@@ -1,5 +1,14 @@
 # UI_REVAMP_TEST_PLAN
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- Agent enforcement is defined in `AGENTS.md`.
+- This file is a testing reference and MUST remain subordinate to canonical governance.
+- If wording conflicts, precedence is:
+  1. `docs/enterprise-ui-governance.md`
+  2. `AGENTS.md`
+  3. supporting/module docs
+
 ## Objective
 Verify the UI revamp delivers workflow clarity, operational speed, traceability visibility, and reliable document retrieval without regression in controls.
 
@@ -8,12 +17,20 @@ Verify the UI revamp delivers workflow clarity, operational speed, traceability 
 - Roles: Production, R&D, Manager, Admin
 - Runtime role mapping: Production -> `OPERATIONS`, R&D -> `RND`, Manager -> `VIEWER`, Admin -> `ADMIN`
 - Core object: Lot
+- Canonical lineage: `Job -> Lot -> Sample -> Trial -> Packet -> Dispatch -> COA`
 - Exclude Playground
 - No KPI/dashboard clutter on operational screens
-- Device policy: desktop-first shell for registry/oversight; mobile/tablet task-first execution.
+- Device policy: execution/process pages are task-first and stage-oriented across breakpoints; registry/oversight may use dense enterprise list/table layouts.
+
+## Workflow Semantics Contract (Tested)
+- Stage, Status, Next Action, Owner, and Blocker MUST remain distinct.
+- Workflow-heavy detail pages MUST follow Object Process Template behavior:
+  - sticky/non-scroll-dependent stage orientation
+  - one active stage panel at a time
+  - right rail context for linked records/blockers/history/documents
 
 ## Test Layers
-- Unit: component behavior, label rendering, status mapping.
+- Unit: component behavior, label rendering, shared status dictionary + `WorkflowStateChip` rendering.
 - Integration: stage transitions, blocker propagation, role-based visibility.
 - E2E: full operational journey from Job Creation to Packing List.
 - Accessibility: keyboard navigation, semantic structure, color contrast, focus order.
@@ -45,6 +62,8 @@ Verify the UI revamp delivers workflow clarity, operational speed, traceability 
 - Verify no KPI-heavy/dashboard clutter on operational screens.
 - Verify no decorative widgets or flashy consumer styling.
 - Verify approved terminology only; no technical/internal labels exposed.
+- Verify no local page-level status/badge mapping logic is introduced.
+- Verify workflow-heavy detail pages do not regress to long mixed-scroll stage rendering.
 
 ### Role Coverage
 - Production: execution-focused visibility and actions.

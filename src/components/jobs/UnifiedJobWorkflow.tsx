@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Badge,
   Box,
@@ -9,6 +9,7 @@ import {
   Card,
   CardBody,
   FormControl,
+  FormHelperText,
   FormLabel,
   Heading,
   HStack,
@@ -16,6 +17,9 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  Tab,
+  TabList,
+  Tabs,
   Table,
   Tbody,
   Td,
@@ -37,9 +41,14 @@ import {
   PageIdentityBar,
   QuickEditDrawer,
 } from "@/components/enterprise/EnterprisePatterns";
+import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { SealScanner } from "@/components/inspection/SealScanner";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import { getUploadCategoryKey } from "@/lib/evidence-definition";
+import { getMissingRequiredImageProofLabels } from "@/lib/image-proof-policy";
 import { canApproveFinalDecision, type ModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
+import { toComparableQuantity } from "@/lib/packet-management";
+import { normalizeRole } from "@/lib/role";
 import type { InspectionJob, InspectionLot, PublicUser } from "@/types/inspection";
 
 type ClientOption = {
@@ -112,15 +121,27 @@ type SessionUser = {
   profile?: PublicUser["profile"];
 };
 
-const imageCategoryMap: Record<string, string> = {
-  "Bag photo with visible LOT no": "BAG_WITH_LOT_NO",
-  "Material in bag": "MATERIAL_VISIBLE",
-  "During Sampling Photo": "SAMPLING_IN_PROGRESS",
-  "Sample Completion": "SEALED_BAG",
-  "Seal on bag": "SEAL_CLOSEUP",
-  "Bag condition": "BAG_CONDITION",
-  "Whole Job bag palletized and packed": "LOT_OVERVIEW",
+type PacketUse = "TESTING" | "RETAIN" | "BACKUP" | "REFERENCE";
+type WorkflowSectionId =
+  | "job"
+  | "lots"
+  | "images"
+  | "decision"
+  | "sampling"
+  | "seal"
+  | "packets"
+  | "handover";
+
+type PacketDraftRow = {
+  id: string;
+  packetId: string;
+  packetWeight: string;
+  packetUnit: string;
+  packetUse: PacketUse | "";
+  notes: string;
+  status: "Draft";
 };
+
 
 function formatDate(value: string | Date | null | undefined) {
   if (!value) {
@@ -137,8 +158,62 @@ function buildAutoLotNumber(settings: ModuleWorkflowPolicy["workflow"], lots: In
   return `${prefix}-${next}`;
 }
 
+function normalizePacketUse(value: string | null | undefined): PacketUse | "" {
+  if (!value) return "";
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "TESTING" || normalized === "RETAIN" || normalized === "BACKUP" || normalized === "REFERENCE") {
+    return normalized as PacketUse;
+  }
+  if (normalized === "LAB_TEST_PACKET") {
+    return "TESTING";
+  }
+  if (normalized === "RETAIN_PACKET") {
+    return "RETAIN";
+  }
+  if (normalized === "BACKUP_PACKET") {
+    return "BACKUP";
+  }
+  if (normalized === "REF_PACKET") {
+    return "REFERENCE";
+  }
+  return "";
+}
+
+function parsePositiveNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function fromComparable(valueInBase: number, targetUnit: string) {
+  const normalized = targetUnit.trim().toUpperCase();
+  if (normalized === "KG") {
+    return valueInBase / 1000;
+  }
+  if (normalized === "G") {
+    return valueInBase;
+  }
+  if (normalized === "MG") {
+    return valueInBase * 1000;
+  }
+  return valueInBase;
+}
+
+function normalizeSection(value: string | null | undefined): WorkflowSectionId {
+  if (!value) return "job";
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "lots") return "lots";
+  if (normalized === "images") return "images";
+  if (normalized === "decision") return "decision";
+  if (normalized === "sampling") return "sampling";
+  if (normalized === "seal") return "seal";
+  if (normalized === "packets") return "packets";
+  if (normalized === "handover") return "handover";
+  return "job";
+}
+
 export function UnifiedJobWorkflow() {
   const { jobId } = useParams<{ jobId: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -150,6 +225,8 @@ export function UnifiedJobWorkflow() {
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const [selectedImageLabel, setSelectedImageLabel] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingJob, setDeletingJob] = useState(false);
+  const [savingClient, setSavingClient] = useState(false);
   const [clientDrawerOpen, setClientDrawerOpen] = useState(false);
   const [jobForm, setJobForm] = useState({
     clientId: "",
@@ -185,8 +262,11 @@ export function UnifiedJobWorkflow() {
     remarks: "",
   });
   const [packetCount, setPacketCount] = useState("1");
-  const [packetDrafts, setPacketDrafts] = useState<Record<string, { packetWeight: string; packetUnit: string }>>({});
+  const [packetDrafts, setPacketDrafts] = useState<Record<string, { packetWeight: string; packetUnit: string; packetUse: PacketUse | ""; notes: string }>>({});
+  const [draftPacketRows, setDraftPacketRows] = useState<PacketDraftRow[]>([]);
+  const [defaultPacketUnit, setDefaultPacketUnit] = useState("KG");
   const [rndHandoverTarget, setRndHandoverTarget] = useState("");
+  const [activeSection, setActiveSection] = useState<WorkflowSectionId>(normalizeSection(searchParams.get("section")));
 
   const fetchWorkflow = useCallback(async () => {
     setLoading(true);
@@ -210,8 +290,17 @@ export function UnifiedJobWorkflow() {
         preferredLotId && workflowPayload.job.lots?.some((lot) => lot.id === preferredLotId) ? preferredLotId : firstLotId;
       setSelectedLotId(nextLotId);
       setRndHandoverTarget(workflowPayload.milestones.handedOverToRndTo ?? "");
+      const resolvedClientId =
+        workflowPayload.job.clientId ??
+        workflowPayload.clients.find(
+          (client) =>
+            client.clientName.trim().toLowerCase() ===
+            (workflowPayload.job.clientName ?? "").trim().toLowerCase(),
+        )?.id ??
+        "";
+
       setJobForm({
-        clientId: workflowPayload.job.clientId ?? "",
+        clientId: resolvedClientId,
         clientName: workflowPayload.job.clientName,
         commodity: workflowPayload.job.commodity,
         plantLocation: workflowPayload.job.plantLocation ?? "",
@@ -238,6 +327,10 @@ export function UnifiedJobWorkflow() {
     void fetchWorkflow();
   }, [fetchWorkflow]);
 
+  useEffect(() => {
+    setActiveSection(normalizeSection(searchParams.get("section")));
+  }, [searchParams]);
+
   const job = payload?.job ?? null;
   const settings = payload?.settings ?? null;
   const clients = payload?.clients ?? [];
@@ -250,6 +343,70 @@ export function UnifiedJobWorkflow() {
   const selectedSample = selectedLot?.sample ?? null;
   const packets = useMemo(() => selectedSample?.packets ?? [], [selectedSample?.packets]);
   const rndAssignees = payload?.rndAssignees ?? [];
+  const isAdminUser = normalizeRole(currentUser?.role ?? null) === "ADMIN";
+  const draftStorageKey = useMemo(
+    () => (selectedSample ? `packet-draft:${jobId}:${selectedSample.id}` : null),
+    [jobId, selectedSample],
+  );
+  const packetStageBlockers = useMemo(() => {
+    const blockers: string[] = [];
+    if (!selectedSample) {
+      blockers.push("Sample is required before packet creation.");
+    }
+    if (selectedLot?.inspection?.decisionStatus !== "READY_FOR_SAMPLING") {
+      blockers.push("Final decision must be Pass before packet creation.");
+    }
+    if (selectedSample && !selectedSample.homogeneousProofDone && !selectedSample.homogenizedAt) {
+      blockers.push("Homogeneous proof is pending.");
+    }
+    if (settings?.seal.sealScanRequired && selectedSample && !selectedSample.sealLabel?.sealNo && !selectedLot?.sealNumber) {
+      blockers.push("Seal step is incomplete.");
+    }
+    return blockers;
+  }, [selectedSample, selectedLot?.inspection?.decisionStatus, selectedLot?.sealNumber, settings?.seal.sealScanRequired]);
+  const missingRequiredImageProof = useMemo(() => {
+    if (!selectedLot || !settings) {
+      return [];
+    }
+    return getMissingRequiredImageProofLabels(
+      settings.images.requiredImageCategories,
+      (selectedLot.mediaFiles ?? []).map((file) => file.category),
+    );
+  }, [selectedLot, settings]);
+
+  const packetAllocation = useMemo(() => {
+    if (!selectedSample?.sampleQuantity || !selectedSample.sampleUnit) {
+      return null;
+    }
+    const sampleComparable = toComparableQuantity(selectedSample.sampleQuantity, selectedSample.sampleUnit);
+    if (!sampleComparable) {
+      return null;
+    }
+    const draftComparableTotal = draftPacketRows.reduce((total, row) => {
+      const weight = parsePositiveNumber(row.packetWeight);
+      const comparable = toComparableQuantity(weight, row.packetUnit);
+      if (!comparable || comparable.dimension !== sampleComparable.dimension) return total;
+      return total + comparable.value;
+    }, 0);
+    const persistedComparableTotal = packets.reduce((total, packet) => {
+      const draft = packetDrafts[packet.id];
+      const comparable = toComparableQuantity(
+        parsePositiveNumber(draft?.packetWeight ?? "") ?? packet.packetWeight ?? packet.packetQuantity ?? null,
+        draft?.packetUnit ?? packet.packetUnit,
+      );
+      if (!comparable || comparable.dimension !== sampleComparable.dimension) return total;
+      return total + comparable.value;
+    }, 0);
+    const allocatedBase = draftPacketRows.length > 0 ? draftComparableTotal : persistedComparableTotal;
+    const remainingBase = sampleComparable.value - allocatedBase;
+    return {
+      available: selectedSample.sampleQuantity,
+      allocated: fromComparable(allocatedBase, selectedSample.sampleUnit),
+      remaining: fromComparable(Math.max(remainingBase, 0), selectedSample.sampleUnit),
+      overAllocated: remainingBase < 0,
+      unit: selectedSample.sampleUnit,
+    };
+  }, [draftPacketRows, packetDrafts, packets, selectedSample]);
 
   useEffect(() => {
     if (!selectedSample) {
@@ -279,7 +436,7 @@ export function UnifiedJobWorkflow() {
   }, [selectedSample]);
 
   useEffect(() => {
-    const nextDrafts: Record<string, { packetWeight: string; packetUnit: string }> = {};
+    const nextDrafts: Record<string, { packetWeight: string; packetUnit: string; packetUse: PacketUse | ""; notes: string }> = {};
     for (const packet of packets) {
       nextDrafts[packet.id] = {
         packetWeight:
@@ -289,10 +446,30 @@ export function UnifiedJobWorkflow() {
               ? String(packet.packetQuantity)
               : "",
         packetUnit: packet.packetUnit ?? "KG",
+        packetUse: normalizePacketUse(packet.packetType),
+        notes: packet.remarks ?? "",
       };
     }
     setPacketDrafts(nextDrafts);
   }, [packets]);
+
+  useEffect(() => {
+    if (!draftStorageKey) {
+      setDraftPacketRows([]);
+      return;
+    }
+    const raw = window.localStorage.getItem(draftStorageKey);
+    if (!raw) {
+      setDraftPacketRows([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as PacketDraftRow[];
+      setDraftPacketRows(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setDraftPacketRows([]);
+    }
+  }, [draftStorageKey]);
 
   const handleSaveJobBasics = async () => {
     setSaving(true);
@@ -314,6 +491,76 @@ export function UnifiedJobWorkflow() {
     }
   };
 
+  const handleDeleteJob = async () => {
+    if (!isAdminUser) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this job from active workflow? The job will be archived and removed from active queues.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingJob(true);
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/archive`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { details?: string } | null;
+        throw new Error(payload?.details || "Job could not be deleted.");
+      }
+
+      toast({ title: "Job deleted", description: "The job has been archived.", status: "success" });
+      router.push("/jobs");
+      router.refresh();
+    } catch (deleteError) {
+      toast({
+        title: "Delete failed",
+        description: deleteError instanceof Error ? deleteError.message : "Delete failed.",
+        status: "error",
+      });
+    } finally {
+      setDeletingJob(false);
+    }
+  };
+
+  const handleAutoSaveClient = async (clientId: string, clientName: string) => {
+    setSavingClient(true);
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/workflow`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, clientName }),
+      });
+      if (!response.ok) {
+        throw new Error("Client selection could not be saved.");
+      }
+      setPayload((current) =>
+        current
+          ? {
+            ...current,
+            job: {
+              ...current.job,
+              clientId,
+              clientName,
+            },
+          }
+          : current,
+      );
+    } catch (saveError) {
+      toast({
+        title: "Client save failed",
+        description: saveError instanceof Error ? saveError.message : "Save failed.",
+        status: "error",
+      });
+    } finally {
+      setSavingClient(false);
+    }
+  };
+
   const handleCreateClient = async () => {
     setSaving(true);
     try {
@@ -331,7 +578,12 @@ export function UnifiedJobWorkflow() {
       const created = (await response.json()) as ClientOption;
       await fetchWorkflow();
       setClientDrawerOpen(false);
-      setJobForm((current) => ({ ...current, clientId: created.id, clientName: created.clientName }));
+      setJobForm((current) => ({
+        ...current,
+        clientId: created.id,
+        clientName: created.clientName,
+      }));
+      await handleAutoSaveClient(created.id, created.clientName);
       toast({ title: "Client created", status: "success" });
     } catch (createError) {
       toast({ title: "Client create failed", description: createError instanceof Error ? createError.message : "Create failed.", status: "error" });
@@ -386,7 +638,7 @@ export function UnifiedJobWorkflow() {
     }
     setSaving(true);
     try {
-      const category = imageCategoryMap[selectedImageLabel] ?? selectedImageLabel.toUpperCase().replaceAll(" ", "_");
+      const category = getUploadCategoryKey(selectedImageLabel);
       const formData = new FormData();
       formData.append("file", file);
       formData.append("lotId", selectedLot.id);
@@ -608,16 +860,44 @@ export function UnifiedJobWorkflow() {
     if (!selectedSample) {
       return;
     }
+    if (draftPacketRows.length === 0) {
+      toast({ title: "No draft packets", description: "Use Auto Create Rows or Manual Add Packet first.", status: "warning" });
+      return;
+    }
+    for (const row of draftPacketRows) {
+      if (!row.packetWeight || !row.packetUnit || !row.packetUse) {
+        toast({
+          title: "Packet draft incomplete",
+          description: "Each draft packet requires weight, unit, and packet use.",
+          status: "warning",
+        });
+        return;
+      }
+    }
     setSaving(true);
     try {
       const response = await fetch("/api/rd/packet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleId: selectedSample.id, count: Number(packetCount) }),
+        body: JSON.stringify({
+          sampleId: selectedSample.id,
+          count: draftPacketRows.length,
+          packets: draftPacketRows.map((row) => ({
+            packetWeight: Number(row.packetWeight),
+            packetUnit: row.packetUnit,
+            packetUse: row.packetUse,
+            notes: row.notes || null,
+          })),
+        }),
       });
       if (!response.ok) {
-        throw new Error("Packets could not be created.");
+        const payload = (await response.json().catch(() => null)) as { details?: string; error?: string } | null;
+        throw new Error(payload?.details || payload?.error || "Packets could not be created.");
       }
+      if (draftStorageKey) {
+        window.localStorage.removeItem(draftStorageKey);
+      }
+      setDraftPacketRows([]);
       await fetchWorkflow();
       toast({ title: "Packets created", status: "success" });
     } catch (packetError) {
@@ -627,9 +907,63 @@ export function UnifiedJobWorkflow() {
     }
   };
 
+  const handleSaveDraftPackets = () => {
+    if (!draftStorageKey) {
+      return;
+    }
+    window.localStorage.setItem(draftStorageKey, JSON.stringify(draftPacketRows));
+    toast({ title: "Packet draft saved", status: "success" });
+  };
+
+  const handleAutoCreateDraftRows = () => {
+    const requested = Number.parseInt(packetCount, 10);
+    if (!Number.isInteger(requested) || requested <= 0 || requested > 50) {
+      toast({ title: "Invalid packet count", description: "Packet count must be between 1 and 50.", status: "warning" });
+      return;
+    }
+    const start = draftPacketRows.length + 1;
+    const rows: PacketDraftRow[] = Array.from({ length: requested }, (_, index) => ({
+      id: `draft-${Date.now()}-${start + index}`,
+      packetId: `Draft Packet ${start + index}`,
+      packetWeight: "",
+      packetUnit: defaultPacketUnit,
+      packetUse: "",
+      notes: "",
+      status: "Draft",
+    }));
+    setDraftPacketRows((current) => [...current, ...rows]);
+  };
+
+  const handleManualAddDraftRow = () => {
+    setDraftPacketRows((current) => [
+      ...current,
+      {
+        id: `draft-${Date.now()}-${current.length + 1}`,
+        packetId: `Draft Packet ${current.length + 1}`,
+        packetWeight: "",
+        packetUnit: defaultPacketUnit,
+        packetUse: "",
+        notes: "",
+        status: "Draft",
+      },
+    ]);
+  };
+
+  const handleRemoveDraftRow = (id: string) => {
+    setDraftPacketRows((current) => current.filter((row) => row.id !== id));
+  };
+
   const handleSavePacket = async (packetId: string) => {
     const draft = packetDrafts[packetId];
     if (!draft) {
+      return;
+    }
+    if (!draft.packetWeight || !draft.packetUnit || !draft.packetUse) {
+      toast({
+        title: "Packet incomplete",
+        description: "Packet weight, unit, and packet use are required.",
+        status: "warning",
+      });
       return;
     }
     setSaving(true);
@@ -641,6 +975,8 @@ export function UnifiedJobWorkflow() {
           packetId,
           packetWeight: draft.packetWeight,
           packetUnit: draft.packetUnit,
+          packetUse: draft.packetUse,
+          remarks: draft.notes,
         }),
       });
       if (!response.ok) {
@@ -668,8 +1004,8 @@ export function UnifiedJobWorkflow() {
     try {
       for (const packet of packets) {
         const draft = packetDrafts[packet.id];
-        if (!draft?.packetWeight || !draft?.packetUnit) {
-          throw new Error("Every packet requires packet weight and packet unit before Submit to R&D.");
+        if (!draft?.packetWeight || !draft?.packetUnit || !draft?.packetUse) {
+          throw new Error("Every packet requires weight, unit, and packet use before Submit to R&D.");
         }
         const response = await fetch("/api/rd/packet", {
           method: "PATCH",
@@ -678,6 +1014,8 @@ export function UnifiedJobWorkflow() {
             packetId: packet.id,
             packetWeight: draft.packetWeight,
             packetUnit: draft.packetUnit,
+            packetUse: draft.packetUse,
+            remarks: draft.notes,
             markSubmittedToRnd: true,
             handedOverToRndTo: rndHandoverTarget,
           }),
@@ -760,10 +1098,49 @@ export function UnifiedJobWorkflow() {
       at: workflowPayload.milestones.handedOverToRndAt ? formatDate(workflowPayload.milestones.handedOverToRndAt) : undefined,
     },
   ];
+  const workflowSections: Array<{ id: WorkflowSectionId; label: string }> = [
+    { id: "job", label: "Job Basics" },
+    { id: "lots", label: "Lots" },
+    { id: "images", label: "Images" },
+    { id: "decision", label: "Final Decision" },
+    { id: "sampling", label: "Sampling" },
+    { id: "seal", label: "Seal" },
+    { id: "packets", label: "Packets" },
+    { id: "handover", label: "Submit to R&D" },
+  ];
+
+  const focusSectionForNextAction = () => {
+    if (nextPrimaryAction === "Add Lot") {
+      setActiveSection("lots");
+      void handleCreateLot();
+      return;
+    }
+    if (nextPrimaryAction === "Submit for Decision" || nextPrimaryAction === "Pass / Hold / Reject") {
+      setActiveSection("decision");
+      return;
+    }
+    if (nextPrimaryAction === "Start Sampling") {
+      setActiveSection("sampling");
+      void handleStartSampling();
+      return;
+    }
+    if (nextPrimaryAction === "Mark Homogeneous Proof") {
+      setActiveSection("sampling");
+      void handleMarkHomogeneous();
+      return;
+    }
+    if (nextPrimaryAction === "Create Packets") {
+      setActiveSection("packets");
+      void handleCreatePackets();
+      return;
+    }
+    setActiveSection("handover");
+    void handleSubmitToRnd();
+  };
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={5}>
+      <VStack align="stretch" spacing={4}>
         <PageIdentityBar
           title="Job Workflow"
           subtitle="One guided workflow from Job Basics to Submit to R&D."
@@ -774,7 +1151,7 @@ export function UnifiedJobWorkflow() {
           ]}
           status={
             <HStack spacing={2}>
-              <Badge colorScheme="blue" variant="subtle">{job.status}</Badge>
+              <WorkflowStateChip status={job.status} />
               <Badge colorScheme="gray" variant="subtle">Current CTA: {nextPrimaryAction}</Badge>
             </HStack>
           }
@@ -782,443 +1159,699 @@ export function UnifiedJobWorkflow() {
 
         <PageActionBar
           primaryAction={
-            <Button onClick={() => {
-              if (nextPrimaryAction === "Add Lot") {
-                void handleCreateLot();
-              } else if (nextPrimaryAction === "Submit for Decision") {
-                void handleDecision("PENDING");
-              } else if (nextPrimaryAction === "Start Sampling") {
-                void handleStartSampling();
-              } else if (nextPrimaryAction === "Mark Homogeneous Proof") {
-                void handleMarkHomogeneous();
-              } else if (nextPrimaryAction === "Create Packets") {
-                void handleCreatePackets();
-              } else {
-                void handleSubmitToRnd();
-              }
-            }} isLoading={saving}>
+            <Button
+              colorScheme="blue"
+              onClick={focusSectionForNextAction}
+              isLoading={saving || deletingJob}
+              size="lg"
+              boxShadow="sm"
+            >
               {nextPrimaryAction}
             </Button>
           }
-          secondaryActions={<Text fontSize="sm" color="text.secondary">Unified execution flow with canonical routes and explicit lot linkage.</Text>}
+          secondaryActions={
+            <HStack spacing={4} flexWrap="wrap">
+              <Text fontSize="sm" color="text.secondary" fontWeight="medium">
+                Unified Workflow: {activeSection.toUpperCase()}
+              </Text>
+              {isAdminUser ? (
+                <Button
+                  size="sm"
+                  colorScheme="red"
+                  variant="ghost"
+                  onClick={() => void handleDeleteJob()}
+                  isLoading={deletingJob}
+                >
+                  Delete Job
+                </Button>
+              ) : null}
+            </HStack>
+          }
         />
 
-        <Stack direction={{ base: "column", xl: "row" }} spacing={5} align="start">
+        <Box
+          borderWidth="1px"
+          borderColor="border.default"
+          borderRadius="lg"
+          bg="bg.surface"
+          px={3}
+          py={2}
+          position="sticky"
+          top={{ base: "76px", lg: "88px" }}
+          zIndex={2}
+        >
+          <Tabs variant="line-enterprise" index={Math.max(workflowSections.findIndex((section) => section.id === activeSection), 0)}>
+            <TabList overflowX="auto" overflowY="hidden">
+              {workflowSections.map((section) => (
+                <Tab
+                  key={section.id}
+                  whiteSpace="nowrap"
+                  onClick={() => setActiveSection(section.id)}
+                >
+                  {section.label}
+                </Tab>
+              ))}
+            </TabList>
+          </Tabs>
+        </Box>
+
+        <Stack direction={{ base: "column", xl: "row" }} spacing={4} align="start">
           <VStack align="stretch" spacing={4} flex="1">
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">1. Job Basics</Heading>
-                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
-                      <FormLabel>Client Name</FormLabel>
-                      <Select
-                        value={jobForm.clientId}
-                        onChange={(event) => {
-                          const selectedClient = clients.find((client) => client.id === event.target.value);
-                          setJobForm((current) => ({
-                            ...current,
-                            clientId: event.target.value,
-                            clientName: selectedClient?.clientName ?? current.clientName,
-                          }));
-                        }}
-                      >
-                        <option value="">Select client</option>
-                        {clients.map((client) => (
-                          <option key={client.id} value={client.id}>{client.clientName}</option>
-                        ))}
-                      </Select>
-                      <Button mt={2} size="sm" variant="outline" onClick={() => setClientDrawerOpen(true)}>
-                        Add New Client
-                      </Button>
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Item</FormLabel>
-                      <Select
-                        value={jobForm.commodity}
-                        onChange={(event) => setJobForm((current) => ({ ...current, commodity: event.target.value }))}
-                      >
-                        <option value="">Select item</option>
-                        {items.map((item) => (
-                          <option key={item.id} value={item.itemName}>{item.itemName}</option>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Assigned user</FormLabel>
-                      <Input value={job.assignedTo?.profile?.displayName ?? "Current user"} isReadOnly />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Deadline</FormLabel>
-                      <Input type="date" value={jobForm.deadline} onChange={(event) => setJobForm((current) => ({ ...current, deadline: event.target.value }))} />
-                    </FormControl>
-                  </SimpleGrid>
-                  <Button alignSelf="start" onClick={() => void handleSaveJobBasics()} isLoading={saving}>Save Job</Button>
-                </VStack>
-              </CardBody>
-            </Card>
-
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">2. Lots</Heading>
-                  <HStack spacing={2} flexWrap="wrap">
-                    {(job.lots ?? []).map((lot) => (
-                      <Button key={lot.id} size="sm" variant={selectedLot?.id === lot.id ? "solid" : "outline"} onClick={() => setSelectedLotId(lot.id)}>
-                        {lot.lotNumber}
-                      </Button>
-                    ))}
-                  </HStack>
-                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
-                      <FormLabel>Lot Number</FormLabel>
-                      <Input
-                        value={lotForm.lotNumber}
-                        onChange={(event) => setLotForm((current) => ({ ...current, lotNumber: event.target.value }))}
-                        isReadOnly={settings.workflow.autoLotNumbering}
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Quantity Mode</FormLabel>
-                      <Select value={lotForm.quantityMode} onChange={(event) => setLotForm((current) => ({ ...current, quantityMode: event.target.value }))}>
-                        <option value="SINGLE_PIECE">Single piece</option>
-                        <option value="MULTI_WEIGHT">Multi-weight</option>
-                      </Select>
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Material Name</FormLabel>
-                      <Input value={lotForm.materialName} onChange={(event) => setLotForm((current) => ({ ...current, materialName: event.target.value }))} />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>{lotForm.quantityMode === "MULTI_WEIGHT" ? "Bag Rows" : "Total Bags"}</FormLabel>
-                      <Input value={lotForm.totalBags} onChange={(event) => setLotForm((current) => ({ ...current, totalBags: event.target.value }))} />
-                    </FormControl>
-                  </SimpleGrid>
-                  {lotForm.quantityMode === "MULTI_WEIGHT" ? (
-                    <Text fontSize="sm" color="text.secondary">Multi-weight lots capture gross/net/tare per bag row. Lot-level summary is derived.</Text>
-                  ) : null}
-                  <Button alignSelf="start" onClick={() => void handleCreateLot()} isLoading={saving}>Add Lot</Button>
-                </VStack>
-              </CardBody>
-            </Card>
-
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">3. Images</Heading>
-                  {!selectedLot ? (
-                    <EmptyWorkState title="No lot selected" description="Select a lot to capture required images." />
-                  ) : (
-                    <EnterpriseStickyTable>
-                      <Table size="sm">
-                        <Thead>
-                          <Tr>
-                            <Th>Image Category</Th>
-                            <Th>Status</Th>
-                            <Th>Action</Th>
-                          </Tr>
-                        </Thead>
-                        <Tbody>
-                          {settings.images.requiredImageCategories.map((label) => {
-                            const uploadCategory = imageCategoryMap[label] ?? label.toUpperCase().replaceAll(" ", "_");
-                            const exists = selectedLot.mediaFiles?.some((file) => file.category === uploadCategory);
-                            return (
-                              <Tr key={label}>
-                                <Td>{label}</Td>
-                                <Td>
-                                  <Badge colorScheme={exists ? "green" : "orange"}>{exists ? "Uploaded" : "Missing"}</Badge>
-                                </Td>
-                                <Td>
-                                  <Button
-                                    size="xs"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setSelectedImageLabel(label);
-                                      fileRef.current?.click();
-                                    }}
-                                  >
-                                    Upload Images
-                                  </Button>
-                                </Td>
-                              </Tr>
-                            );
-                          })}
-                        </Tbody>
-                      </Table>
-                    </EnterpriseStickyTable>
-                  )}
-                  {settings.images.imageTimestampRequired ? (
-                    <Text fontSize="sm" color="text.secondary">Timestamp overlay is enabled for image capture in this company configuration.</Text>
-                  ) : null}
-                  {settings.ui.showOptionalImageSection && settings.images.optionalImageCategories.length > 0 ? (
-                    <Box>
-                      <Text fontSize="sm" fontWeight="medium" color="text.primary" mb={2}>
-                        Optional Images
-                      </Text>
-                      <VStack align="stretch" spacing={1}>
-                        {settings.images.optionalImageCategories.map((label) => (
-                          <Text key={label} fontSize="sm" color="text.secondary">
-                            {label}
-                          </Text>
-                        ))}
-                      </VStack>
-                    </Box>
-                  ) : null}
-                </VStack>
-              </CardBody>
-            </Card>
-
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">4. Final Decision</Heading>
-                  {!selectedLot ? (
-                    <EmptyWorkState title="No lot selected" description="Select a lot to submit or approve the decision." />
-                  ) : (
-                    <>
-                      <Text fontSize="sm" color="text.secondary">
-                        Operations submit lots for decision. Final Pass, Hold, and Reject are controlled by the configured approver policy.
-                      </Text>
-                      <HStack spacing={3} flexWrap="wrap">
-                        <Button variant="outline" onClick={() => void handleDecision("PENDING")} isLoading={saving}>
-                          Submit for Decision
-                        </Button>
-                        {canApproveFinalDecision(currentUser?.role, settings.workflow.finalDecisionApproverPolicy) ? (
-                          <>
-                            <Button onClick={() => void handleDecision("READY_FOR_SAMPLING")} isLoading={saving}>Pass</Button>
-                            <Button colorScheme="yellow" onClick={() => void handleDecision("ON_HOLD")} isLoading={saving}>Hold</Button>
-                            <Button colorScheme="red" onClick={() => void handleDecision("REJECTED")} isLoading={saving}>Reject</Button>
-                          </>
-                        ) : null}
-                      </HStack>
-                      <Text fontSize="sm" color="text.secondary">
-                        Current Decision: {selectedLot.inspection?.decisionStatus?.replaceAll("_", " ") ?? "PENDING"}
-                      </Text>
-                    </>
-                  )}
-                </VStack>
-              </CardBody>
-            </Card>
-
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">5. Sampling</Heading>
-                  {!selectedLot ? (
-                    <EmptyWorkState title="No lot selected" description="Select a lot to manage sample details." />
-                  ) : (
-                    <>
-                      {!selectedSample ? (
-                        <Button alignSelf="start" onClick={() => void handleStartSampling()} isLoading={saving}>Start Sampling</Button>
-                      ) : null}
-                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl>
-                          <FormLabel>Sample ID</FormLabel>
-                          <Input
-                            value={
-                              selectedSample?.sampleCode ??
-                              (settings.workflow.autoSampleIdGeneration ? "Auto generated after start" : sampleForm.sampleCode)
-                            }
-                            isReadOnly={settings.workflow.autoSampleIdGeneration || Boolean(selectedSample?.sampleCode)}
-                            onChange={(event) => setSampleForm((current) => ({ ...current, sampleCode: event.target.value }))}
-                            placeholder={settings.workflow.autoSampleIdGeneration ? "Auto generated after start" : "Enter Sample ID"}
-                          />
-                        </FormControl>
-                        <FormControl>
-                          <FormLabel>Container Type</FormLabel>
-                          <Select value={sampleForm.containerType} onChange={(event) => setSampleForm((current) => ({ ...current, containerType: event.target.value }))}>
-                            <option value="">Select container</option>
-                            {containerTypes.map((containerType) => (
-                              <option key={containerType.id} value={containerType.name}>{containerType.name}</option>
-                            ))}
-                          </Select>
-                        </FormControl>
-                        <FormControl>
-                          <FormLabel>Sample Type</FormLabel>
-                          <Input value={sampleForm.sampleType} onChange={(event) => setSampleForm((current) => ({ ...current, sampleType: event.target.value }))} />
-                        </FormControl>
-                        <FormControl>
-                          <FormLabel>Sampling Method</FormLabel>
-                          <Input value={sampleForm.samplingMethod} onChange={(event) => setSampleForm((current) => ({ ...current, samplingMethod: event.target.value }))} />
-                        </FormControl>
-                      </SimpleGrid>
-                      <HStack spacing={3} flexWrap="wrap">
-                        <Button onClick={() => void handleSaveSample()} isLoading={saving}>Save Sampling</Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => void handleMarkHomogeneous()}
-                          isLoading={saving}
-                          isDisabled={!settings.sampling.homogeneousProofRequired}
+            {activeSection === "job" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">1. Job Basics</Heading>
+                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                      <FormControl>
+                        <FormLabel>Client Name</FormLabel>
+                        <Select
+                          value={jobForm.clientId}
+                          isDisabled={savingClient}
+                          onChange={(event) => {
+                            const nextClientId = event.target.value;
+                            const selectedClient = clients.find((client) => client.id === nextClientId);
+                            const nextClientName = selectedClient?.clientName ?? "";
+                            setJobForm((current) => ({
+                              ...current,
+                              clientId: nextClientId,
+                              clientName: nextClientName,
+                            }));
+                            void handleAutoSaveClient(nextClientId, nextClientName);
+                          }}
                         >
-                          Mark Homogeneous Proof
+                          <option value="">Select client</option>
+                          {clients.map((client) => (
+                            <option key={client.id} value={client.id}>{client.clientName}</option>
+                          ))}
+                        </Select>
+                        <FormHelperText>Client selection auto-saves immediately.</FormHelperText>
+                        <Button mt={2} size="sm" variant="outline" onClick={() => setClientDrawerOpen(true)}>
+                          Add New Client
                         </Button>
-                      </HStack>
-                    </>
-                  )}
-                </VStack>
-              </CardBody>
-            </Card>
-
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">6. Seal</Heading>
-                  {!selectedLot ? (
-                    <EmptyWorkState title="No lot selected" description="Select a lot to manage seal flow." />
-                  ) : (
-                    <>
-                      <HStack spacing={3} flexWrap="wrap">
-                        <SealScanner onScanned={(sealNo) => void handleSaveSeal(sealNo)} onManualConfirm={(sealNo) => void handleSaveSeal(sealNo)} isDisabled={!settings.seal.sealScanRequired && Boolean(selectedSample?.sealLabel?.sealNo)} />
-                        <Button
-                          variant="outline"
-                          onClick={() => void handleGenerateSealsForAll()}
-                          isLoading={saving}
-                          isDisabled={!settings.seal.bulkSealGenerationEnabled}
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Item</FormLabel>
+                        <Select
+                          value={jobForm.commodity}
+                          onChange={(event) => setJobForm((current) => ({ ...current, commodity: event.target.value }))}
                         >
-                          Generate Seal Numbers
+                          <option value="">Select item</option>
+                          {items.map((item) => (
+                            <option key={item.id} value={item.itemName}>{item.itemName}</option>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Assigned user</FormLabel>
+                        <Input value={job.assignedTo?.profile?.displayName ?? "Current user"} isReadOnly />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Deadline</FormLabel>
+                        <Input type="date" value={jobForm.deadline} onChange={(event) => setJobForm((current) => ({ ...current, deadline: event.target.value }))} />
+                      </FormControl>
+                    </SimpleGrid>
+                    <Button alignSelf="start" onClick={() => void handleSaveJobBasics()} isLoading={saving}>Save Job</Button>
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {activeSection === "lots" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">2. Lots</Heading>
+                    <HStack spacing={2} flexWrap="wrap">
+                      {(job.lots ?? []).map((lot) => (
+                        <Button key={lot.id} size="sm" variant={selectedLot?.id === lot.id ? "solid" : "outline"} onClick={() => setSelectedLotId(lot.id)}>
+                          {lot.lotNumber}
                         </Button>
-                      </HStack>
+                      ))}
+                    </HStack>
+                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                      <FormControl>
+                        <FormLabel>Lot Number</FormLabel>
+                        <Input
+                          value={lotForm.lotNumber}
+                          onChange={(event) => setLotForm((current) => ({ ...current, lotNumber: event.target.value }))}
+                          isReadOnly={settings.workflow.autoLotNumbering}
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Quantity Mode</FormLabel>
+                        <Select value={lotForm.quantityMode} onChange={(event) => setLotForm((current) => ({ ...current, quantityMode: event.target.value }))}>
+                          <option value="SINGLE_PIECE">Single piece</option>
+                          <option value="MULTI_WEIGHT">Multi-weight</option>
+                        </Select>
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Material Name</FormLabel>
+                        <Input value={lotForm.materialName} onChange={(event) => setLotForm((current) => ({ ...current, materialName: event.target.value }))} />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>{lotForm.quantityMode === "MULTI_WEIGHT" ? "Bag Rows" : "Total Bags"}</FormLabel>
+                        <Input value={lotForm.totalBags} onChange={(event) => setLotForm((current) => ({ ...current, totalBags: event.target.value }))} />
+                      </FormControl>
+                    </SimpleGrid>
+                    {lotForm.quantityMode === "MULTI_WEIGHT" ? (
+                      <Text fontSize="sm" color="text.secondary">Multi-weight lots capture gross/net/tare per bag row. Lot-level summary is derived.</Text>
+                    ) : null}
+                    <Button alignSelf="start" onClick={() => void handleCreateLot()} isLoading={saving}>Add Lot</Button>
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {activeSection === "images" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">3. Images</Heading>
+                    {!selectedLot ? (
+                      <EmptyWorkState title="No lot selected" description="Select a lot to capture required images." />
+                    ) : (
                       <EnterpriseStickyTable>
                         <Table size="sm">
                           <Thead>
                             <Tr>
-                              <Th>Lot No</Th>
-                              <Th>Bag No</Th>
-                              <Th>Weight</Th>
-                              <Th>Gross</Th>
-                              <Th>Net</Th>
-                              <Th>Seal No</Th>
-                            </Tr>
-                          </Thead>
-                          <Tbody>
-                            {(job.lots ?? []).flatMap((lot) =>
-                              (lot.bags?.length ? lot.bags : [{ id: lot.id, bagNumber: 1, grossWeight: lot.grossWeight ?? null, netWeight: lot.netWeight ?? null }]).map((bag) => (
-                                <Tr key={`${lot.id}-${bag.id}`}>
-                                  <Td>{lot.lotNumber}</Td>
-                                  <Td>{bag.bagNumber}</Td>
-                                  <Td>{lot.weightUnit ?? "KG"}</Td>
-                                  <Td>{bag.grossWeight ?? "Not Available"}</Td>
-                                  <Td>{bag.netWeight ?? "Not Available"}</Td>
-                                  <Td>{lot.sample?.sealLabel?.sealNo ?? lot.sealNumber ?? "Not Available"}</Td>
-                                </Tr>
-                              )),
-                            )}
-                          </Tbody>
-                        </Table>
-                      </EnterpriseStickyTable>
-                    </>
-                  )}
-                </VStack>
-              </CardBody>
-            </Card>
-
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">7. Packets</Heading>
-                  {!selectedSample ? (
-                    <EmptyWorkState title="Sample required" description="Start sampling before creating packets." />
-                  ) : (
-                    <>
-                      <VStack align="stretch" spacing={3}>
-                        <HStack spacing={3} align="end">
-                          <FormControl maxW="160px">
-                            <FormLabel mb={1}>Packets to create</FormLabel>
-                            <Input
-                              value={packetCount}
-                              onChange={(event) => setPacketCount(event.target.value)}
-                              aria-label="Packets to create"
-                            />
-                          </FormControl>
-                          <Button onClick={() => void handleCreatePackets()} isLoading={saving}>Create Packets</Button>
-                        </HStack>
-                        <Text fontSize="sm" color="text.secondary">
-                          This number is how many new packet rows will be created for the current sample.
-                          {selectedSample?.sampleQuantity !== null && selectedSample?.sampleQuantity !== undefined
-                            ? ` Current sample quantity: ${selectedSample.sampleQuantity} ${selectedSample.sampleUnit ?? "KG"}.`
-                            : ""}
-                        </Text>
-                      </VStack>
-                      <EnterpriseStickyTable>
-                        <Table size="sm">
-                          <Thead>
-                            <Tr>
-                              <Th>Packet</Th>
-                              <Th>Weight</Th>
-                              <Th>Unit</Th>
+                              <Th>Image Category</Th>
                               <Th>Status</Th>
                               <Th>Action</Th>
                             </Tr>
                           </Thead>
                           <Tbody>
-                            {packets.map((packet) => (
-                              <Tr key={packet.id}>
-                                <Td>{packet.packetCode}</Td>
-                                <Td>
-                                  <Input
-                                    size="sm"
-                                    value={packetDrafts[packet.id]?.packetWeight ?? ""}
-                                    onChange={(event) =>
-                                      setPacketDrafts((current) => ({
-                                        ...current,
-                                        [packet.id]: { ...current[packet.id], packetWeight: event.target.value },
-                                      }))
-                                    }
-                                  />
-                                </Td>
-                                <Td>
-                                  <Select
-                                    size="sm"
-                                    value={packetDrafts[packet.id]?.packetUnit ?? "KG"}
-                                    onChange={(event) =>
-                                      setPacketDrafts((current) => ({
-                                        ...current,
-                                        [packet.id]: { ...current[packet.id], packetUnit: event.target.value },
-                                      }))
-                                    }
-                                  >
-                                    <option value="KG">KG</option>
-                                    <option value="G">G</option>
-                                    <option value="PCS">PCS</option>
-                                  </Select>
-                                </Td>
-                                <Td><Badge variant="subtle">{packet.packetStatus.replaceAll("_", " ")}</Badge></Td>
-                                <Td><Button size="xs" variant="outline" onClick={() => void handleSavePacket(packet.id)} isLoading={saving}>Save Packet</Button></Td>
-                              </Tr>
-                            ))}
+                            {settings.images.requiredImageCategories.map((label) => {
+                              const uploadCategory = getUploadCategoryKey(label);
+                              const exists = selectedLot.mediaFiles?.some((file) => file.category === uploadCategory);
+                              return (
+                                <Tr key={label}>
+                                  <Td>{label}</Td>
+                                  <Td>
+                                    <Badge colorScheme={exists ? "green" : "orange"}>{exists ? "Uploaded" : "Missing"}</Badge>
+                                  </Td>
+                                  <Td>
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedImageLabel(label);
+                                        fileRef.current?.click();
+                                      }}
+                                    >
+                                      Upload Images
+                                    </Button>
+                                  </Td>
+                                </Tr>
+                              );
+                            })}
                           </Tbody>
                         </Table>
                       </EnterpriseStickyTable>
-                    </>
-                  )}
-                </VStack>
-              </CardBody>
-            </Card>
+                    )}
+                    {settings.images.imageTimestampRequired ? (
+                      <Text fontSize="sm" color="text.secondary">Timestamp overlay is enabled for image capture in this company configuration.</Text>
+                    ) : null}
+                    {settings.ui.showOptionalImageSection && settings.images.optionalImageCategories.length > 0 ? (
+                      <Box>
+                        <Text fontSize="sm" fontWeight="medium" color="text.primary" mb={2}>
+                          Optional Images
+                        </Text>
+                        <VStack align="stretch" spacing={1}>
+                          {settings.images.optionalImageCategories.map((label) => (
+                            <Text key={label} fontSize="sm" color="text.secondary">
+                              {label}
+                            </Text>
+                          ))}
+                        </VStack>
+                      </Box>
+                    ) : null}
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
 
-            <Card variant="outline">
-              <CardBody>
-                <VStack align="stretch" spacing={4}>
-                  <Heading as="h2" size="md">8. Submit to R&amp;D</Heading>
-                  <Text fontSize="sm" color="text.secondary">
-                    This is the terminal operations action. Every packet must carry packet weight and packet unit before submission.
-                  </Text>
-                  <FormControl maxW={{ base: "full", md: "320px" }} isRequired>
-                    <FormLabel>Hand Over To</FormLabel>
-                    <Select value={rndHandoverTarget} onChange={(event) => setRndHandoverTarget(event.target.value)}>
-                      <option value="">Select R&amp;D user</option>
-                      {rndAssignees.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.displayName}
-                        </option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <Button alignSelf="start" onClick={() => void handleSubmitToRnd()} isLoading={saving} isDisabled={!packets.length || !rndHandoverTarget}>
-                    Submit to R&amp;D
-                  </Button>
-                </VStack>
-              </CardBody>
-            </Card>
+            {activeSection === "decision" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">4. Final Decision</Heading>
+                    {!selectedLot ? (
+                      <EmptyWorkState title="No lot selected" description="Select a lot to submit or approve the decision." />
+                    ) : (
+                      <>
+                        <Text fontSize="sm" color="text.secondary">
+                          Operations submit lots for decision only after required proof is complete. Final Pass, Hold, and Reject are controlled by the configured approver policy.
+                        </Text>
+                        {missingRequiredImageProof.length > 0 ? (
+                          <Text fontSize="sm" color="orange.600">
+                            Missing required proof: {missingRequiredImageProof.join(", ")}.
+                          </Text>
+                        ) : null}
+                        <HStack spacing={3} flexWrap="wrap">
+                          <Button
+                            variant="outline"
+                            onClick={() => void handleDecision("PENDING")}
+                            isLoading={saving}
+                            isDisabled={missingRequiredImageProof.length > 0}
+                          >
+                            Submit for Decision
+                          </Button>
+                          {canApproveFinalDecision(currentUser?.role, settings.workflow.finalDecisionApproverPolicy) ? (
+                            <>
+                              <Button
+                                onClick={() => void handleDecision("READY_FOR_SAMPLING")}
+                                isLoading={saving}
+                                isDisabled={missingRequiredImageProof.length > 0}
+                              >
+                                Pass
+                              </Button>
+                              <Button colorScheme="yellow" onClick={() => void handleDecision("ON_HOLD")} isLoading={saving}>Hold</Button>
+                              <Button colorScheme="red" onClick={() => void handleDecision("REJECTED")} isLoading={saving}>Reject</Button>
+                            </>
+                          ) : null}
+                        </HStack>
+                        <Text fontSize="sm" color="text.secondary">
+                          Current Decision: {selectedLot.inspection?.decisionStatus?.replaceAll("_", " ") ?? "PENDING"}
+                        </Text>
+                      </>
+                    )}
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {activeSection === "sampling" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">5. Sampling</Heading>
+                    {!selectedLot ? (
+                      <EmptyWorkState title="No lot selected" description="Select a lot to manage sample details." />
+                    ) : (
+                      <>
+                        {!selectedSample ? (
+                          <Button alignSelf="start" onClick={() => void handleStartSampling()} isLoading={saving}>Start Sampling</Button>
+                        ) : null}
+                        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                          <FormControl>
+                            <FormLabel>Sample ID</FormLabel>
+                            <Input
+                              value={
+                                selectedSample?.sampleCode ??
+                                (settings.workflow.autoSampleIdGeneration ? "Auto generated after start" : sampleForm.sampleCode)
+                              }
+                              isReadOnly={settings.workflow.autoSampleIdGeneration || Boolean(selectedSample?.sampleCode)}
+                              onChange={(event) => setSampleForm((current) => ({ ...current, sampleCode: event.target.value }))}
+                              placeholder={settings.workflow.autoSampleIdGeneration ? "Auto generated after start" : "Enter Sample ID"}
+                            />
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel>Container Type</FormLabel>
+                            <Select value={sampleForm.containerType} onChange={(event) => setSampleForm((current) => ({ ...current, containerType: event.target.value }))}>
+                              <option value="">Select container</option>
+                              {containerTypes.map((containerType) => (
+                                <option key={containerType.id} value={containerType.name}>{containerType.name}</option>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel>Sample Type</FormLabel>
+                            <Input value={sampleForm.sampleType} onChange={(event) => setSampleForm((current) => ({ ...current, sampleType: event.target.value }))} />
+                          </FormControl>
+                          <FormControl>
+                            <FormLabel>Sampling Method</FormLabel>
+                            <Input value={sampleForm.samplingMethod} onChange={(event) => setSampleForm((current) => ({ ...current, samplingMethod: event.target.value }))} />
+                          </FormControl>
+                        </SimpleGrid>
+                        <HStack spacing={3} flexWrap="wrap">
+                          <Button onClick={() => void handleSaveSample()} isLoading={saving}>Save Sampling</Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => void handleMarkHomogeneous()}
+                            isLoading={saving}
+                            isDisabled={!settings.sampling.homogeneousProofRequired}
+                          >
+                            Mark Homogeneous Proof
+                          </Button>
+                        </HStack>
+                      </>
+                    )}
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {activeSection === "seal" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">6. Seal</Heading>
+                    {!selectedLot ? (
+                      <EmptyWorkState title="No lot selected" description="Select a lot to manage seal flow." />
+                    ) : (
+                      <>
+                        <HStack spacing={3} flexWrap="wrap">
+                          <SealScanner onScanned={(sealNo) => void handleSaveSeal(sealNo)} onManualConfirm={(sealNo) => void handleSaveSeal(sealNo)} isDisabled={!settings.seal.sealScanRequired && Boolean(selectedSample?.sealLabel?.sealNo)} />
+                          <Button
+                            variant="outline"
+                            onClick={() => void handleGenerateSealsForAll()}
+                            isLoading={saving}
+                            isDisabled={!settings.seal.bulkSealGenerationEnabled}
+                          >
+                            Generate Seal Numbers
+                          </Button>
+                        </HStack>
+                        <EnterpriseStickyTable>
+                          <Table size="sm">
+                            <Thead>
+                              <Tr>
+                                <Th>Lot No</Th>
+                                <Th>Bag No</Th>
+                                <Th>Weight</Th>
+                                <Th>Gross</Th>
+                                <Th>Net</Th>
+                                <Th>Seal No</Th>
+                              </Tr>
+                            </Thead>
+                            <Tbody>
+                              {(job.lots ?? []).flatMap((lot) =>
+                                (lot.bags?.length ? lot.bags : [{ id: lot.id, bagNumber: 1, grossWeight: lot.grossWeight ?? null, netWeight: lot.netWeight ?? null }]).map((bag) => (
+                                  <Tr key={`${lot.id}-${bag.id}`}>
+                                    <Td>{lot.lotNumber}</Td>
+                                    <Td>{bag.bagNumber}</Td>
+                                    <Td>{lot.weightUnit ?? "KG"}</Td>
+                                    <Td>{bag.grossWeight ?? "Not Available"}</Td>
+                                    <Td>{bag.netWeight ?? "Not Available"}</Td>
+                                    <Td>{lot.sample?.sealLabel?.sealNo ?? lot.sealNumber ?? "Not Available"}</Td>
+                                  </Tr>
+                                )),
+                              )}
+                            </Tbody>
+                          </Table>
+                        </EnterpriseStickyTable>
+                      </>
+                    )}
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {activeSection === "packets" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">7. Packet Creation</Heading>
+                    {!selectedSample ? (
+                      <EmptyWorkState title="Sample required" description="Start sampling before creating packets." />
+                    ) : (
+                      <>
+                        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={3}>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Job Number</Text>
+                            <Text fontWeight="semibold">{job.inspectionSerialNumber || job.jobReferenceNumber || "Not Available"}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Lot Number</Text>
+                            <Text fontWeight="semibold">{selectedLot?.lotNumber ?? "Not Available"}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Sample ID</Text>
+                            <Text fontWeight="semibold">{selectedSample.sampleCode || "Not Available"}</Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Available Sample Quantity</Text>
+                            <Text fontWeight="semibold">
+                              {selectedSample.sampleQuantity ?? "Not Available"} {selectedSample.sampleUnit ?? ""}
+                            </Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Container / Seal</Text>
+                            <Text fontWeight="semibold">
+                              {selectedSample.containerType || "Container not set"} / {selectedSample.sealLabel?.sealNo || selectedLot?.sealNumber || "Seal pending"}
+                            </Text>
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Current Stage</Text>
+                            <Text fontWeight="semibold">{workflowPayload.workflowStage}</Text>
+                          </Box>
+                        </SimpleGrid>
+
+                        {packetStageBlockers.length > 0 ? (
+                          <ExceptionBanner
+                            title="Packet blockers"
+                            description={packetStageBlockers.join(" ")}
+                            status="warning"
+                          />
+                        ) : null}
+
+                        {packetAllocation ? (
+                          <HStack
+                            spacing={4}
+                            borderWidth="1px"
+                            borderColor={packetAllocation.overAllocated ? "red.300" : "border.default"}
+                            borderRadius="lg"
+                            px={3}
+                            py={2}
+                            wrap="wrap"
+                          >
+                            <Text fontSize="sm">Available: <Text as="span" fontWeight="semibold">{packetAllocation.available} {packetAllocation.unit}</Text></Text>
+                            <Text fontSize="sm">Allocated: <Text as="span" fontWeight="semibold">{packetAllocation.allocated.toFixed(2)} {packetAllocation.unit}</Text></Text>
+                            <Text fontSize="sm">Remaining: <Text as="span" fontWeight="semibold">{packetAllocation.remaining.toFixed(2)} {packetAllocation.unit}</Text></Text>
+                            {packetAllocation.overAllocated ? <Badge colorScheme="red">Over-allocated</Badge> : <Badge colorScheme="green">Within limit</Badge>}
+                          </HStack>
+                        ) : null}
+
+                        <VStack align="stretch" spacing={3}>
+                          <HStack spacing={3} align="end">
+                            <FormControl maxW="160px">
+                              <FormLabel mb={1}>Packets to create</FormLabel>
+                              <Input
+                                value={packetCount}
+                                onChange={(event) => setPacketCount(event.target.value)}
+                                aria-label="Packets to create"
+                              />
+                            </FormControl>
+                            <FormControl maxW="160px">
+                              <FormLabel mb={1}>Default Unit</FormLabel>
+                              <Select value={defaultPacketUnit} onChange={(event) => setDefaultPacketUnit(event.target.value)}>
+                                <option value="KG">KG</option>
+                                <option value="G">G</option>
+                                <option value="PCS">PCS</option>
+                              </Select>
+                            </FormControl>
+                            <Button onClick={handleAutoCreateDraftRows} isDisabled={packetStageBlockers.length > 0}>Auto Create Rows</Button>
+                            <Button variant="outline" onClick={handleManualAddDraftRow} isDisabled={packetStageBlockers.length > 0}>Manual Add Packet</Button>
+                          </HStack>
+                          <Text fontSize="sm" color="text.secondary">
+                            Create draft rows first, then enter packet weight, unit, and packet use. Drafts do not create records until you click Create Packets.
+                          </Text>
+                        </VStack>
+
+                        <EnterpriseStickyTable>
+                          <Table size="sm">
+                            <Thead>
+                              <Tr>
+                                <Th>Packet ID</Th>
+                                <Th>Packet Weight</Th>
+                                <Th>Unit</Th>
+                                <Th>Packet Use</Th>
+                                <Th>Notes</Th>
+                                <Th>Status</Th>
+                                <Th>Action</Th>
+                              </Tr>
+                            </Thead>
+                            <Tbody>
+                              {draftPacketRows.length > 0
+                                ? draftPacketRows.map((row) => (
+                                  <Tr key={row.id}>
+                                    <Td>{row.packetId}</Td>
+                                    <Td>
+                                      <Input
+                                        size="sm"
+                                        value={row.packetWeight}
+                                        onChange={(event) =>
+                                          setDraftPacketRows((current) =>
+                                            current.map((entry) =>
+                                              entry.id === row.id ? { ...entry, packetWeight: event.target.value } : entry,
+                                            ),
+                                          )
+                                        }
+                                      />
+                                    </Td>
+                                    <Td>
+                                      <Select
+                                        size="sm"
+                                        value={row.packetUnit}
+                                        onChange={(event) =>
+                                          setDraftPacketRows((current) =>
+                                            current.map((entry) =>
+                                              entry.id === row.id ? { ...entry, packetUnit: event.target.value } : entry,
+                                            ),
+                                          )
+                                        }
+                                      >
+                                        <option value="KG">KG</option>
+                                        <option value="G">G</option>
+                                        <option value="PCS">PCS</option>
+                                      </Select>
+                                    </Td>
+                                    <Td>
+                                      <Select
+                                        size="sm"
+                                        value={row.packetUse}
+                                        onChange={(event) =>
+                                          setDraftPacketRows((current) =>
+                                            current.map((entry) =>
+                                              entry.id === row.id ? { ...entry, packetUse: event.target.value as PacketUse } : entry,
+                                            ),
+                                          )
+                                        }
+                                      >
+                                        <option value="">Select use</option>
+                                        <option value="TESTING">Testing</option>
+                                        <option value="RETAIN">Retain</option>
+                                        <option value="BACKUP">Backup</option>
+                                        <option value="REFERENCE">Reference</option>
+                                      </Select>
+                                    </Td>
+                                    <Td>
+                                      <Input
+                                        size="sm"
+                                        value={row.notes}
+                                        onChange={(event) =>
+                                          setDraftPacketRows((current) =>
+                                            current.map((entry) =>
+                                              entry.id === row.id ? { ...entry, notes: event.target.value } : entry,
+                                            ),
+                                          )
+                                        }
+                                      />
+                                    </Td>
+                                    <Td><Badge colorScheme="gray">Draft</Badge></Td>
+                                    <Td><Button size="xs" variant="outline" onClick={() => handleRemoveDraftRow(row.id)}>Remove</Button></Td>
+                                  </Tr>
+                                ))
+                                : packets.map((packet) => (
+                                  <Tr key={packet.id}>
+                                    <Td>{packet.packetCode}</Td>
+                                    <Td>
+                                      <Input
+                                        size="sm"
+                                        value={packetDrafts[packet.id]?.packetWeight ?? ""}
+                                        onChange={(event) =>
+                                          setPacketDrafts((current) => ({
+                                            ...current,
+                                            [packet.id]: { ...current[packet.id], packetWeight: event.target.value },
+                                          }))
+                                        }
+                                      />
+                                    </Td>
+                                    <Td>
+                                      <Select
+                                        size="sm"
+                                        value={packetDrafts[packet.id]?.packetUnit ?? "KG"}
+                                        onChange={(event) =>
+                                          setPacketDrafts((current) => ({
+                                            ...current,
+                                            [packet.id]: { ...current[packet.id], packetUnit: event.target.value },
+                                          }))
+                                        }
+                                      >
+                                        <option value="KG">KG</option>
+                                        <option value="G">G</option>
+                                        <option value="PCS">PCS</option>
+                                      </Select>
+                                    </Td>
+                                    <Td>
+                                      <Select
+                                        size="sm"
+                                        value={packetDrafts[packet.id]?.packetUse ?? ""}
+                                        onChange={(event) =>
+                                          setPacketDrafts((current) => ({
+                                            ...current,
+                                            [packet.id]: { ...current[packet.id], packetUse: event.target.value as PacketUse },
+                                          }))
+                                        }
+                                      >
+                                        <option value="">Select use</option>
+                                        <option value="TESTING">Testing</option>
+                                        <option value="RETAIN">Retain</option>
+                                        <option value="BACKUP">Backup</option>
+                                        <option value="REFERENCE">Reference</option>
+                                      </Select>
+                                    </Td>
+                                    <Td>
+                                      <Input
+                                        size="sm"
+                                        value={packetDrafts[packet.id]?.notes ?? ""}
+                                        onChange={(event) =>
+                                          setPacketDrafts((current) => ({
+                                            ...current,
+                                            [packet.id]: { ...current[packet.id], notes: event.target.value },
+                                          }))
+                                        }
+                                      />
+                                    </Td>
+                                    <Td><Badge variant="subtle">{packet.packetStatus.replaceAll("_", " ")}</Badge></Td>
+                                    <Td><Button size="xs" variant="outline" onClick={() => void handleSavePacket(packet.id)} isLoading={saving}>Save Packet</Button></Td>
+                                  </Tr>
+                                ))}
+                            </Tbody>
+                          </Table>
+                        </EnterpriseStickyTable>
+                        <HStack spacing={3}>
+                          <Button variant="outline" onClick={handleSaveDraftPackets} isDisabled={draftPacketRows.length === 0}>
+                            Save Draft
+                          </Button>
+                          <Button onClick={() => void handleCreatePackets()} isLoading={saving} isDisabled={draftPacketRows.length === 0 || packetStageBlockers.length > 0}>
+                            Create Packets
+                          </Button>
+                        </HStack>
+                      </>
+                    )}
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {activeSection === "handover" ? (
+              <Card variant="outline">
+                <CardBody>
+                  <VStack align="stretch" spacing={4}>
+                    <Heading as="h2" size="md">8. Submit to R&amp;D</Heading>
+                    <Text fontSize="sm" color="text.secondary">
+                      This is the terminal operations action. Every packet must carry packet weight, unit, and packet use before submission.
+                    </Text>
+                    <FormControl maxW={{ base: "full", md: "320px" }} isRequired>
+                      <FormLabel>Hand Over To</FormLabel>
+                      <Select value={rndHandoverTarget} onChange={(event) => setRndHandoverTarget(event.target.value)}>
+                        <option value="">Select R&amp;D user</option>
+                        {rndAssignees.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.displayName}
+                          </option>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <Button
+                      alignSelf="start"
+                      onClick={() => void handleSubmitToRnd()}
+                      isLoading={saving}
+                      isDisabled={
+                        !packets.length ||
+                        !rndHandoverTarget ||
+                        draftPacketRows.length > 0 ||
+                        Boolean(packetStageBlockers.length) ||
+                        Boolean(packetAllocation?.overAllocated)
+                      }
+                    >
+                      Submit to R&amp;D
+                    </Button>
+                  </VStack>
+                </CardBody>
+              </Card>
+            ) : null}
           </VStack>
 
           <Box w={{ base: "full", xl: "340px" }} position={{ xl: "sticky" }} top={{ xl: "92px" }}>
@@ -1238,10 +1871,21 @@ export function UnifiedJobWorkflow() {
                 ]}
               />
 
-              {settings.ui.showBlockersInline && (payload?.blockers?.length ?? 0) > 0 ? (
+              {settings.ui.showBlockersInline &&
+                (payload?.blockers ?? []).filter((b) => {
+                  if (activeSection === "decision" && b.includes("Final decision must be passed")) return false;
+                  if (activeSection === "sampling" && b.includes("Final decision must be passed")) return false;
+                  return true;
+                }).length > 0 ? (
                 <ExceptionBanner
                   title="Current blockers"
-                  description={payload?.blockers?.join(" ") ?? ""}
+                  description={(payload?.blockers ?? [])
+                    .filter((b) => {
+                      if (activeSection === "decision" && b.includes("Final decision must be passed")) return false;
+                      if (activeSection === "sampling" && b.includes("Final decision must be passed")) return false;
+                      return true;
+                    })
+                    .join(" ")}
                   status="warning"
                 />
               ) : null}

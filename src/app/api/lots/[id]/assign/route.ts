@@ -9,7 +9,11 @@ function jsonError(message: string, details: string, status: number) {
   return NextResponse.json({ error: message, details }, { status });
 }
 
-export async function POST(request: NextRequest, context: RouteContext<"/api/lots/[id]/assign">) {
+type LotAssignRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function POST(request: NextRequest, context: LotAssignRouteContext) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {

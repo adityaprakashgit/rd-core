@@ -224,30 +224,28 @@ function MasterRegistryShell({
         </Heading>
       </Box>
 
-      <SimpleGrid columns={{ base: 2, md: 3, xl: 5 }} spacing={3}>
+      <SimpleGrid columns={{ base: 2, md: 3, xl: 5 }} spacing={2}>
         {kpis.map((item) => (
-          <Card key={item.label} variant="outline" borderRadius="2xl">
-            <CardBody p={4}>
+          <Box key={item.label} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
               <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
                 {item.label}
               </Text>
-              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={1}>
+              <Text fontSize="lg" fontWeight="semibold" color="text.primary" mt={1}>
                 {item.value}
               </Text>
-            </CardBody>
-          </Card>
+          </Box>
         ))}
       </SimpleGrid>
 
       <Box position="sticky" top={{ base: "72px", lg: "84px" }} zIndex={10}>
-        <Card variant="outline" borderRadius="2xl">
+        <Card variant="outline" borderRadius="xl">
           <CardBody>
             <VStack align="stretch" spacing={4}>
               <MasterTypeTabs activeTab={activeTab} onChange={onTabChange} />
               <Stack direction={{ base: "column", lg: "row" }} spacing={3} justify="space-between">
                 <Input
                   maxW={{ base: "full", lg: "xl" }}
-                  borderRadius="xl"
+                  borderRadius="lg"
                   placeholder="Search names, addresses, phone numbers, GST, UOM..."
                   value={masterSearch}
                   onChange={(event) => onMasterSearchChange(event.target.value)}
@@ -274,7 +272,7 @@ function MasterRegistryShell({
         </Card>
       </Box>
 
-      <Card variant="outline" borderRadius="2xl">
+      <Card variant="outline" borderRadius="xl">
         <CardBody>{children}</CardBody>
       </Card>
     </VStack>
@@ -1235,7 +1233,7 @@ export default function MasterPage() {
         {tableContent}
       </MasterRegistryShell>
 
-      <Card variant="outline" borderRadius="2xl" mt={5}>
+      <Card variant="outline" borderRadius="xl" mt={5}>
         <CardBody>
           <VStack align="stretch" spacing={4}>
             <HStack justify="space-between" align={{ base: "start", md: "center" }} flexWrap="wrap">
@@ -1258,7 +1256,7 @@ export default function MasterPage() {
                   value={containerTypeName}
                   onChange={(event) => setContainerTypeName(event.target.value)}
                   placeholder="Bag, Bottle, Drum, Box..."
-                  borderRadius="xl"
+                  borderRadius="lg"
                 />
               </FormControl>
               <Button

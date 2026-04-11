@@ -1,6 +1,13 @@
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getEvidenceCategoryLabel } from "@/lib/evidence-definition";
+import {
+  getRequiredProofFailureCode,
+  resolveEvidenceCategoriesForLot,
+  resolveMissingRequiredEvidenceCategories,
+} from "@/lib/image-proof-policy";
+import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, assertCompanyScope, AuthorizationError } from "@/lib/rbac";
@@ -40,7 +47,11 @@ async function createAuditSafe(tx: Prisma.TransactionClient, input: {
   }
 }
 
-export async function POST(request: NextRequest, context: RouteContext<"/api/lots/[id]/seal">) {
+type LotSealRouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function POST(request: NextRequest, context: LotSealRouteContext) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {
@@ -70,6 +81,12 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
         sealNumber: true,
         bagPhotoUrl: true,
         samplingPhotoUrl: true,
+        sealPhotoUrl: true,
+        mediaFiles: {
+          select: {
+            category: true,
+          },
+        },
         job: {
           select: {
             status: true,
@@ -79,6 +96,11 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
           select: {
             inspectionStatus: true,
             decisionStatus: true,
+            mediaFiles: {
+              select: {
+                category: true,
+              },
+            },
           },
         },
       },
@@ -94,17 +116,44 @@ export async function POST(request: NextRequest, context: RouteContext<"/api/lot
       return jsonError("Conflict", "This seal number is immutable once assigned.", "SEAL_ALREADY_ASSIGNED", 409);
     }
 
+    const resolvedCategories = resolveEvidenceCategoriesForLot({
+      lot,
+      lotMedia: lot.mediaFiles,
+      inspectionMedia: lot.inspection?.mediaFiles,
+    });
     const sealPolicy = getSealAssignmentPolicy();
     const prerequisiteBlock = evaluateSealAssignmentPrerequisites({
       policy: sealPolicy,
       jobStatus: lot.job?.status,
       inspectionStatus: lot.inspection?.inspectionStatus,
       decisionStatus: lot.inspection?.decisionStatus,
-      bagPhotoUrl: lot.bagPhotoUrl,
-      samplingPhotoUrl: lot.samplingPhotoUrl,
+      bagPhotoUrl: resolvedCategories.has("BAG_WITH_LOT_NO") ? "available" : null,
+      samplingPhotoUrl: resolvedCategories.has("SAMPLING_IN_PROGRESS") ? "available" : null,
     });
     if (prerequisiteBlock) {
       return jsonError("Validation Error", prerequisiteBlock.details, prerequisiteBlock.code, prerequisiteBlock.status);
+    }
+
+    if (sealPolicy === "EVIDENCE_READY") {
+      const settings = await prisma.moduleWorkflowSettings.upsert({
+        where: { companyId: currentUser.companyId },
+        update: {},
+        create: buildModuleWorkflowSettingsCreate(currentUser.companyId),
+      });
+      const workflowPolicy = toModuleWorkflowPolicy(settings);
+      const missingRequired = resolveMissingRequiredEvidenceCategories(
+        workflowPolicy.images.requiredImageCategories,
+        resolvedCategories,
+      );
+      if (missingRequired.length > 0) {
+        const missingLabels = missingRequired.map((category) => getEvidenceCategoryLabel(category));
+        return jsonError(
+          "Validation Error",
+          `Upload required proof before seal assignment: ${missingLabels.join(", ")}.`,
+          getRequiredProofFailureCode(missingRequired),
+          422,
+        );
+      }
     }
 
     const useAuto = payload.auto === true;

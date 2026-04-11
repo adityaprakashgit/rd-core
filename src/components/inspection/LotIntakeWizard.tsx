@@ -385,7 +385,7 @@ export function LotIntakeWizard({
 
   return (
     <Modal isOpen={isOpen} onClose={closeAndReset} size="full" scrollBehavior="inside">
-      <ModalOverlay backdropFilter="blur(10px)" />
+      <ModalOverlay  />
       <ModalContent bg="bg.app">
         <ModalHeader pb={2}>
           <Stack spacing={3}>
@@ -428,7 +428,7 @@ export function LotIntakeWizard({
               <Card>
                 <VStack align="stretch" spacing={5}>
                   <HStack spacing={3}>
-                    <Box p={3} borderRadius="2xl" bg="brand.50" color="brand.600">
+                    <Box p={3} borderRadius="lg" bg="bg.rail" color="brand.600">
                       <Package2 size={20} />
                     </Box>
                     <Box>
@@ -509,7 +509,7 @@ export function LotIntakeWizard({
               <Card>
                 <VStack align="stretch" spacing={5}>
                   <HStack spacing={3}>
-                    <Box p={3} borderRadius="2xl" bg="orange.50" color="orange.600">
+                    <Box p={3} borderRadius="lg" bg="bg.rail" color="orange.600">
                       <Scale size={20} />
                     </Box>
                     <Box>
@@ -578,7 +578,7 @@ export function LotIntakeWizard({
             {stepIndex === 3 ? (
               <VStack align="stretch" spacing={4}>
                 <HStack spacing={3}>
-                  <Box p={3} borderRadius="2xl" bg="blue.50" color="blue.600">
+                  <Box p={3} borderRadius="lg" bg="bg.rail" color="blue.600">
                     <Camera size={20} />
                   </Box>
                   <Box>
@@ -599,7 +599,7 @@ export function LotIntakeWizard({
                 <Card>
                   <VStack align="stretch" spacing={4}>
                     <HStack spacing={3}>
-                      <Box p={3} borderRadius="2xl" bg="green.50" color="green.600">
+                      <Box p={3} borderRadius="lg" bg="bg.rail" color="green.600">
                         <ShieldCheck size={20} />
                       </Box>
                       <Box>
@@ -653,7 +653,7 @@ export function LotIntakeWizard({
           </VStack>
         </ModalBody>
 
-        <ModalFooter borderTopWidth="1px" borderColor="border.default" bg="rgba(255,255,255,0.7)">
+        <ModalFooter borderTopWidth="1px" borderColor="border.default" bg="bg.surface">
           <HStack justify="space-between" w="full" maxW="960px" mx="auto">
             <Button variant="ghost" leftIcon={<ChevronLeft size={16} />} onClick={() => setStepIndex((current) => Math.max(current - 1, 0))} isDisabled={stepIndex === 0 || saving}>
               Back

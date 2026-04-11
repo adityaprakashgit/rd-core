@@ -403,6 +403,50 @@ export type PacketAllocationRecord = {
   updatedAt?: string | Date;
 };
 
+export type PacketUsageLedgerEntryType =
+  | "ALLOCATE"
+  | "CONSUME"
+  | "RELEASE"
+  | "RECLASSIFY"
+  | "ADJUST";
+
+export type PacketUsageLedgerDirection = "IN" | "OUT";
+
+export type PacketUsageLedgerEntry = {
+  id: string;
+  packetId: string;
+  rndJobId?: string | null;
+  entryType: PacketUsageLedgerEntryType;
+  useType?: string | null;
+  quantity: number;
+  unit: string;
+  direction: PacketUsageLedgerDirection;
+  notes?: string | null;
+  createdById: string;
+  createdAt: string | Date;
+};
+
+export type PacketUsageBalance = {
+  available: number;
+  reserved: number;
+  consumed: number;
+  retained: number;
+  backup: number;
+  reference: number;
+  clientRetest: number;
+  additionalAnalysis: number;
+};
+
+export type ResultPrecedenceStatus = "ACTIVE" | "SUPERSEDED";
+
+export type RndRetestCreateRequest = {
+  sourceRndJobId: string;
+  packetId: string;
+  requestedQty: number;
+  useType: "TESTING" | "RETAIN" | "BACKUP" | "REFERENCE" | "CLIENT_RETEST" | "ADDITIONAL_ANALYSIS";
+  reason: string;
+};
+
 export type RDTrial = {
   id: string;
   trialNumber: number;
@@ -437,4 +481,98 @@ export type AuditLog = {
   metadata?: Record<string, unknown> | null;
   createdAt: string | Date;
   user?: PublicUser | null;
+};
+
+export type RndJobStatus =
+  | "CREATED"
+  | "READY_FOR_TEST_SETUP"
+  | "READY_FOR_TESTING"
+  | "IN_TESTING"
+  | "AWAITING_REVIEW"
+  | "APPROVED"
+  | "COMPLETED"
+  | "REWORK_REQUIRED";
+
+export type RndJobType =
+  | "INITIAL_TEST"
+  | "RETEST"
+  | "CLIENT_REQUESTED_RETEST"
+  | "BACKUP_TEST"
+  | "RETAIN_TEST";
+
+export type RndReviewAction = "APPROVE" | "REJECT" | "REWORK";
+
+export type RndJobReading = {
+  id: string;
+  rndJobId: string;
+  parameter: string;
+  value: number;
+  unit?: string | null;
+  remarks?: string | null;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+};
+
+export type RndJobAttachment = {
+  id: string;
+  rndJobId: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType?: string | null;
+  fileSizeBytes?: number | null;
+  notes?: string | null;
+  uploadedById?: string | null;
+  uploadedBy?: PublicUser | null;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+};
+
+export type RndJobReview = {
+  id: string;
+  rndJobId: string;
+  action: RndReviewAction;
+  notes?: string | null;
+  reviewedById: string;
+  reviewedBy?: PublicUser | null;
+  reviewedAt: string | Date;
+  createdAt: string | Date;
+};
+
+export type RndJobRecord = {
+  id: string;
+  rndJobNumber: string;
+  companyId: string;
+  parentJobId: string;
+  lotId: string;
+  sampleId: string;
+  packetId: string;
+  previousRndJobId?: string | null;
+  status: RndJobStatus;
+  jobType: RndJobType;
+  packetUse?: string | null;
+  testType?: string | null;
+  testMethod?: string | null;
+  priority?: string | null;
+  deadline?: string | Date | null;
+  assignedToId?: string | null;
+  approverUserId?: string | null;
+  remarks?: string | null;
+  receivedAt: string | Date;
+  testingStartedAt?: string | Date | null;
+  resultsSubmittedAt?: string | Date | null;
+  reviewedAt?: string | Date | null;
+  completedAt?: string | Date | null;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
+  parentJob?: Pick<InspectionJob, "id" | "inspectionSerialNumber" | "jobReferenceNumber" | "status"> | null;
+  lot?: Pick<InspectionLot, "id" | "lotNumber" | "materialName"> | null;
+  sample?: Pick<SampleRecord, "id" | "sampleCode" | "sampleStatus" | "sampleType"> | null;
+  packet?: Pick<PacketRecord, "id" | "packetCode" | "packetWeight" | "packetUnit" | "packetType"> | null;
+  assignedTo?: PublicUser | null;
+  approverUser?: PublicUser | null;
+  previousRndJob?: Pick<RndJobRecord, "id" | "rndJobNumber" | "status" | "jobType"> | null;
+  nextRetestJobs?: Array<Pick<RndJobRecord, "id" | "rndJobNumber" | "status" | "jobType" | "createdAt">>;
+  readings?: RndJobReading[];
+  attachments?: RndJobAttachment[];
+  reviews?: RndJobReview[];
 };

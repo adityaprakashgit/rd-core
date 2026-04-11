@@ -414,10 +414,10 @@ export default function SettingsPage() {
         </HStack>
 
         <SimpleGrid columns={{ base: 1, xl: 2 }} spacing={6}>
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <Card variant="outline" borderRadius="xl" bg="white" shadow="none">
             <CardBody p={6}>
               <HStack mb={4}>
-                <Box p={2.5} bg="teal.50" color="teal.600" borderRadius="xl">
+                <Box p={2.5} bg="bg.rail" color="teal.600" borderRadius="lg">
                   <Database size={18} />
                 </Box>
                 <Box>
@@ -515,11 +515,11 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
 
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
+          <Card variant="outline" borderRadius="xl" bg="white" shadow="none">
             <CardBody p={6}>
               <HStack justify="space-between" mb={4}>
                 <HStack>
-                  <Box p={2.5} bg="purple.50" color="purple.600" borderRadius="xl">
+                  <Box p={2.5} bg="bg.rail" color="purple.600" borderRadius="lg">
                     <FlaskConical size={18} />
                   </Box>
                   <Box>

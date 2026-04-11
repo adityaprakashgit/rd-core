@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Badge, Box, Center, Link, SimpleGrid, Stack, Text, useToast, VStack } from "@chakra-ui/react";
-import { Building2, ShieldCheck } from "lucide-react";
+import { Badge, Center, Link, Stack, Text, useToast, VStack } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/Button";
@@ -112,99 +111,70 @@ export default function SignupPage() {
 
   return (
     <Center minH="100vh" px={4} bg="bg.app">
-      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} w="full" maxW="6xl">
-        <Card>
-          <VStack align="stretch" spacing={4}>
+      <Card w="full" maxW="md" borderRadius="lg">
+        <Stack spacing={4}>
+          <VStack align="start" spacing={1}>
             <Badge colorScheme="brand" variant="subtle" w="fit-content">
               Enterprise Onboarding
             </Badge>
-            <Text fontSize={{ base: "2xl", md: "3xl" }} fontWeight="extrabold" color="text.primary">
-              Provision Your Workspace
+            <Text fontSize="xl" fontWeight="semibold" color="text.primary">
+              Create Company Account
             </Text>
-            <Text fontSize="md" color="text.secondary">
-              Register your organization, establish admin credentials, and initialize governed enterprise workflows.
+            <Text color="text.secondary" fontSize="sm">
+              Register administrator access for your workspace.
             </Text>
-            <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={4} bg="bg.rail">
-              <Text fontWeight="bold" display="flex" alignItems="center" gap={2}>
-                <Building2 size={16} /> Company Provisioning
-              </Text>
-              <Text fontSize="sm" color="text.secondary" mt={1}>
-                Creates tenant-safe company scope and administrator access in a single workflow.
-              </Text>
-            </Box>
-            <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" p={4} bg="bg.rail">
-              <Text fontWeight="bold" display="flex" alignItems="center" gap={2}>
-                <ShieldCheck size={16} /> Security Baseline
-              </Text>
-              <Text fontSize="sm" color="text.secondary" mt={1}>
-                Role governance and API enforcement are enabled by default from first sign-in.
-              </Text>
-            </Box>
           </VStack>
-        </Card>
 
-        <Card>
-          <Stack spacing={5}>
-            <Box>
-              <Text fontSize="2xl" fontWeight="bold" color="text.primary">
-                Create Company Account
-              </Text>
-              <Text color="text.secondary" fontSize="sm">
-                Register administrator access for your workspace.
-              </Text>
-            </Box>
+          <Input
+            label="Company Name"
+            isRequired
+            value={form.companyName}
+            onChange={(event) => setForm((prev) => ({ ...prev, companyName: event.target.value }))}
+            error={errors.companyName}
+            placeholder="Company name"
+          />
 
-            <Input
-              label="Company Name"
-              isRequired
-              value={form.companyName}
-              onChange={(event) => setForm((prev) => ({ ...prev, companyName: event.target.value }))}
-              error={errors.companyName}
-              placeholder="Company name"
-            />
+          <Input
+            label="Login Code"
+            isRequired
+            value={form.loginCode}
+            onChange={(event) => setForm((prev) => ({ ...prev, loginCode: event.target.value }))}
+            error={errors.loginCode}
+            placeholder="Unique company code"
+          />
 
-            <Input
-              label="Login Code"
-              isRequired
-              value={form.loginCode}
-              onChange={(event) => setForm((prev) => ({ ...prev, loginCode: event.target.value }))}
-              error={errors.loginCode}
-              placeholder="Unique company code"
-            />
+          <Input
+            label="Admin Email"
+            isRequired
+            type="email"
+            value={form.adminEmail}
+            onChange={(event) => setForm((prev) => ({ ...prev, adminEmail: event.target.value }))}
+            error={errors.adminEmail}
+            placeholder="admin@company.com"
+          />
 
-            <Input
-              label="Admin Email"
-              isRequired
-              type="email"
-              value={form.adminEmail}
-              onChange={(event) => setForm((prev) => ({ ...prev, adminEmail: event.target.value }))}
-              error={errors.adminEmail}
-              placeholder="admin@company.com"
-            />
+          <Input
+            label="Password"
+            isRequired
+            type="password"
+            value={form.password}
+            onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+            error={errors.password}
+            placeholder="At least 8 characters"
+          />
 
-            <Input
-              label="Password"
-              isRequired
-              type="password"
-              value={form.password}
-              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              error={errors.password}
-              placeholder="At least 8 characters"
-            />
+          <Button onClick={onSubmit} isLoading={submitting} isDisabled={disabled}>
+            Create Workspace
+          </Button>
 
-            <Button onClick={onSubmit} isLoading={submitting} isDisabled={disabled}>
-              Create Workspace
-            </Button>
-
-            <Text fontSize="sm" color="text.secondary" textAlign="center">
-              Already registered?{" "}
-              <Link color="brand.600" onClick={() => router.push("/login")}>
-                Sign in
-              </Link>
-            </Text>
-          </Stack>
-        </Card>
-      </SimpleGrid>
+          <Text fontSize="sm" color="text.secondary" textAlign="center">
+            Already registered?{" "}
+            <Link color="brand.600" onClick={() => router.push("/login")}>
+              Sign in
+            </Link>
+          </Text>
+        </Stack>
+      </Card>
     </Center>
   );
 }

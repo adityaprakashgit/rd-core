@@ -400,7 +400,7 @@ export function deriveRequiredInspectionMedia(
 ): InspectionMediaCategory[] {
   const itemById = new Map(items.map((item) => [item.id, item]));
   const baseRequiredCategories =
-    options?.requiredMediaCategories && options.requiredMediaCategories.length > 0
+    Array.isArray(options?.requiredMediaCategories)
       ? options.requiredMediaCategories
       : BASE_REQUIRED_INSPECTION_MEDIA;
   const required = new Set<InspectionMediaCategory>(

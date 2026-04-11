@@ -1,5 +1,6 @@
 import type { InspectionBag, InspectionJob, InspectionLot, InspectionMediaCategory, InspectionMediaFile } from "@/types/inspection";
 import { LOT_INTAKE_OPTIONAL_MEDIA_CATEGORIES, LOT_INTAKE_REQUIRED_MEDIA_CATEGORIES } from "@/lib/evidence-definition";
+import { getStatusPresentation } from "@/lib/status-presentation";
 
 export const REQUIRED_LOT_MEDIA_CATEGORIES = [
   ...LOT_INTAKE_REQUIRED_MEDIA_CATEGORIES,
@@ -178,20 +179,8 @@ export function getLotIntakeStatus(lot: InspectionLot | null | undefined): LotIn
 
 export function getLotIntakeStatusPresentation(lot: InspectionLot | null | undefined) {
   const status = getLotIntakeStatus(lot);
-  switch (status) {
-    case "READY_FOR_NEXT_STAGE":
-      return { status, label: "Ready", tone: "green" as const };
-    case "SEALED":
-      return { status, label: "Sealed", tone: "blue" as const };
-    case "SAMPLING_CAPTURED":
-      return { status, label: "Sampling captured", tone: "orange" as const };
-    case "MEDIA_PENDING":
-      return { status, label: "Media pending", tone: "orange" as const };
-    case "DETAILS_CAPTURED":
-      return { status, label: "Details captured", tone: "gray" as const };
-    default:
-      return { status, label: "Created", tone: "gray" as const };
-  }
+  const presentation = getStatusPresentation(status);
+  return { status, label: presentation.label, tone: presentation.tone };
 }
 
 export function getLotModeLabel(lot: InspectionLot | null | undefined): string {

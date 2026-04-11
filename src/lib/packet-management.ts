@@ -59,10 +59,19 @@ export function buildPacketCode(
   inspectionSerialNumber: string | null | undefined,
   lotNumber: string | null | undefined,
   packetNo: number,
+  options?: {
+    prefix?: string | null;
+    sequenceFormat?: string | null;
+  },
 ) {
+  const configuredPrefix = sanitizeSegment(options?.prefix) || "PKT";
+  const configuredSequenceLength = Math.max(
+    3,
+    Math.min(8, (options?.sequenceFormat ?? "").replace(/[^0]/g, "").length || 3),
+  );
   const serial = sanitizeSegment(inspectionSerialNumber) || "JOB";
   const lot = sanitizeSegment(lotNumber) || "LOT";
-  return `PKT-${serial}-${lot}-${String(packetNo).padStart(3, "0")}`;
+  return `${configuredPrefix}-${serial}-${lot}-${String(packetNo).padStart(configuredSequenceLength, "0")}`;
 }
 
 export function isValidPacketCount(count: number) {
@@ -97,8 +106,8 @@ export function mapPacketMediaByType(media: PacketMediaRecord[] | null | undefin
 
 export function hasPacketDetails(packet: PacketRecord | null | undefined) {
   return Boolean(
-    typeof packet?.packetQuantity === "number" &&
-      packet.packetQuantity > 0 &&
+    ((typeof packet?.packetWeight === "number" && packet.packetWeight > 0) ||
+      (typeof packet?.packetQuantity === "number" && packet.packetQuantity > 0)) &&
       packet.packetUnit &&
       packet.packetType,
   );

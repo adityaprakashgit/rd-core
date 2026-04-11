@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Box,
+  Button,
   Center,
   HStack,
   Spinner,
@@ -10,11 +12,9 @@ import {
 } from "@chakra-ui/react";
 import { RefreshCw } from "lucide-react";
 
-import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
-import { StatusPill } from "@/components/StatusPill";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
+import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { FilterRail, RegistryPageTemplate } from "@/components/enterprise/PageTemplates";
 
 type StatusResponse = {
@@ -140,7 +140,7 @@ export default function StatusPage() {
               </Text>
               <HStack spacing={2}>
                 <Text fontSize="sm" color="text.secondary">Overall Health:</Text>
-                <StatusPill status={status?.ok ? "SUCCESS" : "ERROR"} />
+                <WorkflowStateChip status={status?.ok ? "SUCCESS" : "ERROR"} />
               </HStack>
             </VStack>
             <Button
@@ -155,9 +155,9 @@ export default function StatusPage() {
         }
         filters={
           <FilterRail>
-            <StatusPill status={status?.services.api.ok ? "SUCCESS" : "ERROR"} />
+            <WorkflowStateChip status={status?.services.api.ok ? "SUCCESS" : "ERROR"} />
             <Text fontSize="sm" color="text.secondary">API: {status?.services.api.latencyMs ?? 0} ms</Text>
-            <StatusPill status={status?.services.database.ok ? "SUCCESS" : "ERROR"} />
+            <WorkflowStateChip status={status?.services.database.ok ? "SUCCESS" : "ERROR"} />
             <Text fontSize="sm" color="text.secondary">Database: {status?.services.database.latencyMs ?? 0} ms</Text>
           </FilterRail>
         }
@@ -180,14 +180,14 @@ export default function StatusPage() {
               emptyLabel="No monitoring records available."
             />
             {status?.services.database.error ? (
-              <Card>
+              <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                 <Text fontSize="sm" color="status.error.text">{status.services.database.error}</Text>
-              </Card>
+              </Box>
             ) : null}
             {error ? (
-              <Card>
+              <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
                 <Text fontSize="sm" color="status.error.text">{error}</Text>
-              </Card>
+              </Box>
             ) : null}
           </VStack>
         }

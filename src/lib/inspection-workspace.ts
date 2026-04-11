@@ -19,6 +19,7 @@ import {
   INSPECTION_SECTION_ORDER,
 } from "@/lib/inspection-checklist";
 import { getLotIntakeStatusPresentation, getLotMediaFiles } from "@/lib/intake-workflow";
+import { getStatusPresentation } from "@/lib/status-presentation";
 
 export const REVIEW_SECTION_ID = "review";
 export const REVIEW_SECTION_NAME = "Review & Decision";
@@ -36,7 +37,7 @@ export type InspectionSectionViewModel = {
 export type InspectionLotStatusPresentation = {
   status: string;
   label: string;
-  tone: "gray" | "orange" | "blue" | "purple" | "teal" | "green" | "red";
+  tone: "gray" | "orange" | "blue" | "purple" | "teal" | "green" | "red" | "yellow";
   summary: string;
 };
 
@@ -215,57 +216,57 @@ export function getRequiredMediaCards(categories: InspectionMediaCategory[]) {
 }
 
 export function getLotInspectionStatusPresentation(lot: InspectionLot | null | undefined): InspectionLotStatusPresentation {
-  const status = lot?.status ?? "CREATED";
+  const rawStatus = lot?.status ?? "CREATED";
+  const status = rawStatus === "READY_FOR_NEXT_STAGE" ? "READY_TO_INSPECT" : rawStatus;
+  const presentation = getStatusPresentation(status);
 
   switch (status) {
     case "READY_FOR_SAMPLING":
       return {
-        status,
-        label: "Ready for sampling",
-        tone: "green",
+        status: rawStatus,
+        label: presentation.label,
+        tone: presentation.tone,
         summary: "Inspection passed and sampling can begin.",
       };
     case "ON_HOLD":
       return {
-        status,
-        label: "On hold",
-        tone: "orange",
+        status: rawStatus,
+        label: presentation.label,
+        tone: presentation.tone,
         summary: "Inspection found issues that require review.",
       };
     case "REJECTED":
       return {
-        status,
-        label: "Rejected",
-        tone: "red",
+        status: rawStatus,
+        label: presentation.label,
+        tone: presentation.tone,
         summary: "Inspection blocked the lot from moving forward.",
       };
     case "INSPECTION_IN_PROGRESS":
       return {
-        status,
-        label: "Inspection in progress",
-        tone: "orange",
+        status: rawStatus,
+        label: presentation.label,
+        tone: presentation.tone,
         summary: "Checklist, proof capture, and issue review are active.",
       };
     case "COMPLETED":
       return {
-        status,
-        label: "Sampling completed",
-        tone: "green",
+        status: rawStatus,
+        label: presentation.label,
+        tone: presentation.tone,
         summary: "Sampling evidence is complete for this lot.",
+      };
+    case "READY_TO_INSPECT":
+      return {
+        status: rawStatus,
+        label: presentation.label,
+        tone: presentation.tone,
+        summary: "Lot intake is complete and inspection can start.",
       };
     default: {
       const fallback = getLotIntakeStatusPresentation(lot);
-      if (status === "READY_FOR_NEXT_STAGE") {
-        return {
-          status,
-          label: "Ready to inspect",
-          tone: "teal",
-          summary: "Lot intake is complete and inspection can start.",
-        };
-      }
-
       return {
-        status,
+        status: rawStatus,
         label: fallback.label,
         tone: fallback.tone,
         summary: "Lot intake is still being prepared for inspection.",

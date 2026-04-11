@@ -12,6 +12,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e:critical": "vitest run src/lib/process-critical.e2e.test.ts",
+    "repro:flow": "node scripts/e2e/recycos-regression-pack.mjs",
+    "repro:critical": "node scripts/e2e/recycos-regression-pack.mjs --all --headless",
+    "repro:critical:headed": "node scripts/e2e/recycos-regression-pack.mjs --all --headed --slow-mo 400",
     "format": "prettier --write .",
     "seed:demo": "node src/scripts/reset-demo-data.mjs",
     "telemetry:report:daily": "node src/scripts/evidence-funnel-daily-report.mjs"
@@ -50,6 +53,7 @@
     "eslint-config-next": "^16.2.2",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^29.0.2",
+    "playwright": "^1.59.1",
     "prettier": "^3.8.1",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"

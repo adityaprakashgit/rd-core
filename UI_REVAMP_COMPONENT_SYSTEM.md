@@ -1,5 +1,14 @@
 # UI_REVAMP_COMPONENT_SYSTEM
 
+## Governance Authority
+- Canonical UI governance is defined in `docs/enterprise-ui-governance.md`.
+- This file is a component/pattern implementation catalog and MUST align with canonical governance.
+- If wording conflicts with canonical governance, follow `docs/enterprise-ui-governance.md`.
+
+## Legacy Note
+- Some sections in this file may contain earlier planning phrasing.
+- Keep this document for implementation inventory/history, but use canonical governance for enforceable architecture decisions.
+
 ## Canonical Alignment
 - Stage flow: `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 - Roles: Production, R&D, Manager, Admin
@@ -89,9 +98,10 @@
   - Two-column desktop, one-column tablet/mobile
   - Inline validation and helper text only when action-relevant
 
-### 12) Status Badges
-- `StatusBadge`
-  - Strict token mapping by state severity and actionability
+### 12) Workflow State Chip
+- `WorkflowStateChip`
+  - Uses shared status dictionary only
+  - No local page-level color/label mapping
   - No decorative badge variants
 
 ### 13) Timeline/History Block
@@ -140,7 +150,7 @@
 - `DetailPageLayout`, `DetailTabs`: Job Detail, Lot Detail, Packet Detail, Exception Detail, Document Detail.
 - `QuickEditDrawer`: row edit, metadata update, assignment change, minor record updates.
 - `CompactFormSection`: Job Creation, Lot setup, Sample details, dispatch metadata forms.
-- `StatusBadge`: stage status, readiness state, exception severity.
+- `WorkflowStateChip`: stage/status presentation, readiness state, exception severity.
 - `HistoryTimeline`: lot traceability and audit tabs.
 - `LinkedRecordsPanel`: Lot Detail and Lot Traceability pages first; Job and Document detail second.
 - `DocumentRegistryTable`: central Documents module and lot-level document tabs.
@@ -167,7 +177,7 @@
 ## Chakra Compatibility and Maintainability Notes
 - Build wrappers using Chakra primitives (`Box`, `Stack`, `Grid`, `Table`, `Drawer`, `Tabs`, `Badge`, `Alert`).
 - Keep wrapper props narrow and composable.
-- Centralize spacing, borders, font sizes, and status color tokens.
+- Centralize spacing, borders, font sizes, and shared status dictionary tokens.
 - Maintain consistent prop contracts for action bars, filters, and table row actions.
 
 ## Responsive Behavior Policy
@@ -176,7 +186,7 @@
 - Mobile: task-completion surfaces only; condensed headers and primary action rails.
 
 ## Final Closure Notes
-- `DetailTabsLayout` is the required tab shell for Inspection Job Detail, Packet Detail, and R&D Job Detail surfaces.
+- `DetailTabsLayout`/`WorkflowStageTabs` is the required stage-tab shell for workflow-heavy detail pages.
 - Right rails on detail surfaces must use shared lineage/audit blocks:
   - `LinkedRecordsPanel`
   - `HistoryTimeline`

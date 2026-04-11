@@ -3,6 +3,11 @@
 ## Product Intent
 Revamp the application UI into a clean, structured, enterprise-grade product inspired by Zoho-style operational clarity, while staying practical for operations-heavy usage.
 
+## Governance Reference
+- Enforceable UI architecture and implementation policy is defined in:
+  - `docs/enterprise-ui-governance.md`
+- This PRD defines product intent and outcomes. If any architecture-level wording conflicts, canonical governance takes precedence.
+
 ## Stage Flow (Canonical)
 `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 
@@ -30,7 +35,8 @@ Runtime role mapping:
 ## Scope
 In scope:
 - UI/UX restructuring for the canonical stage flow
-- Desktop-first enterprise shell for registry/oversight pages
+- Task-first stage-oriented execution surfaces across breakpoints
+- Dense enterprise shell patterns for registry/oversight pages where actionable
 - Mobile/tablet task-first operational usability for execution pages
 - Workflow clarity, traceability visibility, operational speed, and document retrieval
 - Standardized actions and terms for evidence, decisions, and PDFs

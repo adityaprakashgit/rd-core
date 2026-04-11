@@ -218,13 +218,30 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    const reportVersions = jobs.length
+      ? await prisma.rndReportVersion.findMany({
+          where: {
+            companyId: currentUser.companyId,
+            parentJobId: { in: jobs.map((job) => job.id) },
+            precedence: "ACTIVE",
+          },
+          select: {
+            parentJobId: true,
+            sampleId: true,
+          },
+        })
+      : [];
+    const activeReportLineage = new Set(reportVersions.map((row) => `${row.parentJobId}::${row.sampleId}`));
+
     const derivedRows: ExceptionQueueRow[] = [];
 
     for (const job of jobs) {
       const jobNumber = job.inspectionSerialNumber || job.jobReferenceNumber;
-      const hasCoa = job.reportSnapshots.length > 0;
 
       for (const lot of job.lots) {
+        const hasCoa = lot.sample
+          ? activeReportLineage.has(`${job.id}::${lot.sample.id}`) || job.reportSnapshots.length > 0
+          : job.reportSnapshots.length > 0;
         const ownerId = lot.assignedToId || job.assignedToId || null;
         const ownerName = lot.assignedToId ? userName(lot.assignedTo) : userName(job.assignedTo);
 

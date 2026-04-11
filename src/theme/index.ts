@@ -34,10 +34,10 @@ export const appTheme = extendTheme({
     },
   },
   radii: {
-    md: "0.5rem",
-    lg: "0.75rem",
-    xl: "0.95rem",
-    "2xl": "1.25rem",
+    md: "0.375rem",
+    lg: "0.5rem",
+    xl: "0.625rem",
+    "2xl": "0.75rem",
   },
   styles: {
     global: {
@@ -72,16 +72,16 @@ export const appTheme = extendTheme({
   components: {
     Button: {
       baseStyle: {
-        borderRadius: "xl",
+        borderRadius: "lg",
         fontWeight: "semibold",
-        minH: 10,
+        minH: 9,
         h: "auto",
-        px: 4,
-        py: 2.5,
+        px: 3.5,
+        py: 2,
         maxW: "100%",
         whiteSpace: "normal",
         textAlign: "center",
-        lineHeight: "1.25",
+        lineHeight: "1.2",
         transitionProperty: "common",
         transitionDuration: "180ms",
       },
@@ -92,19 +92,24 @@ export const appTheme = extendTheme({
         solid: {
           bg: "brand.500",
           color: "white",
-          boxShadow: "xs",
-          _hover: { bg: "brand.600", transform: "translateY(-1px)", boxShadow: "sm" },
+          boxShadow: "none",
+          _hover: { bg: "brand.600" },
           _active: { bg: "brand.700", transform: "translateY(0)" },
         },
         outline: {
           borderColor: "border.default",
           color: "text.primary",
-          bg: "rgba(255,255,255,0.75)",
-          _hover: { bg: "neutral.100" },
+          bg: "bg.surface",
+          _hover: { bg: "neutral.50", borderColor: "border.strong" },
         },
         ghost: {
           _hover: { bg: "neutral.100" },
         },
+      },
+      sizes: {
+        sm: { minH: 8, px: 3, fontSize: "sm" },
+        md: { minH: 9, px: 3.5, fontSize: "sm" },
+        lg: { minH: 10, px: 4, fontSize: "md" },
       },
     },
     FormLabel: {
@@ -117,64 +122,78 @@ export const appTheme = extendTheme({
     Input: {
       defaultProps: {
         focusBorderColor: "brand.500",
-        size: "md",
+        size: "sm",
       },
       variants: {
         outline: {
           field: {
             borderRadius: "lg",
-            bg: "rgba(255,255,255,0.86)",
+            bg: "bg.surface",
             borderColor: "border.default",
             _hover: { borderColor: "border.strong" },
+            _focusVisible: { borderColor: "brand.500", boxShadow: "focus" },
           },
         },
+      },
+      sizes: {
+        sm: { field: { h: 9, px: 3, fontSize: "sm" } },
+        md: { field: { h: 10, px: 3.5, fontSize: "sm" } },
       },
     },
     Select: {
       defaultProps: {
         focusBorderColor: "brand.500",
-        size: "md",
+        size: "sm",
       },
       variants: {
         outline: {
           field: {
             borderRadius: "lg",
-            bg: "rgba(255,255,255,0.86)",
+            bg: "bg.surface",
             borderColor: "border.default",
             _hover: { borderColor: "border.strong" },
+            _focusVisible: { borderColor: "brand.500", boxShadow: "focus" },
           },
         },
+      },
+      sizes: {
+        sm: { field: { h: 9, px: 3, fontSize: "sm" } },
+        md: { field: { h: 10, px: 3.5, fontSize: "sm" } },
       },
     },
     Textarea: {
       defaultProps: {
         focusBorderColor: "brand.500",
+        size: "sm",
       },
       variants: {
         outline: {
           borderRadius: "lg",
-          bg: "rgba(255,255,255,0.86)",
+          bg: "bg.surface",
           borderColor: "border.default",
+          _hover: { borderColor: "border.strong" },
+          _focusVisible: { borderColor: "brand.500", boxShadow: "focus" },
         },
       },
     },
     Badge: {
       baseStyle: {
-        borderRadius: "full",
-        px: 2.5,
-        py: 1,
+        borderRadius: "md",
+        px: 2,
+        py: 0.5,
         fontWeight: "semibold",
+        fontSize: "xs",
+        letterSpacing: "0.02em",
       },
     },
     Card: {
       baseStyle: {
         container: {
-          bg: "rgba(255,255,255,0.88)",
+          bg: "bg.surface",
           borderColor: "border.default",
           borderWidth: "1px",
-          shadow: "sm",
-          borderRadius: "2xl",
-          backdropFilter: "blur(12px)",
+          shadow: "none",
+          borderRadius: "xl",
         },
       },
     },
@@ -185,13 +204,20 @@ export const appTheme = extendTheme({
             color: "text.secondary",
             borderColor: "border.default",
             fontWeight: "semibold",
-            bg: "neutral.50",
+            bg: "neutral.100",
             position: "sticky",
             top: 0,
             zIndex: 1,
+            textTransform: "none",
+            fontSize: "xs",
+            px: 3,
+            py: 2.5,
           },
           td: {
             borderColor: "border.default",
+            px: 3,
+            py: 2.5,
+            fontSize: "sm",
           },
           tr: {
             _hover: {
@@ -201,12 +227,41 @@ export const appTheme = extendTheme({
         },
       },
     },
+    Tabs: {
+      variants: {
+        "line-enterprise": {
+          tablist: {
+            borderBottomWidth: "1px",
+            borderColor: "border.default",
+            gap: 1,
+          },
+          tab: {
+            borderBottomWidth: "2px",
+            borderColor: "transparent",
+            color: "text.secondary",
+            fontWeight: "medium",
+            px: 3,
+            py: 2.5,
+            borderRadius: "0",
+            _selected: {
+              color: "text.primary",
+              borderColor: "brand.500",
+              fontWeight: "semibold",
+            },
+            _hover: {
+              color: "text.primary",
+              bg: "neutral.50",
+            },
+          },
+        },
+      },
+    },
     Menu: {
       baseStyle: {
         list: {
-          borderRadius: "xl",
+          borderRadius: "lg",
           borderColor: "border.default",
-          shadow: "md",
+          shadow: "sm",
         },
         item: {
           borderRadius: "md",
