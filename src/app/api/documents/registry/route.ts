@@ -4,6 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { resolveActiveOutputForLineage } from "@/lib/rnd-report-linkage";
 import { getCurrentUserFromRequest } from "@/lib/session";
+import {
+  documentStatusPriority,
+  normalizeDocumentStatus,
+  type NormalizedDocumentStatus,
+} from "@/lib/document-status";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +23,12 @@ type DocumentRegistryFilters = {
   lot?: string;
   packet?: string;
   job?: string;
+  client?: string;
   dateFrom?: string;
   dateTo?: string;
   documentType?: string;
   status?: string;
+  missingOnly?: string;
 };
 
 type DocumentRegistryRow = {
@@ -38,6 +45,50 @@ type DocumentRegistryRow = {
   generatedAt: string;
   linkedActionUrl: string | null;
   source: "REPORT_SNAPSHOT" | "MEDIA_FILE" | "SAMPLE_MEDIA" | "PACKET_MEDIA";
+};
+
+type LotDocumentGroupKey = "inspectionUploads" | "testReports" | "coa" | "packingList" | "dispatchDocuments";
+
+type LotDocumentGroupSummary = {
+  key: LotDocumentGroupKey;
+  label: string;
+  status: NormalizedDocumentStatus;
+  sourceStatus: string | null;
+  count: number;
+  linkedActionUrl: string | null;
+};
+
+type LotRegistrySummary = {
+  lotId: string;
+  lotNumber: string;
+  packetCount: number;
+  documentCount: number;
+  missingDocuments: number;
+  lastUpdated: string;
+  actions: {
+    traceabilityUrl: string;
+  };
+  groups: {
+    inspectionUploads: LotDocumentGroupSummary;
+    testReports: LotDocumentGroupSummary;
+    coa: LotDocumentGroupSummary;
+    packingList: LotDocumentGroupSummary;
+    dispatchDocuments: LotDocumentGroupSummary;
+  };
+};
+
+type JobRegistrySummary = {
+  jobId: string;
+  jobNumber: string;
+  client: string;
+  lotCount: number;
+  documentCount: number;
+  missingDocuments: number;
+  lastUpdated: string;
+  actions: {
+    reportsUrl: string;
+  };
+  lots: LotRegistrySummary[];
 };
 
 function jsonError(error: string, details: string, status: number) {
@@ -57,10 +108,12 @@ function parseFilters(request: NextRequest): DocumentRegistryFilters {
     lot: normalizeFilter(request.nextUrl.searchParams.get("lot")) ?? undefined,
     packet: normalizeFilter(request.nextUrl.searchParams.get("packet")) ?? undefined,
     job: normalizeFilter(request.nextUrl.searchParams.get("job")) ?? undefined,
+    client: normalizeFilter(request.nextUrl.searchParams.get("client")) ?? undefined,
     dateFrom: normalizeFilter(request.nextUrl.searchParams.get("dateFrom")) ?? undefined,
     dateTo: normalizeFilter(request.nextUrl.searchParams.get("dateTo")) ?? undefined,
     documentType: normalizeFilter(request.nextUrl.searchParams.get("documentType")) ?? undefined,
     status: normalizeFilter(request.nextUrl.searchParams.get("status")) ?? undefined,
+    missingOnly: normalizeFilter(request.nextUrl.searchParams.get("missingOnly")) ?? undefined,
   };
 }
 
@@ -107,12 +160,51 @@ function documentTypeLabel(type: DocumentTypeKey): string {
   }
 }
 
+function pickPrimaryRow(rows: DocumentRegistryRow[]): DocumentRegistryRow | null {
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const sorted = [...rows].sort((left, right) => {
+    const leftStatus = normalizeDocumentStatus(left.status, true);
+    const rightStatus = normalizeDocumentStatus(right.status, true);
+    if (documentStatusPriority(rightStatus) !== documentStatusPriority(leftStatus)) {
+      return documentStatusPriority(rightStatus) - documentStatusPriority(leftStatus);
+    }
+    if (right.generatedAt !== left.generatedAt) {
+      return right.generatedAt.localeCompare(left.generatedAt);
+    }
+    return left.id.localeCompare(right.id);
+  });
+
+  return sorted[0] ?? null;
+}
+
+function buildGroupSummary(
+  key: LotDocumentGroupKey,
+  label: string,
+  rows: DocumentRegistryRow[],
+): LotDocumentGroupSummary {
+  const primary = pickPrimaryRow(rows);
+  const status = normalizeDocumentStatus(primary?.status, rows.length > 0);
+  return {
+    key,
+    label,
+    status,
+    sourceStatus: primary?.status ?? null,
+    count: rows.length,
+    linkedActionUrl: primary?.linkedActionUrl ?? null,
+  };
+}
+
 function buildDocumentRows(input: {
   jobs: Array<{
     id: string;
+    clientName: string;
     inspectionSerialNumber: string;
     jobReferenceNumber: string;
     status: string;
+    updatedAt: Date;
     reportSnapshots: Array<{ id: string; createdAt: Date }>;
     lots: Array<{
       id: string;
@@ -283,6 +375,154 @@ function buildDocumentRows(input: {
   return rows;
 }
 
+function buildGroupedRegistry(input: {
+  jobs: Array<{
+    id: string;
+    clientName: string;
+    inspectionSerialNumber: string;
+    jobReferenceNumber: string;
+    updatedAt: Date;
+    lots: Array<{
+      id: string;
+      lotNumber: string;
+      sample: {
+        packets: Array<{ id: string }>;
+      } | null;
+    }>;
+  }>;
+  rows: DocumentRegistryRow[];
+  filters: DocumentRegistryFilters;
+}): {
+  jobs: JobRegistrySummary[];
+  totalJobs: number;
+  totalLots: number;
+  totalDocuments: number;
+  totalMissingDocuments: number;
+} {
+  const rowsByJobId = new Map<string, DocumentRegistryRow[]>();
+  const rowsByLotId = new Map<string, DocumentRegistryRow[]>();
+
+  input.rows.forEach((row) => {
+    const jobRows = rowsByJobId.get(row.jobId) ?? [];
+    jobRows.push(row);
+    rowsByJobId.set(row.jobId, jobRows);
+
+    if (row.lotId) {
+      const lotRows = rowsByLotId.get(row.lotId) ?? [];
+      lotRows.push(row);
+      rowsByLotId.set(row.lotId, lotRows);
+    }
+  });
+
+  const jobs: JobRegistrySummary[] = [];
+
+  for (const job of input.jobs) {
+    const jobRows = rowsByJobId.get(job.id) ?? [];
+    const jobNumber = job.inspectionSerialNumber || job.jobReferenceNumber;
+    const lots: LotRegistrySummary[] = [];
+
+    for (const lot of job.lots) {
+      if (input.filters.lot && !mapMatches(lot.lotNumber, input.filters.lot)) {
+        continue;
+      }
+
+      const lotRows = rowsByLotId.get(lot.id) ?? [];
+      const reportRows = jobRows.filter((row) => row.documentType === "TEST_REPORT" && row.source === "REPORT_SNAPSHOT");
+      const coaRows = jobRows.filter((row) => row.documentType === "COA");
+      const packingRows = lotRows.filter((row) => row.documentType === "DISPATCH_DOCUMENT");
+      const inspectionRows = lotRows.filter((row) => row.documentType === "INSPECTION_UPLOAD");
+      const dispatchRows = lotRows.filter((row) => row.documentType === "PACKET_DOCUMENT");
+
+      const groups = {
+        inspectionUploads: buildGroupSummary("inspectionUploads", "Inspection Uploads", inspectionRows),
+        testReports: buildGroupSummary("testReports", "Test Reports", reportRows),
+        coa: buildGroupSummary("coa", "COA", coaRows),
+        packingList: buildGroupSummary("packingList", "Packing List", packingRows),
+        dispatchDocuments: buildGroupSummary("dispatchDocuments", "Dispatch Documents", dispatchRows),
+      };
+
+      const missingDocuments = Object.values(groups).filter((group) => group.status === "Missing").length;
+      const packetCount = lot.sample?.packets.length ?? 0;
+      const latestRow = [...lotRows, ...reportRows, ...coaRows].sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0] ?? null;
+
+      const lotSummary: LotRegistrySummary = {
+        lotId: lot.id,
+        lotNumber: lot.lotNumber,
+        packetCount,
+        documentCount: lotRows.length + reportRows.length + coaRows.length,
+        missingDocuments,
+        lastUpdated: latestRow?.generatedAt ?? job.updatedAt.toISOString(),
+        actions: {
+          traceabilityUrl: `/traceability/lot/${lot.id}`,
+        },
+        groups,
+      };
+
+      if (input.filters.status) {
+        const normalizedFilter = input.filters.status.toLowerCase();
+        const hasStatusMatch = Object.values(groups).some(
+          (group) =>
+            group.status.toLowerCase() === normalizedFilter ||
+            (group.sourceStatus?.toLowerCase() ?? "") === normalizedFilter,
+        );
+        if (!hasStatusMatch) {
+          continue;
+        }
+      }
+
+      if (input.filters.missingOnly === "1" && lotSummary.missingDocuments === 0) {
+        continue;
+      }
+
+      lots.push(lotSummary);
+    }
+
+    if (lots.length === 0) {
+      continue;
+    }
+
+    const documentCount = lots.reduce((sum, lot) => sum + lot.documentCount, 0);
+    const missingDocuments = lots.reduce((sum, lot) => sum + lot.missingDocuments, 0);
+    const lastUpdated = lots
+      .map((lot) => lot.lastUpdated)
+      .sort((left, right) => right.localeCompare(left))[0] ?? job.updatedAt.toISOString();
+
+    jobs.push({
+      jobId: job.id,
+      jobNumber,
+      client: job.clientName,
+      lotCount: lots.length,
+      documentCount,
+      missingDocuments,
+      lastUpdated,
+      actions: {
+        reportsUrl: `/reports?jobId=${job.id}`,
+      },
+      lots,
+    });
+  }
+
+  if (input.filters.client) {
+    const normalizedClient = input.filters.client.toLowerCase();
+    const filteredJobs = jobs.filter((job) => job.client.toLowerCase().includes(normalizedClient));
+    return {
+      jobs: filteredJobs,
+      totalJobs: filteredJobs.length,
+      totalLots: filteredJobs.reduce((sum, job) => sum + job.lotCount, 0),
+      totalDocuments: filteredJobs.reduce((sum, job) => sum + job.documentCount, 0),
+      totalMissingDocuments: filteredJobs.reduce((sum, job) => sum + job.missingDocuments, 0),
+    };
+  }
+
+  return {
+    jobs,
+    totalJobs: jobs.length,
+    totalLots: jobs.reduce((sum, job) => sum + job.lotCount, 0),
+    totalDocuments: jobs.reduce((sum, job) => sum + job.documentCount, 0),
+    totalMissingDocuments: jobs.reduce((sum, job) => sum + job.missingDocuments, 0),
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(request);
@@ -297,6 +537,11 @@ export async function GET(request: NextRequest) {
     const jobs = await prisma.inspectionJob.findMany({
       where: {
         companyId: currentUser.companyId,
+        ...(filters.client
+          ? {
+              clientName: { contains: filters.client, mode: "insensitive" },
+            }
+          : {}),
         ...(filters.job
           ? {
               OR: [
@@ -310,9 +555,11 @@ export async function GET(request: NextRequest) {
       take: 250,
       select: {
         id: true,
+        clientName: true,
         inspectionSerialNumber: true,
         jobReferenceNumber: true,
         status: true,
+        updatedAt: true,
         reportSnapshots: {
           orderBy: { createdAt: "desc" },
           select: {
@@ -441,7 +688,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const rows = buildDocumentRows({
+    const normalizedStatusFilters = new Set(["available", "active", "superseded", "missing", "current for dispatch"]);
+
+    const baseRows = buildDocumentRows({
       jobs,
       activeOutputBySampleId,
       reportStatusBySnapshotId,
@@ -450,14 +699,33 @@ export async function GET(request: NextRequest) {
       .filter((row) => mapMatches(row.lotNumber, filters.lot))
       .filter((row) => mapMatches(row.packetCode, filters.packet))
       .filter((row) => (filters.documentType ? row.documentType === filters.documentType : true))
-      .filter((row) => (filters.status ? row.status.toLowerCase() === filters.status.toLowerCase() : true))
       .filter((row) => withinDateRange(new Date(row.generatedAt), filters.dateFrom, filters.dateTo))
       .sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
+
+    const rows = baseRows.filter((row) => {
+      if (!filters.status) {
+        return true;
+      }
+
+      const normalizedFilter = filters.status.toLowerCase();
+      if (normalizedStatusFilters.has(normalizedFilter)) {
+        return true;
+      }
+
+      return row.status.toLowerCase() === normalizedFilter;
+    });
+
+    const grouped = buildGroupedRegistry({
+      jobs,
+      rows: baseRows,
+      filters,
+    });
 
     return NextResponse.json({
       rows,
       total: rows.length,
       filters,
+      grouped,
     });
   } catch (error: unknown) {
     if (error instanceof AuthorizationError) {

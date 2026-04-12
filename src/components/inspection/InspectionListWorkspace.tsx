@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, HStack, Input, Select, Text, VStack } from "@chakra-ui/react";
+import { Badge, Box, Button, HStack, Input, Select, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
 import { InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
@@ -73,13 +73,19 @@ export function InspectionListWorkspace({
   const router = useRouter();
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshingList, setIsRefreshingList] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [stage, setStage] = useState("all");
   const [archivingId, setArchivingId] = useState<string | null>(null);
 
-  const fetchJobs = useCallback(async () => {
-    setLoading(true);
+  const fetchJobs = useCallback(async (options?: { initial?: boolean }) => {
+    const isInitial = options?.initial ?? false;
+    if (isInitial) {
+      setLoading(true);
+    } else {
+      setIsRefreshingList(true);
+    }
     setError(null);
     try {
       const res = await fetch(jobsEndpoint);
@@ -91,12 +97,16 @@ export function InspectionListWorkspace({
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Inspection queue could not be loaded.");
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        setLoading(false);
+      } else {
+        setIsRefreshingList(false);
+      }
     }
   }, [jobsEndpoint]);
 
   useEffect(() => {
-    void fetchJobs();
+    void fetchJobs({ initial: true });
   }, [fetchJobs]);
 
   const filtered = useMemo(() => {
@@ -152,7 +162,17 @@ export function InspectionListWorkspace({
             Create job
           </Button>
         }
-        secondaryActions={<Text fontSize="sm" color="text.secondary">Table-first execution queue</Text>}
+        secondaryActions={
+          <HStack spacing={2}>
+            <Text fontSize="sm" color="text.secondary">Table-first execution queue</Text>
+            {isRefreshingList ? (
+              <HStack spacing={1}>
+                <Spinner size="xs" color="text.secondary" />
+                <Text fontSize="sm" color="text.secondary">Updating...</Text>
+              </HStack>
+            ) : null}
+          </HStack>
+        }
       />
 
       <FilterSearchStrip
@@ -170,7 +190,7 @@ export function InspectionListWorkspace({
       />
 
       {loading ? <PageSkeleton cards={2} rows={3} /> : null}
-      {!loading && error ? <InlineErrorState title="Inspection queue unavailable" description={error} onRetry={() => void fetchJobs()} /> : null}
+      {!loading && error ? <InlineErrorState title="Inspection queue unavailable" description={error} onRetry={() => void fetchJobs({ initial: true })} /> : null}
       {!loading && !error ? (
         <EnterpriseStickyTable>
           <Box p={3}>
@@ -259,7 +279,7 @@ export function InspectionListWorkspace({
                           setArchivingId(row.id);
                           try {
                             await onArchive(row);
-                            await fetchJobs();
+                            await fetchJobs({ initial: false });
                           } finally {
                             setArchivingId(null);
                           }

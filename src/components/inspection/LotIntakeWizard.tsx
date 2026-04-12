@@ -52,7 +52,6 @@ type WeightRow = {
 
 const wizardSteps = [
   { id: "details", label: "Lot basics" },
-  { id: "mode", label: "Quantity mode" },
   { id: "quantity", label: "Quantity" },
   { id: "photos", label: "Photos" },
   { id: "review", label: "Review" },
@@ -96,10 +95,9 @@ export function LotIntakeWizard({
   const [saving, setSaving] = useState(false);
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
   const [lotNumber, setLotNumber] = useState("");
-  const [lotMaterialName, setLotMaterialName] = useState("");
   const [lotMaterialCategory, setLotMaterialCategory] = useState(materialCategory ?? "");
   const [quantityMode, setQuantityMode] = useState<QuantityMode>("SINGLE_PIECE");
-  const [bagCount, setBagCount] = useState("1");
+  const [bagCount, setBagCount] = useState("");
   const [pieceCount, setPieceCount] = useState("");
   const [grossWeight, setGrossWeight] = useState("");
   const [netWeight, setNetWeight] = useState("");
@@ -124,10 +122,9 @@ export function LotIntakeWizard({
     setSaving(false);
     setSurfaceError(null);
     setLotNumber("");
-    setLotMaterialName("");
     setLotMaterialCategory(materialCategory ?? "");
     setQuantityMode("SINGLE_PIECE");
-    setBagCount("1");
+    setBagCount("");
     setPieceCount("");
     setGrossWeight("");
     setNetWeight("");
@@ -144,23 +141,14 @@ export function LotIntakeWizard({
 
   function canAdvanceFromCurrentStep() {
     if (stepIndex === 0) {
-      return lotNumber.trim().length > 0 && lotMaterialName.trim().length > 0;
+      return lotNumber.trim().length > 0;
+    }
+
+    if (stepIndex === 1) {
+      return grossWeight.trim().length > 0 || netWeight.trim().length > 0;
     }
 
     if (stepIndex === 2) {
-      if (quantityMode === "MULTI_WEIGHT") {
-        return weightRows.some((row) => row.weight.trim().length > 0);
-      }
-
-      return Boolean(
-        bagCount.trim().length > 0 ||
-        pieceCount.trim().length > 0 ||
-        grossWeight.trim().length > 0 ||
-        netWeight.trim().length > 0,
-      );
-    }
-
-    if (stepIndex === 3) {
       return photoBlueprint
         .filter((photo) => photo.required)
         .every((photo) => photos[photo.category]);
@@ -171,10 +159,10 @@ export function LotIntakeWizard({
 
   function goNext() {
     if (!canAdvanceFromCurrentStep()) {
-      setSurfaceError(stepIndex === 3 ? "Required evidence photos are still missing." : "Required lot details are still missing.");
+      setSurfaceError(stepIndex === 2 ? "Required evidence photos are still missing." : "Required lot details are still missing.");
       toast({
         title: "Finish the current step",
-        description: stepIndex === 3 ? "Required evidence photos are still missing." : "Required lot details are still missing.",
+        description: stepIndex === 2 ? "Required evidence photos are still missing." : "Required lot details are still missing.",
         status: "warning",
       });
       return;
@@ -226,14 +214,14 @@ export function LotIntakeWizard({
         body: JSON.stringify({
           jobId,
           lotNumber: lotNumber.trim(),
-          materialName: lotMaterialName.trim(),
+          materialName: lotMaterialCategory.trim() || "Item",
           materialCategory: lotMaterialCategory.trim() || undefined,
           quantityMode,
-          bagCount: bagCount.trim() ? Number(bagCount) : undefined,
-          pieceCount: pieceCount.trim() ? Number(pieceCount) : undefined,
+          bagCount: bagCount.trim() ? Number(bagCount) : null,
+          pieceCount: pieceCount.trim() ? Number(pieceCount) : null,
           totalBags: quantityMode === "MULTI_WEIGHT" ? weightRows.filter((row) => row.weight.trim()).length : undefined,
-          grossWeight: grossWeight.trim() ? Number(grossWeight) : undefined,
-          netWeight: netWeight.trim() ? Number(netWeight) : undefined,
+          grossWeight: grossWeight.trim() ? Number(grossWeight) : null,
+          netWeight: netWeight.trim() ? Number(netWeight) : null,
           weightUnit: weightUnit.trim() || undefined,
           remarks: remarks.trim() || undefined,
         }),
@@ -443,10 +431,6 @@ export function LotIntakeWizard({
                       <FormLabel>Lot no</FormLabel>
                       <Input value={lotNumber} onChange={(event) => setLotNumber(event.target.value)} placeholder="e.g. LOT-018" />
                     </FormControl>
-                    <FormControl isRequired>
-                      <FormLabel>Material name</FormLabel>
-                      <Input value={lotMaterialName} onChange={(event) => setLotMaterialName(event.target.value)} placeholder="e.g. Copper concentrate" />
-                    </FormControl>
                     <FormControl>
                       <FormLabel>Material category</FormLabel>
                       <Input value={lotMaterialCategory} onChange={(event) => setLotMaterialCategory(event.target.value)} placeholder="e.g. Non-ferrous" />
@@ -461,51 +445,6 @@ export function LotIntakeWizard({
             ) : null}
 
             {stepIndex === 1 ? (
-              <VStack align="stretch" spacing={4}>
-                <Heading size="md">Choose quantity mode</Heading>
-                <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                  {[
-                    {
-                      mode: "SINGLE_PIECE" as const,
-                      title: "Single Piece",
-                      note: "Use for one bag, drum, sack, or container.",
-                    },
-                    {
-                      mode: "MULTI_WEIGHT" as const,
-                      title: "Multi Weight",
-                      note: "Use for multiple bags or piece-wise weights.",
-                    },
-                  ].map((item) => {
-                    const selected = quantityMode === item.mode;
-                    return (
-                      <Button
-                        key={item.mode}
-                        h="auto"
-                        minH="168px"
-                        p={6}
-                        justifyContent="flex-start"
-                        variant={selected ? "solid" : "outline"}
-                        onClick={() => setQuantityMode(item.mode)}
-                      >
-                        <VStack align="start" spacing={3}>
-                          <Icon as={item.mode === "SINGLE_PIECE" ? Package2 : Scale} boxSize={7} />
-                          <Box textAlign="left">
-                            <Text fontSize="lg" fontWeight="bold">
-                              {item.title}
-                            </Text>
-                            <Text fontSize="sm" opacity={selected ? 0.9 : 1}>
-                              {item.note}
-                            </Text>
-                          </Box>
-                        </VStack>
-                      </Button>
-                    );
-                  })}
-                </SimpleGrid>
-              </VStack>
-            ) : null}
-
-            {stepIndex === 2 ? (
               <Card>
                 <VStack align="stretch" spacing={5}>
                   <HStack spacing={3}>
@@ -513,69 +452,40 @@ export function LotIntakeWizard({
                       <Scale size={20} />
                     </Box>
                     <Box>
-                      <Heading size="md">{formatModeLabel(quantityMode)} quantity</Heading>
+                      <Heading size="md">Single Piece quantity</Heading>
                       <Text color="text.secondary" fontSize="sm" mt={1}>
-                        {quantityMode === "MULTI_WEIGHT"
-                          ? "Add quick weight rows. Each row is one bag or unit-level entry."
-                          : "Capture a simple count and the overall weight."}
+                        Capture a simple count and the overall weight. (At least one weight dimension is required to proceed)
                       </Text>
                     </Box>
                   </HStack>
 
-                  {quantityMode === "SINGLE_PIECE" ? (
-                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                      <FormControl>
-                        <FormLabel>Bag count</FormLabel>
-                        <Input type="number" inputMode="numeric" value={bagCount} onChange={(event) => setBagCount(event.target.value)} />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>Piece count</FormLabel>
-                        <Input type="number" inputMode="numeric" value={pieceCount} onChange={(event) => setPieceCount(event.target.value)} />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>Gross weight</FormLabel>
-                        <Input type="number" inputMode="decimal" value={grossWeight} onChange={(event) => setGrossWeight(event.target.value)} />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>Net weight</FormLabel>
-                        <Input type="number" inputMode="decimal" value={netWeight} onChange={(event) => setNetWeight(event.target.value)} />
-                      </FormControl>
-                      <FormControl maxW={{ md: "200px" }}>
-                        <FormLabel>Unit</FormLabel>
-                        <Input value={weightUnit} onChange={(event) => setWeightUnit(event.target.value)} />
-                      </FormControl>
-                    </SimpleGrid>
-                  ) : (
-                    <VStack align="stretch" spacing={3}>
-                      {weightRows.map((row, index) => (
-                        <Card key={row.id} bg="bg.rail">
-                          <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
-                            <FormControl>
-                              <FormLabel>Bag no</FormLabel>
-                              <Input value={row.bagNo} onChange={(event) => updateWeightRow(row.id, { bagNo: event.target.value })} />
-                            </FormControl>
-                            <FormControl>
-                              <FormLabel>Weight</FormLabel>
-                              <Input value={row.weight} type="number" inputMode="decimal" onChange={(event) => updateWeightRow(row.id, { weight: event.target.value })} />
-                            </FormControl>
-                            <FormControl maxW={{ md: "160px" }}>
-                              <FormLabel>Unit</FormLabel>
-                              <Input value={weightUnit} onChange={(event) => setWeightUnit(event.target.value)} />
-                            </FormControl>
-                          </SimpleGrid>
-                          {index < weightRows.length - 1 ? <Divider mt={4} /> : null}
-                        </Card>
-                      ))}
-                      <Button alignSelf="start" variant="outline" leftIcon={<ChevronRight size={16} />} onClick={addWeightRow}>
-                        Add another weight
-                      </Button>
-                    </VStack>
-                  )}
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                    <FormControl>
+                      <FormLabel>Bag count</FormLabel>
+                      <Input type="number" inputMode="numeric" value={bagCount} onChange={(event) => setBagCount(event.target.value)} />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Piece count</FormLabel>
+                      <Input type="number" inputMode="numeric" value={pieceCount} onChange={(event) => setPieceCount(event.target.value)} />
+                    </FormControl>
+                    <FormControl isRequired>
+                      <FormLabel>Gross weight</FormLabel>
+                      <Input type="number" inputMode="decimal" value={grossWeight} onChange={(event) => setGrossWeight(event.target.value)} />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Net weight</FormLabel>
+                      <Input type="number" inputMode="decimal" value={netWeight} onChange={(event) => setNetWeight(event.target.value)} />
+                    </FormControl>
+                    <FormControl maxW={{ md: "200px" }}>
+                      <FormLabel>Unit</FormLabel>
+                      <Input value={weightUnit} onChange={(event) => setWeightUnit(event.target.value)} />
+                    </FormControl>
+                  </SimpleGrid>
                 </VStack>
               </Card>
             ) : null}
 
-            {stepIndex === 3 ? (
+            {stepIndex === 2 ? (
               <VStack align="stretch" spacing={4}>
                 <HStack spacing={3}>
                   <Box p={3} borderRadius="lg" bg="bg.rail" color="blue.600">
@@ -594,7 +504,7 @@ export function LotIntakeWizard({
               </VStack>
             ) : null}
 
-            {stepIndex === 4 ? (
+            {stepIndex === 3 ? (
               <VStack align="stretch" spacing={4}>
                 <Card>
                   <VStack align="stretch" spacing={4}>
@@ -615,15 +525,15 @@ export function LotIntakeWizard({
                           Lot
                         </Text>
                         <Text fontWeight="semibold" mt={1}>{lotNumber}</Text>
-                        <Text color="text.secondary">{lotMaterialName}</Text>
+                        <Text color="text.secondary">{lotMaterialCategory || "Item"}</Text>
                       </Box>
                       <Box>
                         <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
                           Mode
                         </Text>
-                        <Text fontWeight="semibold" mt={1}>{formatModeLabel(quantityMode)}</Text>
+                        <Text fontWeight="semibold" mt={1}>Single Piece</Text>
                         <Text color="text.secondary">
-                          {quantityMode === "MULTI_WEIGHT" ? `${weightRows.filter((row) => row.weight.trim()).length} weight rows ready` : `${bagCount || pieceCount || "1"} units captured`}
+                          {bagCount || pieceCount || "1"} units captured
                         </Text>
                       </Box>
                       <Box>

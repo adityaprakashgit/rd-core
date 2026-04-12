@@ -189,6 +189,35 @@ export async function POST(request: NextRequest, context: LotSealRouteContext) {
         },
       });
 
+      const sample = await tx.sample.findUnique({
+        where: { lotId: lot.id },
+        select: {
+          id: true,
+          sealLabel: {
+            select: {
+              sealedAt: true,
+            },
+          },
+        },
+      });
+
+      if (sample) {
+        await tx.sampleSealLabel.upsert({
+          where: { sampleId: sample.id },
+          update: {
+            sealNo: sealNumber,
+            sealedAt: sample.sealLabel?.sealedAt ?? new Date(),
+            sealStatus: "COMPLETED",
+          },
+          create: {
+            sampleId: sample.id,
+            sealNo: sealNumber,
+            sealedAt: new Date(),
+            sealStatus: "COMPLETED",
+          },
+        });
+      }
+
       if (useAuto) {
         await createAuditSafe(tx, {
           jobId: lot.jobId,

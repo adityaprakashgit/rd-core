@@ -12,6 +12,7 @@ import {
   HStack,
   Image,
   SimpleGrid,
+  Spinner,
   Text,
   VStack,
   useDisclosure,
@@ -28,6 +29,7 @@ import { WorkflowStepTracker } from "@/components/enterprise/WorkflowStepTracker
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { getStoredAuth } from "@/lib/auth-client";
 import { LotIntakeWizard } from "@/components/inspection/LotIntakeWizard";
+import { LotEditModal } from "@/components/inspection/LotEditModal";
 import {
   getLotMediaFiles,
   getLotModeLabel,
@@ -73,14 +75,21 @@ export function JobIntakeWorkspace({
   const { isOpen, onOpen, onClose } = useDisclosure();
 
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobs, setJobs] = useState<InspectionJob[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
+  const [editLotId, setEditLotId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  async function fetchData(preferredLotId?: string) {
-    setLoading(true);
+  async function fetchData(preferredLotId?: string, options?: { initial?: boolean }) {
+    const isInitial = options?.initial ?? false;
+    if (isInitial) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     setError(null);
     try {
       const [jobsResponse, logsResponse] = await Promise.all([
@@ -108,12 +117,16 @@ export function JobIntakeWorkspace({
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "The intake workspace could not be loaded.");
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        setLoading(false);
+      } else {
+        setIsRefreshing(false);
+      }
     }
   }
 
   useEffect(() => {
-    void fetchData();
+    void fetchData(undefined, { initial: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId, jobsEndpoint]);
 
@@ -180,6 +193,9 @@ export function JobIntakeWorkspace({
               <Button size="sm" onClick={() => router.push(lotHref(currentJobId, lot.id))}>
                 Open inspection
               </Button>
+              <Button size="sm" variant="outline" onClick={() => setEditLotId(lot.id)}>
+                Edit lot
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
@@ -206,6 +222,14 @@ export function JobIntakeWorkspace({
               </Text>
               <Text fontWeight="semibold" mt={1}>
                 {assigneeName}
+              </Text>
+            </Box>
+            <Box>
+              <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                Quantity
+              </Text>
+              <Text fontWeight="semibold" mt={1}>
+                {getLotQuantitySummary(lot)}
               </Text>
             </Box>
             <Box>
@@ -355,7 +379,7 @@ export function JobIntakeWorkspace({
     return (
       <ControlTowerLayout>
         {error ? (
-          <InlineErrorState title="Job unavailable" description={error} onRetry={() => void fetchData()} />
+          <InlineErrorState title="Job unavailable" description={error} onRetry={() => void fetchData(undefined, { initial: true })} />
         ) : (
           <EmptyWorkState title="Job not found" description="The requested job is not available in this workspace." />
         )}
@@ -389,6 +413,12 @@ export function JobIntakeWorkspace({
           </HStack>
 
           <HStack spacing={3} flexWrap="wrap">
+            {isRefreshing ? (
+              <HStack spacing={1}>
+                <Spinner size="xs" color="text.secondary" />
+                <Text fontSize="sm" color="text.secondary">Updating...</Text>
+              </HStack>
+            ) : null}
             <Button leftIcon={<PackagePlus size={16} />} onClick={onOpen}>
               Add Lot
             </Button>
@@ -492,6 +522,14 @@ export function JobIntakeWorkspace({
                                   </Box>
                                   <Box>
                                     <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                                      Quantity / Weight
+                                    </Text>
+                                    <Text fontWeight="semibold" mt={1}>
+                                      {getLotQuantitySummary(lot)}
+                                    </Text>
+                                  </Box>
+                                  <Box>
+                                    <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
                                       Inspection
                                     </Text>
                                     <Text fontWeight="semibold" mt={1}>
@@ -511,6 +549,9 @@ export function JobIntakeWorkspace({
                                 <HStack spacing={3} flexWrap="wrap">
                                   <Button size="sm" onClick={() => router.push(lotHref(job.id, lot.id))}>
                                     Open inspection
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => setEditLotId(lot.id)}>
+                                    Edit lot
                                   </Button>
                                   <Button size="sm" variant="outline" leftIcon={<Camera size={14} />} onClick={() => router.push(lotHref(job.id, lot.id))}>
                                     Review proof
@@ -696,7 +737,7 @@ export function JobIntakeWorkspace({
         materialCategory={job.commodity}
         onClose={onClose}
         onSaved={async (lotId) => {
-          await fetchData(lotId);
+          await fetchData(lotId, { initial: false });
           toast({
             title: "Intake queue updated",
             description: "The new lot is ready for review or continuation.",
@@ -704,6 +745,17 @@ export function JobIntakeWorkspace({
           });
         }}
       />
+
+      {editLotId ? (
+        <LotEditModal
+          isOpen={true}
+          lot={orderedLots.find((l) => l.id === editLotId)!}
+          onClose={() => setEditLotId(null)}
+          onSaved={async () => {
+            await fetchData(editLotId, { initial: false });
+          }}
+        />
+      ) : null}
     </ControlTowerLayout>
   );
 }

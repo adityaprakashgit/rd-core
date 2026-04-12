@@ -67,6 +67,10 @@ const JOB_STATUS_PRESENTATION: Record<string, StatusPresentation> = {
   REWORK_REQUIRED: { label: "Rework Required", tone: "red" },
   PENDING_INTAKE: { label: "Pending Intake", tone: "gray" },
   READY_FOR_SETUP: { label: "Ready for Setup", tone: "orange" },
+  ACTIVE: { label: "Active", tone: "green" },
+  SUPERSEDED: { label: "Superseded", tone: "gray" },
+  MISSING: { label: "Missing", tone: "red" },
+  CURRENT_FOR_DISPATCH: { label: "Current for Dispatch", tone: "blue" },
 };
 
 export function getStatusPresentation(input: string | null | undefined): StatusPresentation {

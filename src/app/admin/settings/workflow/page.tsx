@@ -29,6 +29,7 @@ import {
 import { RefreshCcw, Save } from "lucide-react";
 
 import { PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
+import { MobileActionRail } from "@/components/enterprise/PageTemplates";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import {
   defaultModuleWorkflowSettings,
@@ -38,6 +39,7 @@ import {
   toModuleWorkflowPolicy,
   type ModuleWorkflowPolicy,
 } from "@/lib/module-workflow-policy";
+import { logSaveUxEvent } from "@/lib/ui-save-debug";
 import type { CanonicalEvidenceCategory } from "@/lib/evidence-definition";
 
 type SectionId =
@@ -165,6 +167,7 @@ export default function ModuleSettingsWorkflowPage() {
   async function handleSave() {
 
     setSaving(true);
+    logSaveUxEvent("save_started", { source: "SettingsWorkflow:save" });
     try {
       const policyResponse = await fetch("/api/settings/module-workflow", {
         method: "PATCH",
@@ -180,9 +183,11 @@ export default function ModuleSettingsWorkflowPage() {
       setWorkflowPolicy(policyPayload);
       setTouched(false);
 
+      logSaveUxEvent("save_success", { source: "SettingsWorkflow:save" });
       toast({ title: "Module settings saved", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Settings save failed.";
+      logSaveUxEvent("save_failed", { source: "SettingsWorkflow:save", message });
       toast({ title: "Save failed", description: message, status: "error" });
     } finally {
       setSaving(false);
@@ -237,6 +242,7 @@ export default function ModuleSettingsWorkflowPage() {
                 Reset to Default
               </Button>
               <Button
+                display={{ base: "none", lg: "inline-flex" }}
                 colorScheme="blue"
                 leftIcon={<Save size={16} />}
                 onClick={() => void handleSave()}
@@ -917,6 +923,18 @@ export default function ModuleSettingsWorkflowPage() {
             </HStack>
           </VStack>
         </Stack>
+
+        <MobileActionRail>
+          <Button
+            colorScheme="blue"
+            leftIcon={<Save size={16} />}
+            onClick={() => void handleSave()}
+            isLoading={saving}
+            isDisabled={loading || !touched}
+          >
+            Save Settings
+          </Button>
+        </MobileActionRail>
       </VStack>
     </ControlTowerLayout>
   );

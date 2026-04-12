@@ -14,6 +14,7 @@ import {
   Input,
   Select,
   SimpleGrid,
+  Spinner,
   Text,
   Textarea,
   VStack,
@@ -56,6 +57,7 @@ import {
   type InspectionIssueDraft,
   type InspectionResponseDraftMap,
 } from "@/lib/inspection-workspace";
+import { captureScrollY, logSaveUxEvent, restoreScrollY } from "@/lib/ui-save-debug";
 import type {
   InspectionChecklistItem,
   InspectionDecisionStatus,
@@ -203,6 +205,7 @@ export function LotInspectionWorkspace({
   const { viewMode } = useWorkspaceView();
 
   const [loading, setLoading] = useState(true);
+  const [isRefreshingWorkspace, setIsRefreshingWorkspace] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
   const [payload, setPayload] = useState<InspectionExecutionPayload | null>(null);
@@ -219,8 +222,15 @@ export function LotInspectionWorkspace({
   const exceptionSummaryRef = useRef<HTMLDivElement | null>(null);
   const previousExceptionCountRef = useRef(0);
 
-  async function loadWorkspace(options?: { preserveIncompleteIssues?: boolean }) {
-    setLoading(true);
+  async function loadWorkspace(options?: { preserveIncompleteIssues?: boolean; initial?: boolean; silent?: boolean; keepScrollY?: number | null }) {
+    const isInitial = options?.initial ?? false;
+    const isSilent = options?.silent ?? false;
+    const keepScrollY = options?.keepScrollY ?? (!isInitial && isSilent ? captureScrollY() : null);
+    if (isInitial) {
+      setLoading(true);
+    } else if (!isSilent) {
+      setIsRefreshingWorkspace(true);
+    }
     setLoadError(null);
     setSurfaceError(null);
 
@@ -247,12 +257,17 @@ export function LotInspectionWorkspace({
       const message = error instanceof Error ? error.message : "Failed to load inspection workspace.";
       setLoadError(message);
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        setLoading(false);
+      } else if (!isSilent) {
+        setIsRefreshingWorkspace(false);
+      }
+      restoreScrollY(keepScrollY);
     }
   }
 
   useEffect(() => {
-    void loadWorkspace();
+    void loadWorkspace({ initial: true });
   }, [lotId]);
 
   const checklistItems = payload?.checklistItems ?? [];
@@ -353,6 +368,7 @@ export function LotInspectionWorkspace({
 
   async function startInspection() {
     setStarting(true);
+    logSaveUxEvent("save_started", { source: "LotInspection:startInspection" });
     try {
       const response = await fetch("/api/inspection/execution", {
         method: "POST",
@@ -367,10 +383,12 @@ export function LotInspectionWorkspace({
 
       toast({ title: "Inspection started", status: "success" });
       setSurfaceError(null);
-      await loadWorkspace();
+      await loadWorkspace({ initial: false, silent: true });
+      logSaveUxEvent("save_success", { source: "LotInspection:startInspection" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to start inspection.";
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "LotInspection:startInspection", message });
       toast({ title: "Inspection start failed", description: message, status: "error" });
     } finally {
       setStarting(false);
@@ -383,6 +401,7 @@ export function LotInspectionWorkspace({
     }
 
     setSaving(true);
+    logSaveUxEvent("save_started", { source: "LotInspection:saveInspection", decisionStatus: decisionStatus ?? "PENDING" });
     try {
       const response = await fetch("/api/inspection/execution", {
         method: "PATCH",
@@ -420,6 +439,7 @@ export function LotInspectionWorkspace({
         title: decisionStatus ? getDecisionTone(decisionStatus).label : "Inspection progress saved",
         status: "success",
       });
+      logSaveUxEvent("save_success", { source: "LotInspection:saveInspection", decisionStatus: decisionStatus ?? "PENDING" });
       setSurfaceError(null);
       if (decisionStatus === "READY_FOR_SAMPLING") {
         openSampleManagement();
@@ -427,6 +447,7 @@ export function LotInspectionWorkspace({
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save inspection.";
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "LotInspection:saveInspection", decisionStatus: decisionStatus ?? "PENDING", message });
       toast({ title: "Inspection save failed", description: message, status: "error" });
     } finally {
       setSaving(false);
@@ -441,6 +462,7 @@ export function LotInspectionWorkspace({
     }
 
     setUploadingCategory(category);
+    logSaveUxEvent("save_started", { source: "LotInspection:uploadMedia", category });
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -461,7 +483,8 @@ export function LotInspectionWorkspace({
       toast({ title: `${category.replaceAll("_", " ").toLowerCase()} uploaded`, status: "success" });
       setEvidenceErrors((prev) => ({ ...prev, [category]: "" }));
       setSurfaceError(null);
-      await loadWorkspace({ preserveIncompleteIssues: true });
+      await loadWorkspace({ preserveIncompleteIssues: true, initial: false, silent: true });
+      logSaveUxEvent("save_success", { source: "LotInspection:uploadMedia", category });
       if (category === LOT_OVERVIEW_CATEGORY) {
         setCurrentSectionIndex(REVIEW_STEP_INDEX);
       }
@@ -469,6 +492,7 @@ export function LotInspectionWorkspace({
       const message = error instanceof Error ? error.message : "Failed to upload media.";
       setEvidenceErrors((prev) => ({ ...prev, [category]: message }));
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "LotInspection:uploadMedia", category, message });
       toast({ title: "Upload failed", description: message, status: "error" });
     } finally {
       setUploadingCategory(null);
@@ -486,7 +510,7 @@ export function LotInspectionWorkspace({
   if (loadError) {
     return (
       <ControlTowerLayout>
-        <InlineErrorState title="Inspection workspace unavailable" description={loadError} onRetry={() => void loadWorkspace()} />
+        <InlineErrorState title="Inspection workspace unavailable" description={loadError} onRetry={() => void loadWorkspace({ initial: true })} />
       </ControlTowerLayout>
     );
   }
@@ -830,6 +854,7 @@ export function LotInspectionWorkspace({
               <Button
                 size="lg"
                 variant="outline"
+                display={{ base: "none", lg: "inline-flex" }}
                 rightIcon={<ChevronRight size={16} />}
                 onClick={() => setCurrentSectionIndex(REVIEW_STEP_INDEX)}
               >
@@ -920,6 +945,12 @@ export function LotInspectionWorkspace({
               <Text fontSize="sm" color="text.secondary">
                 {payload.lot.job.clientName} • {payload.lot.materialName || payload.lot.job.commodity}
               </Text>
+              {isRefreshingWorkspace ? (
+                <HStack spacing={1} mt={1}>
+                  <Spinner size="xs" color="text.secondary" />
+                  <Text fontSize="sm" color="text.secondary">Updating...</Text>
+                </HStack>
+              ) : null}
             </Box>
           </HStack>
         </HStack>

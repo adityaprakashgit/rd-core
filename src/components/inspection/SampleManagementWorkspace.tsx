@@ -50,6 +50,7 @@ import {
   mapSampleMediaByType,
 } from "@/lib/sample-management";
 import { SAMPLE_EVIDENCE_ITEMS } from "@/lib/evidence-definition";
+import { logSaveUxEvent } from "@/lib/ui-save-debug";
 import type { LotInspectionRecord, SampleMediaType, SampleRecord } from "@/types/inspection";
 
 type InspectionExecutionPayload = {
@@ -219,6 +220,7 @@ export function SampleManagementWorkspace({
 
   const handleStartSampling = useCallback(async () => {
     setStarting(true);
+    logSaveUxEvent("save_started", { source: "SampleManagement:startSampling" });
     try {
       const res = await fetch("/api/inspection/sample-management", {
         method: "POST",
@@ -233,11 +235,13 @@ export function SampleManagementWorkspace({
       setSample(created);
       setStepErrors((prev) => ({ ...prev, start: undefined }));
       setSurfaceError(null);
+      logSaveUxEvent("save_success", { source: "SampleManagement:startSampling" });
       toast({ title: "Sampling started", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to start sampling.";
       setStepErrors((prev) => ({ ...prev, start: message }));
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "SampleManagement:startSampling", message });
       toast({ title: "Start failed", description: message, status: "error" });
     } finally {
       setStarting(false);
@@ -246,6 +250,7 @@ export function SampleManagementWorkspace({
 
   const handleSaveDetails = useCallback(async () => {
     setSavingDetails(true);
+    logSaveUxEvent("save_started", { source: "SampleManagement:saveDetails" });
     try {
       await updateSample({
         sampleType: detailsForm.sampleType,
@@ -257,11 +262,13 @@ export function SampleManagementWorkspace({
       });
       setStepErrors((prev) => ({ ...prev, details: undefined }));
       setSurfaceError(null);
+      logSaveUxEvent("save_success", { source: "SampleManagement:saveDetails" });
       toast({ title: "Sample details saved", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save details.";
       setStepErrors((prev) => ({ ...prev, details: message }));
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "SampleManagement:saveDetails", message });
       toast({ title: "Save failed", description: message, status: "error" });
     } finally {
       setSavingDetails(false);
@@ -277,6 +284,7 @@ export function SampleManagementWorkspace({
       return;
     }
     setSavingSeal(true);
+    logSaveUxEvent("save_started", { source: "SampleManagement:saveSeal" });
     try {
       await updateSample({
         sealNo: sealForm.sealNo,
@@ -285,11 +293,13 @@ export function SampleManagementWorkspace({
       });
       setStepErrors((prev) => ({ ...prev, seal: undefined }));
       setSurfaceError(null);
+      logSaveUxEvent("save_success", { source: "SampleManagement:saveSeal" });
       toast({ title: "Seal saved", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save seal details.";
       setStepErrors((prev) => ({ ...prev, seal: message }));
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "SampleManagement:saveSeal", message });
       toast({ title: "Save failed", description: message, status: "error" });
     } finally {
       setSavingSeal(false);
@@ -330,15 +340,18 @@ export function SampleManagementWorkspace({
 
   const handleMarkHomogenized = useCallback(async () => {
     setMarkingHomogenized(true);
+    logSaveUxEvent("save_started", { source: "SampleManagement:markHomogenized" });
     try {
       await updateSample({ markHomogenized: true });
       setStepErrors((prev) => ({ ...prev, homogenized: undefined }));
       setSurfaceError(null);
+      logSaveUxEvent("save_success", { source: "SampleManagement:markHomogenized" });
       toast({ title: "Sample marked homogenized", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to update homogeneous state.";
       setStepErrors((prev) => ({ ...prev, homogenized: message }));
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "SampleManagement:markHomogenized", message });
       toast({ title: "Update failed", description: message, status: "error" });
     } finally {
       setMarkingHomogenized(false);
@@ -347,15 +360,18 @@ export function SampleManagementWorkspace({
 
   const handleMarkReady = useCallback(async () => {
     setMarkingReady(true);
+    logSaveUxEvent("save_started", { source: "SampleManagement:markReady" });
     try {
       await updateSample({ markReadyForPacketing: true });
       setStepErrors((prev) => ({ ...prev, ready: undefined }));
       setSurfaceError(null);
+      logSaveUxEvent("save_success", { source: "SampleManagement:markReady" });
       toast({ title: "Sample ready for packeting", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to mark sample ready.";
       setStepErrors((prev) => ({ ...prev, ready: message }));
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "SampleManagement:markReady", message });
       toast({ title: "Readiness blocked", description: message, status: "error" });
     } finally {
       setMarkingReady(false);
@@ -365,6 +381,7 @@ export function SampleManagementWorkspace({
   const handleMediaUpload = useCallback(
     async (config: (typeof SAMPLE_EVIDENCE_ITEMS)[number], file: File) => {
       setUploadingMedia(config.mediaType);
+      logSaveUxEvent("save_started", { source: "SampleManagement:uploadMedia", mediaType: config.mediaType });
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -383,11 +400,13 @@ export function SampleManagementWorkspace({
         });
         setMediaErrors((prev) => ({ ...prev, [config.mediaType]: undefined }));
         setSurfaceError(null);
+        logSaveUxEvent("save_success", { source: "SampleManagement:uploadMedia", mediaType: config.mediaType });
         toast({ title: `${config.title} uploaded`, status: "success" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Upload failed.";
         setMediaErrors((prev) => ({ ...prev, [config.mediaType]: message }));
         setSurfaceError(message);
+        logSaveUxEvent("save_failed", { source: "SampleManagement:uploadMedia", mediaType: config.mediaType, message });
         toast({ title: "Upload failed", description: message, status: "error" });
       } finally {
         setUploadingMedia(null);
@@ -439,6 +458,29 @@ export function SampleManagementWorkspace({
       isDisabled: !sample,
     };
   });
+
+  const mobilePrimaryAction = !sample ? (
+    <Button colorScheme="teal" onClick={() => void handleStartSampling()} isLoading={starting} isDisabled={inspectionApprovalRequired}>
+      Start sampling
+    </Button>
+  ) : !hasSampleDetails(sample) ? (
+    <Button colorScheme="teal" onClick={() => void handleSaveDetails()} isLoading={savingDetails}>
+      Save details
+    </Button>
+  ) : !hasHomogenizedSample(sample) ? (
+    <Button colorScheme="purple" leftIcon={<ShieldCheck size={16} />} onClick={() => void handleMarkHomogenized()} isLoading={markingHomogenized}>
+      Mark homogenized
+    </Button>
+  ) : !hasSealAndLabel(sample) ? (
+    <Button colorScheme="blue" leftIcon={<PackageCheck size={16} />} onClick={() => void handleSaveSeal()} isLoading={savingSeal} isDisabled={!isSealFormatValid}>
+      Save seal
+    </Button>
+  ) : (
+    <Button colorScheme="green" leftIcon={<CheckCircle2 size={16} />} onClick={() => void handleMarkReady()} isLoading={markingReady} isDisabled={inspectionApprovalRequired}>
+      Mark ready
+    </Button>
+  );
+  const desktopPrimaryDisplay = { base: "none", lg: "inline-flex" } as const;
 
   return (
     <ControlTowerLayout>
@@ -518,6 +560,7 @@ export function SampleManagementWorkspace({
         <ProcessFlowLayout
           contextLabel="Traceability"
           tracker={<WorkflowStepTracker title="Sample progress" steps={workflowSteps} compact />}
+          mobileActions={mobilePrimaryAction}
           activeStep={
             <VStack align="stretch" spacing={4}>
               <Card variant="outline" borderRadius="xl">
@@ -544,7 +587,7 @@ export function SampleManagementWorkspace({
                       </Box>
                     </HStack>
                   ) : (
-                    <Button mt={5} colorScheme="teal" leftIcon={<ClipboardCheck size={16} />} onClick={() => void handleStartSampling()} isLoading={starting} isDisabled={inspectionApprovalRequired}>
+                    <Button display={desktopPrimaryDisplay} mt={5} colorScheme="teal" leftIcon={<ClipboardCheck size={16} />} onClick={() => void handleStartSampling()} isLoading={starting} isDisabled={inspectionApprovalRequired}>
                       Start sampling
                     </Button>
                   )}
@@ -600,7 +643,7 @@ export function SampleManagementWorkspace({
                     </FormControl>
                   </SimpleGrid>
 
-                  <Button mt={5} colorScheme="teal" onClick={() => void handleSaveDetails()} isLoading={savingDetails} isDisabled={!sample}>
+                  <Button display={desktopPrimaryDisplay} mt={5} colorScheme="teal" onClick={() => void handleSaveDetails()} isLoading={savingDetails} isDisabled={!sample}>
                     Save details
                   </Button>
                   {stepErrors.details ? (
@@ -662,7 +705,7 @@ export function SampleManagementWorkspace({
                           : "Not yet confirmed."}
                       </Text>
                     </Box>
-                    <Button colorScheme="purple" leftIcon={<ShieldCheck size={16} />} onClick={() => void handleMarkHomogenized()} isLoading={markingHomogenized} isDisabled={!sample || hasHomogenizedSample(sample)}>
+                    <Button display={desktopPrimaryDisplay} colorScheme="purple" leftIcon={<ShieldCheck size={16} />} onClick={() => void handleMarkHomogenized()} isLoading={markingHomogenized} isDisabled={!sample || hasHomogenizedSample(sample)}>
                       Mark homogenized
                     </Button>
                   </Stack>
@@ -731,6 +774,7 @@ export function SampleManagementWorkspace({
                   </SimpleGrid>
 
                   <Button
+                    display={desktopPrimaryDisplay}
                     mt={5}
                     colorScheme="blue"
                     leftIcon={<PackageCheck size={16} />}
@@ -770,7 +814,7 @@ export function SampleManagementWorkspace({
                     ))}
                   </VStack>
 
-                  <Button mt={5} colorScheme="green" leftIcon={<CheckCircle2 size={16} />} onClick={() => void handleMarkReady()} isLoading={markingReady} isDisabled={!sample || inspectionApprovalRequired}>
+                  <Button display={desktopPrimaryDisplay} mt={5} colorScheme="green" leftIcon={<CheckCircle2 size={16} />} onClick={() => void handleMarkReady()} isLoading={markingReady} isDisabled={!sample || inspectionApprovalRequired}>
                     Mark ready for packeting
                   </Button>
                   {stepErrors.ready ? (

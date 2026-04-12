@@ -1,0 +1,166 @@
+{
+  "console": [
+    {
+      "type": "verbose",
+      "text": "[DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o",
+      "location": {
+        "url": "http://127.0.0.1:3000/signup",
+        "lineNumber": 0,
+        "columnNumber": 0
+      },
+      "timestamp": "2026-04-11T10:22:33.213Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:33.627Z"
+    },
+    {
+      "type": "log",
+      "text": "[HMR] connected",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:33.915Z"
+    },
+    {
+      "type": "verbose",
+      "text": "[DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o",
+      "location": {
+        "url": "http://127.0.0.1:3000/login",
+        "lineNumber": 0,
+        "columnNumber": 0
+      },
+      "timestamp": "2026-04-11T10:22:36.745Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:37.110Z"
+    },
+    {
+      "type": "log",
+      "text": "[HMR] connected",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:37.340Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:40.148Z"
+    },
+    {
+      "type": "log",
+      "text": "[HMR] connected",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:40.394Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:44.342Z"
+    },
+    {
+      "type": "log",
+      "text": "[HMR] connected",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:44.562Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:45.993Z"
+    },
+    {
+      "type": "log",
+      "text": "[HMR] connected",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:46.232Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:49.146Z"
+    },
+    {
+      "type": "log",
+      "text": "[HMR] connected",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:49.359Z"
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:51.184Z"
+    },
+    {
+      "type": "log",
+      "text": "[HMR] connected",
+      "location": {
+        "url": "webpack-internal:///(app-pages-browser)/./node_modules/next/dist/next-devtools/shared/forward-logs-shared.js",
+        "lineNumber": 27,
+        "columnNumber": 27
+      },
+      "timestamp": "2026-04-11T10:22:51.400Z"
+    }
+  ],
+  "pageErrors": [],
+  "requestFailures": []
+}

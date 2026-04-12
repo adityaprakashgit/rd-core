@@ -18,7 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationError, authorize } from "@/lib/rbac";
 import { generateRndJobNumber } from "@/lib/rnd-workflow";
 import { getCurrentUserFromRequest } from "@/lib/session";
-import { deriveSampleStatus } from "@/lib/sample-management";
+import { deriveSampleStatus, getSampleReadiness } from "@/lib/sample-management";
 import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import type { PacketRecord, SampleRecord } from "@/types/inspection";
 
@@ -334,7 +334,10 @@ export async function POST(request: NextRequest) {
       const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
       const sampleStatus = deriveSampleStatus(sample as unknown as SampleRecord);
       if (sampleStatus !== "READY_FOR_PACKETING") {
-        throw new Error("SAMPLE_NOT_READY");
+        const readiness = getSampleReadiness(sample as unknown as SampleRecord);
+        throw new Error(
+          `SAMPLE_NOT_READY:${readiness.missing.length > 0 ? readiness.missing.join(" | ") : "Sample readiness prerequisites are incomplete."}`,
+        );
       }
 
       const highestPacketNo = sample.packets.reduce((max, packet) => Math.max(max, packet.packetNo), 0);
@@ -477,8 +480,16 @@ export async function POST(request: NextRequest) {
     if (message === "JOB_LOCKED") {
       return jsonError("Forbidden", "This job is LOCKED for audit integrity. No packet changes are allowed.", 403);
     }
-    if (message === "SAMPLE_NOT_READY") {
-      return jsonError("Validation Error", "Sample is not ready for packeting yet.", 422);
+    if (message.startsWith("SAMPLE_NOT_READY")) {
+      const [, blockerMessage = ""] = message.split(":");
+      const details = blockerMessage.trim();
+      return jsonError(
+        "Validation Error",
+        details
+          ? `Sample is not ready for packeting yet. ${details}`
+          : "Sample is not ready for packeting yet.",
+        422,
+      );
     }
     if (message === "INVALID_PACKET_QUANTITY") {
       return jsonError("Validation Error", "Packet quantity must be positive.", 422);

@@ -9,6 +9,7 @@ import {
   HStack,
   Input,
   Select,
+  Spinner,
   Stack,
   Table,
   TableContainer,
@@ -88,8 +89,10 @@ export default function RndJobDetailPage() {
 
   const [payload, setPayload] = useState<DetailPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshingDetail, setIsRefreshingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [setupDirty, setSetupDirty] = useState(false);
 
   const [setupForm, setSetupForm] = useState({
     packetUse: "",
@@ -116,9 +119,15 @@ export default function RndJobDetailPage() {
     reason: "",
   });
 
-  const fetchDetail = useCallback(async () => {
+  const fetchDetail = useCallback(async (options?: { initial?: boolean; syncSetupForm?: boolean }) => {
     if (!rndJobId) return;
-    setLoading(true);
+    const isInitial = options?.initial ?? false;
+    const syncSetupForm = options?.syncSetupForm ?? false;
+    if (isInitial) {
+      setLoading(true);
+    } else {
+      setIsRefreshingDetail(true);
+    }
     setError(null);
     try {
       const response = await fetch(`/api/rnd/jobs/${rndJobId}`);
@@ -136,7 +145,7 @@ export default function RndJobDetailPage() {
         priority?: string | null;
         remarks?: string | null;
       };
-      setSetupForm({
+      const nextSetupForm = {
         packetUse: job.packetUse ?? "",
         testType: job.testType ?? "",
         testMethod: job.testMethod ?? "",
@@ -145,7 +154,13 @@ export default function RndJobDetailPage() {
         deadline: job.deadline ? String(job.deadline).slice(0, 10) : "",
         priority: job.priority ?? "MEDIUM",
         remarks: job.remarks ?? "",
-      });
+      };
+      if (isInitial || syncSetupForm || !setupDirty) {
+        setSetupForm(nextSetupForm);
+        if (isInitial || syncSetupForm) {
+          setSetupDirty(false);
+        }
+      }
       setAssigneeOptions(data.pickerOptions?.assignees ?? []);
       setApproverOptions(data.pickerOptions?.approvers ?? []);
       setRetestForm((previous) => ({
@@ -155,12 +170,16 @@ export default function RndJobDetailPage() {
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "R&D job could not be loaded.");
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        setLoading(false);
+      } else {
+        setIsRefreshingDetail(false);
+      }
     }
-  }, [rndJobId]);
+  }, [rndJobId, setupDirty]);
 
   useEffect(() => {
-    void fetchDetail();
+    void fetchDetail({ initial: true, syncSetupForm: true });
   }, [fetchDetail]);
 
   const job = payload?.job as Record<string, unknown> | undefined;
@@ -220,7 +239,7 @@ export default function RndJobDetailPage() {
           const p = (await response.json().catch(() => null)) as { details?: string } | null;
           throw new Error(p?.details || "Transition failed.");
         }
-        await fetchDetail();
+        await fetchDetail({ initial: false, syncSetupForm: false });
       } catch (transitionError) {
         toast({ title: "Action failed", description: transitionError instanceof Error ? transitionError.message : "Action failed.", status: "error" });
       } finally {
@@ -248,7 +267,8 @@ export default function RndJobDetailPage() {
         const p = (await response.json().catch(() => null)) as { details?: string } | null;
         throw new Error(p?.details || "Setup update failed.");
       }
-      await fetchDetail();
+      setSetupDirty(false);
+      await fetchDetail({ initial: false, syncSetupForm: true });
       toast({ title: "Setup saved", status: "success" });
     } catch (saveError) {
       toast({ title: "Save failed", description: saveError instanceof Error ? saveError.message : "Save failed.", status: "error" });
@@ -271,7 +291,7 @@ export default function RndJobDetailPage() {
         throw new Error(p?.details || "Add reading failed.");
       }
       setReadingForm({ parameter: "", value: "", unit: "", remarks: "" });
-      await fetchDetail();
+      await fetchDetail({ initial: false, syncSetupForm: false });
     } catch (readingError) {
       toast({ title: "Reading failed", description: readingError instanceof Error ? readingError.message : "Reading failed.", status: "error" });
     } finally {
@@ -293,7 +313,7 @@ export default function RndJobDetailPage() {
         throw new Error(p?.details || "Attachment upload failed.");
       }
       setAttachmentForm({ fileName: "", fileUrl: "", notes: "" });
-      await fetchDetail();
+      await fetchDetail({ initial: false, syncSetupForm: false });
     } catch (attachmentError) {
       toast({ title: "Attachment failed", description: attachmentError instanceof Error ? attachmentError.message : "Attachment failed.", status: "error" });
     } finally {
@@ -316,7 +336,7 @@ export default function RndJobDetailPage() {
           throw new Error(p?.details || "Review action failed.");
         }
         setReviewNotes("");
-        await fetchDetail();
+        await fetchDetail({ initial: false, syncSetupForm: false });
       } catch (reviewError) {
         toast({ title: "Review failed", description: reviewError instanceof Error ? reviewError.message : "Review failed.", status: "error" });
       } finally {
@@ -365,7 +385,7 @@ export default function RndJobDetailPage() {
   if (error || !payload || !job) {
     return (
       <ControlTowerLayout>
-        <InlineErrorState title="R&D job unavailable" description={error ?? "R&D job unavailable"} onRetry={() => void fetchDetail()} />
+        <InlineErrorState title="R&D job unavailable" description={error ?? "R&D job unavailable"} onRetry={() => void fetchDetail({ initial: true, syncSetupForm: true })} />
       </ControlTowerLayout>
     );
   }
@@ -436,7 +456,13 @@ export default function RndJobDetailPage() {
         <VStack align="stretch" spacing={3}>
           <FormControl>
             <FormLabel>Packet Use</FormLabel>
-            <Select value={setupForm.packetUse} onChange={(event) => setSetupForm((p) => ({ ...p, packetUse: event.target.value }))}>
+            <Select
+              value={setupForm.packetUse}
+              onChange={(event) => {
+                setSetupDirty(true);
+                setSetupForm((p) => ({ ...p, packetUse: event.target.value }));
+              }}
+            >
               <option value="">Select packet use</option>
               <option value="TESTING">Testing</option>
               <option value="RETAIN">Retain</option>
@@ -448,11 +474,23 @@ export default function RndJobDetailPage() {
           </FormControl>
           <FormControl>
             <FormLabel>Test Type</FormLabel>
-            <Input value={setupForm.testType} onChange={(event) => setSetupForm((p) => ({ ...p, testType: event.target.value }))} />
+            <Input
+              value={setupForm.testType}
+              onChange={(event) => {
+                setSetupDirty(true);
+                setSetupForm((p) => ({ ...p, testType: event.target.value }));
+              }}
+            />
           </FormControl>
           <FormControl>
             <FormLabel>Test Method / Protocol</FormLabel>
-            <Input value={setupForm.testMethod} onChange={(event) => setSetupForm((p) => ({ ...p, testMethod: event.target.value }))} />
+            <Input
+              value={setupForm.testMethod}
+              onChange={(event) => {
+                setSetupDirty(true);
+                setSetupForm((p) => ({ ...p, testMethod: event.target.value }));
+              }}
+            />
           </FormControl>
           <Stack direction={{ base: "column", md: "row" }} spacing={3}>
             <VStack align="stretch" spacing={2} flex="1">
@@ -460,7 +498,13 @@ export default function RndJobDetailPage() {
                 <FormLabel>Assigned User</FormLabel>
                 <Input placeholder="Search R&D user" value={assigneeSearch} onChange={(event) => setAssigneeSearch(event.target.value)} />
               </FormControl>
-              <Select value={setupForm.assignedToId} onChange={(event) => setSetupForm((p) => ({ ...p, assignedToId: event.target.value }))}>
+              <Select
+                value={setupForm.assignedToId}
+                onChange={(event) => {
+                  setSetupDirty(true);
+                  setSetupForm((p) => ({ ...p, assignedToId: event.target.value }));
+                }}
+              >
                 <option value="">Select assignee</option>
                 {assigneeOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -474,7 +518,13 @@ export default function RndJobDetailPage() {
                 <FormLabel>Approver</FormLabel>
                 <Input placeholder="Search approver" value={approverSearch} onChange={(event) => setApproverSearch(event.target.value)} />
               </FormControl>
-              <Select value={setupForm.approverUserId} onChange={(event) => setSetupForm((p) => ({ ...p, approverUserId: event.target.value }))}>
+              <Select
+                value={setupForm.approverUserId}
+                onChange={(event) => {
+                  setSetupDirty(true);
+                  setSetupForm((p) => ({ ...p, approverUserId: event.target.value }));
+                }}
+              >
                 <option value="">Select approver</option>
                 {approverOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -487,11 +537,24 @@ export default function RndJobDetailPage() {
           <Stack direction={{ base: "column", md: "row" }} spacing={3}>
             <FormControl>
               <FormLabel>Deadline</FormLabel>
-              <Input type="date" value={setupForm.deadline} onChange={(event) => setSetupForm((p) => ({ ...p, deadline: event.target.value }))} />
+              <Input
+                type="date"
+                value={setupForm.deadline}
+                onChange={(event) => {
+                  setSetupDirty(true);
+                  setSetupForm((p) => ({ ...p, deadline: event.target.value }));
+                }}
+              />
             </FormControl>
             <FormControl>
               <FormLabel>Priority</FormLabel>
-              <Select value={setupForm.priority} onChange={(event) => setSetupForm((p) => ({ ...p, priority: event.target.value }))}>
+              <Select
+                value={setupForm.priority}
+                onChange={(event) => {
+                  setSetupDirty(true);
+                  setSetupForm((p) => ({ ...p, priority: event.target.value }));
+                }}
+              >
                 <option value="HIGH">High</option>
                 <option value="MEDIUM">Medium</option>
                 <option value="LOW">Low</option>
@@ -500,7 +563,13 @@ export default function RndJobDetailPage() {
           </Stack>
           <FormControl>
             <FormLabel>Notes</FormLabel>
-            <Input value={setupForm.remarks} onChange={(event) => setSetupForm((p) => ({ ...p, remarks: event.target.value }))} />
+            <Input
+              value={setupForm.remarks}
+              onChange={(event) => {
+                setSetupDirty(true);
+                setSetupForm((p) => ({ ...p, remarks: event.target.value }));
+              }}
+            />
           </FormControl>
           <HStack>
             <Button onClick={() => void onSaveSetup()} isLoading={busy}>Save Setup</Button>
@@ -759,6 +828,12 @@ export default function RndJobDetailPage() {
               <HStack spacing={4} flexWrap="wrap">
                 <Text fontSize="sm" color="text.secondary">Current Step: {payload.currentStep}</Text>
                 <Text fontSize="sm" color="text.secondary">Next Action: {payload.nextAction || nextActionForStatus(status as never)}</Text>
+                {isRefreshingDetail ? (
+                  <HStack spacing={1}>
+                    <Spinner size="xs" color="text.secondary" />
+                    <Text fontSize="sm" color="text.secondary">Updating...</Text>
+                  </HStack>
+                ) : null}
                 {payload.blockers.length > 0 ? (
                   <Text fontSize="sm" color="red.600">{payload.blockers.join(" | ")}</Text>
                 ) : null}

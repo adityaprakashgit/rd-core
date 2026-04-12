@@ -71,6 +71,21 @@ function mapDecisionOutcome(decisionStatus: InspectionDecisionStatus | string | 
   return null;
 }
 
+function mergeCanonicalMediaCategories(
+  ...sources: Array<Array<{ category?: string | null }> | null | undefined>
+) {
+  const categories = new Set<CanonicalEvidenceCategory>();
+  for (const source of sources) {
+    for (const media of source ?? []) {
+      const normalized = normalizeEvidenceCategoryKey(media?.category);
+      if (normalized) {
+        categories.add(normalized);
+      }
+    }
+  }
+  return Array.from(categories);
+}
+
 async function ensureChecklistSeeded(tx: PrismaLike) {
   const defaults = buildMasterSeedPayload();
   const defaultKeys = new Set(defaults.map((item) => item.itemKey));
@@ -164,7 +179,7 @@ async function buildInspectionPayload(tx: PrismaLike, lotId: string, companyId: 
         items: checklistItems,
         responses: inspection.responses as InspectionChecklistResponse[],
         issues: inspection.issues as InspectionIssue[],
-        mediaCategories: inspection.mediaFiles.map((file) => file.category),
+        mediaCategories: mergeCanonicalMediaCategories(inspection.mediaFiles, lot.mediaFiles),
         requiredMediaCategories,
       })
     : null;
@@ -523,7 +538,7 @@ export async function PATCH(request: NextRequest) {
         items: checklistItems,
         responses: refreshed.responses as InspectionChecklistResponse[],
         issues: refreshed.issues as InspectionIssue[],
-        mediaCategories: refreshed.mediaFiles.map((file) => file.category),
+        mediaCategories: mergeCanonicalMediaCategories(refreshed.mediaFiles, lot.mediaFiles),
         requiredMediaCategories: resolveRequiredImageUploadCategories(workflowPolicy.images.requiredImageCategories),
       });
       const resolvedEvidence = resolveEvidenceCategoriesForLot({

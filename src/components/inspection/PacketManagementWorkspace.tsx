@@ -49,6 +49,7 @@ import {
   type PacketMediaType,
 } from "@/lib/packet-management";
 import { deriveSampleStatus } from "@/lib/sample-management";
+import { logSaveUxEvent } from "@/lib/ui-save-debug";
 import type { LotInspectionRecord, PacketRecord, SampleRecord } from "@/types/inspection";
 
 type InspectionExecutionPayload = {
@@ -476,6 +477,7 @@ export function PacketManagementWorkspace() {
     }
 
     setCreating(true);
+    logSaveUxEvent("save_started", { source: "PacketManagement:createPackets", mode });
     try {
       const equalPlan = mode === "equal" ? buildEqualWeightPlan(count, totalQuantity, sample.sampleUnit) : [];
       const res = await fetch("/api/rd/packet", {
@@ -496,10 +498,12 @@ export function PacketManagementWorkspace() {
       const nextPackets = (await res.json()) as PacketRecord[];
       setPackets(nextPackets);
       setSurfaceError(null);
+      logSaveUxEvent("save_success", { source: "PacketManagement:createPackets", mode, packetCount: nextPackets.length });
       toast({ title: mode === "equal" ? "Equal packet plan created" : "Packet cards created", status: "success" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create packets.";
       setSurfaceError(message);
+      logSaveUxEvent("save_failed", { source: "PacketManagement:createPackets", mode, message });
       toast({ title: "Creation failed", description: message, status: "error" });
     } finally {
       setCreating(false);
@@ -551,6 +555,7 @@ export function PacketManagementWorkspace() {
       const hasLabelText = Boolean(draft.labelText.trim());
 
       setSavingPacketId(packetId);
+      logSaveUxEvent("save_started", { source: "PacketManagement:saveDetails", packetId });
       try {
         await updatePacket({
           packetId,
@@ -564,10 +569,12 @@ export function PacketManagementWorkspace() {
           ...(hasSealNo ? { markSealed: true } : {}),
         });
         setSurfaceError(null);
+        logSaveUxEvent("save_success", { source: "PacketManagement:saveDetails", packetId });
         toast({ title: "Packet card saved", status: "success" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to save packet card.";
         setSurfaceError(message);
+        logSaveUxEvent("save_failed", { source: "PacketManagement:saveDetails", packetId, message });
         toast({ title: "Save failed", description: message, status: "error" });
       } finally {
         setSavingPacketId(null);
@@ -587,6 +594,7 @@ export function PacketManagementWorkspace() {
       const hasLabelText = Boolean(draft.labelText.trim());
 
       setReadyPacketId(packetId);
+      logSaveUxEvent("save_started", { source: "PacketManagement:markReady", packetId });
       try {
         await updatePacket({
           packetId,
@@ -601,10 +609,12 @@ export function PacketManagementWorkspace() {
           markAvailable: true,
         });
         setSurfaceError(null);
+        logSaveUxEvent("save_success", { source: "PacketManagement:markReady", packetId });
         toast({ title: "Packet marked available", status: "success" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to mark packet available.";
         setSurfaceError(message);
+        logSaveUxEvent("save_failed", { source: "PacketManagement:markReady", packetId, message });
         toast({ title: "Readiness blocked", description: message, status: "error" });
       } finally {
         setReadyPacketId(null);
@@ -650,6 +660,7 @@ export function PacketManagementWorkspace() {
   const handleMediaUpload = useCallback(
     async (packetId: string, config: MediaConfig, file: File) => {
       setUploadingKey(`${packetId}:${config.mediaType}`);
+      logSaveUxEvent("save_started", { source: "PacketManagement:uploadMedia", packetId, mediaType: config.mediaType });
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -668,10 +679,12 @@ export function PacketManagementWorkspace() {
           mediaEntries: [{ mediaType: config.mediaType, fileUrl: uploadPayload.url }],
         });
         setSurfaceError(null);
+        logSaveUxEvent("save_success", { source: "PacketManagement:uploadMedia", packetId, mediaType: config.mediaType });
         toast({ title: `${config.title} uploaded`, status: "success" });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Upload failed.";
         setSurfaceError(message);
+        logSaveUxEvent("save_failed", { source: "PacketManagement:uploadMedia", packetId, mediaType: config.mediaType, message });
         toast({ title: "Upload failed", description: message, status: "error" });
       } finally {
         setUploadingKey(null);
@@ -756,7 +769,7 @@ export function PacketManagementWorkspace() {
             </Box>
           </HStack>
 
-          <Button colorScheme="purple" leftIcon={<PackageCheck size={16} />} onClick={() => router.push(`/userrd/job/${jobId}`)}>
+          <Button display={{ base: "none", lg: "inline-flex" }} colorScheme="purple" leftIcon={<PackageCheck size={16} />} onClick={() => router.push(`/userrd/job/${jobId}`)}>
             Open Trial Workspace
           </Button>
         </Stack>
@@ -1031,10 +1044,11 @@ export function PacketManagementWorkspace() {
                         onChange={(event) => setPacketCount(event.target.value)}
                         isDisabled={!sampleReady}
                       />
-                      <Button w={{ base: "full", md: "auto" }} colorScheme="purple" isLoading={creating} onClick={() => void handleCreatePackets("manual")} isDisabled={!sampleReady}>
+                      <Button display={{ base: "none", lg: "inline-flex" }} w={{ base: "full", md: "auto" }} colorScheme="purple" isLoading={creating} onClick={() => void handleCreatePackets("manual")} isDisabled={!sampleReady}>
                         Create packet cards
                       </Button>
                       <Button
+                        display={{ base: "none", lg: "inline-flex" }}
                         w={{ base: "full", md: "auto" }}
                         variant="outline"
                         isLoading={creating}

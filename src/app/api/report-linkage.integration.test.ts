@@ -391,6 +391,19 @@ describe("DB integration: traceability/documents report precedence labels", () =
         status: string;
         linkedActionUrl: string | null;
       }>;
+      grouped: {
+        jobs: Array<{
+          jobId: string;
+          lots: Array<{
+            lotId: string;
+            groups: {
+              testReports: { status: string };
+              coa: { status: string };
+              packingList: { status: string };
+            };
+          }>;
+        }>;
+      };
     };
     const rows = documentsPayload.rows;
 
@@ -428,6 +441,14 @@ describe("DB integration: traceability/documents report precedence labels", () =
         }),
       ]),
     );
+
+    const groupedJob = documentsPayload.grouped.jobs.find((job) => job.jobId === seed.lineageWithVersions.jobId);
+    expect(groupedJob).toBeTruthy();
+    const groupedLot = groupedJob?.lots.find((lot) => lot.lotId === seed.lineageWithVersions.lotId);
+    expect(groupedLot).toBeTruthy();
+    expect(groupedLot?.groups.testReports.status).toBe("Active");
+    expect(groupedLot?.groups.coa.status).toBe("Active");
+    expect(groupedLot?.groups.packingList.status).toBe("Current for Dispatch");
 
     expect(rows).toEqual(
       expect.arrayContaining([
