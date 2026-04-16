@@ -184,6 +184,64 @@ export async function POST(req: NextRequest) {
             },
           },
         },
+        samples: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            sampleCode: true,
+            sampleStatus: true,
+            sampleType: true,
+            samplingMethod: true,
+            samplingDate: true,
+            sampleQuantity: true,
+            sampleUnit: true,
+            containerType: true,
+            homogenizedAt: true,
+            readyForPacketingAt: true,
+            createdAt: true,
+            updatedAt: true,
+            sealLabel: true,
+            media: true,
+            events: true,
+            packets: {
+              orderBy: { packetNo: "asc" },
+              select: {
+                id: true,
+                packetCode: true,
+                packetNo: true,
+                packetStatus: true,
+                packetQuantity: true,
+                packetWeight: true,
+                packetUnit: true,
+                packetType: true,
+                readyAt: true,
+                createdAt: true,
+                updatedAt: true,
+                sealLabel: true,
+                media: true,
+                allocation: true,
+              },
+            },
+          },
+        },
+        rndJobs: {
+          where: {
+            resultPrecedence: "ACTIVE",
+            status: { in: ["APPROVED", "COMPLETED"] },
+          },
+          orderBy: { reviewedAt: "desc" },
+          select: {
+            id: true,
+            rndJobNumber: true,
+            status: true,
+            resultPrecedence: true,
+            packetId: true,
+            sampleId: true,
+            reviewedAt: true,
+            completedAt: true,
+            readings: true,
+          },
+        },
         experiments: {
           orderBy: { createdAt: "asc" },
           select: {
@@ -218,8 +276,9 @@ export async function POST(req: NextRequest) {
     }
 
     const nowIso = new Date().toISOString();
-    const packetCount = job.lots.reduce((sum, lot) => sum + (lot.sample?.packets.length ?? 0), 0);
-    const trialCount = job.experiments.reduce((sum, experiment) => sum + experiment.trials.length, 0);
+    const packetCount = job.samples.reduce((sum, sample) => sum + sample.packets.length, 0);
+    const legacyTrialCount = job.experiments.reduce((sum, experiment) => sum + experiment.trials.length, 0);
+    const trialCount = Math.max(legacyTrialCount, job.rndJobs.length);
 
     // 2. Aggregate into a strict current-module snapshot structure.
     const snapshotData = JSON.parse(
@@ -228,7 +287,7 @@ export async function POST(req: NextRequest) {
         generatedAt: nowIso,
         summary: {
           lotCount: job.lots.length,
-          sampleCount: job.lots.filter((lot) => Boolean(lot.sample)).length,
+          sampleCount: job.samples.length,
           packetCount,
           trialCount,
         },
@@ -299,6 +358,58 @@ export async function POST(req: NextRequest) {
                 })),
               }
             : null,
+        })),
+        samples: job.samples.map((sample) => ({
+          id: sample.id,
+          sampleCode: sample.sampleCode,
+          sampleStatus: sample.sampleStatus,
+          sampleType: sample.sampleType,
+          samplingMethod: sample.samplingMethod,
+          samplingDate: sample.samplingDate,
+          sampleQuantity: toNumber(sample.sampleQuantity),
+          sampleUnit: sample.sampleUnit,
+          containerType: sample.containerType,
+          homogenizedAt: sample.homogenizedAt,
+          readyForPacketingAt: sample.readyForPacketingAt,
+          createdAt: sample.createdAt,
+          updatedAt: sample.updatedAt,
+          sealLabel: sample.sealLabel,
+          media: sample.media,
+          events: sample.events,
+          packets: sample.packets.map((packet) => ({
+            id: packet.id,
+            packetCode: packet.packetCode,
+            packetNo: packet.packetNo,
+            packetStatus: packet.packetStatus,
+            packetQuantity: toNumber(packet.packetQuantity),
+            packetWeight: toNumber(packet.packetWeight),
+            packetUnit: packet.packetUnit,
+            packetType: packet.packetType,
+            readyAt: packet.readyAt,
+            createdAt: packet.createdAt,
+            updatedAt: packet.updatedAt,
+            sealLabel: packet.sealLabel,
+            media: packet.media,
+            allocation: packet.allocation,
+          })),
+        })),
+        rndJobs: job.rndJobs.map((rndJob) => ({
+          id: rndJob.id,
+          rndJobNumber: rndJob.rndJobNumber,
+          status: rndJob.status,
+          resultPrecedence: rndJob.resultPrecedence,
+          sampleId: rndJob.sampleId,
+          packetId: rndJob.packetId,
+          reviewedAt: rndJob.reviewedAt,
+          completedAt: rndJob.completedAt,
+          readings: rndJob.readings.map((reading) => ({
+            id: reading.id,
+            parameter: reading.parameter,
+            value: toNumber(reading.value),
+            unit: reading.unit,
+            remarks: reading.remarks,
+            createdAt: reading.createdAt,
+          })),
         })),
         experiments: job.experiments.map((experiment) => ({
           id: experiment.id,

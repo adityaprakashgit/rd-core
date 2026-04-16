@@ -11,7 +11,7 @@ import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { buildPackingListHtml, renderHtmlToPdf } from "@/lib/traceability";
+import { buildPackingListHtml, renderHtmlToPdf } from "@/lib/inspection-documents";
 import { sanitizeReportDocumentType } from "@/lib/report-preferences";
 import {
   getExportPolicyBlockReason,

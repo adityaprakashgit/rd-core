@@ -59,6 +59,6 @@ describe("sample readiness seal requirements", () => {
     );
 
     expect(missingSealedAt.isReady).toBe(false);
-    expect(missingSealedAt.missing).toContain("Complete seal traceability");
+    expect(missingSealedAt.missing).toContain("Complete seal evidence");
   });
 });

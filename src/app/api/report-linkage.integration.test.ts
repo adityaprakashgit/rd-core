@@ -14,7 +14,6 @@ vi.mock("@/lib/session", () => ({
   getCurrentUserFromRequest: mockedSession.getCurrentUserFromRequest,
 }));
 
-import { GET as getTraceabilityLot } from "@/app/api/traceability/lot/[lotId]/route";
 import { GET as getDocumentRegistry } from "@/app/api/documents/registry/route";
 import { GET as getPacketDetail } from "@/app/api/packets/[id]/route";
 
@@ -223,7 +222,7 @@ async function seedLineage(input: {
   };
 }
 
-describe("DB integration: traceability/documents report precedence labels", () => {
+describe("DB integration: documents report precedence labels", () => {
   let seed: SeedContext;
   let dbAvailable = false;
 
@@ -331,54 +330,6 @@ describe("DB integration: traceability/documents report precedence labels", () =
   it("returns active/previous report labels for linked lineage and legacy available labels for unlinked lineage", async () => {
     if (!dbAvailable) return;
 
-    const traceabilityResponse = await getTraceabilityLot(
-      new NextRequest(`http://localhost/api/traceability/lot/${seed.lineageWithVersions.lotId}`),
-      { params: Promise.resolve({ lotId: seed.lineageWithVersions.lotId }) },
-    );
-    expect(traceabilityResponse.status).toBe(200);
-    const traceabilityPayload = (await traceabilityResponse.json()) as {
-      coa: { latestSnapshotId: string | null; previousSnapshotIds: string[] };
-      reports: {
-        active: { snapshotId: string | null; status: string };
-        previous: Array<{ snapshotId: string; status: string }>;
-      };
-      dispatches: Array<{ currentForDispatchSnapshotId: string | null; currentForDispatchUrl: string | null }>;
-      relatedDocuments: Array<{ id: string; status: string }>;
-    };
-
-    expect(traceabilityPayload.coa.latestSnapshotId).toBe(seed.lineageWithVersions.newSnapshotId);
-    expect(traceabilityPayload.coa.previousSnapshotIds).toContain(seed.lineageWithVersions.oldSnapshotId);
-    expect(traceabilityPayload.reports.active.snapshotId).toBe(seed.lineageWithVersions.newSnapshotId);
-    expect(traceabilityPayload.reports.active.status).toBe("Active Report");
-    expect(traceabilityPayload.reports.previous).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          snapshotId: seed.lineageWithVersions.oldSnapshotId,
-          status: "Previous Report",
-        }),
-      ]),
-    );
-    expect(traceabilityPayload.relatedDocuments).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: `report-${seed.lineageWithVersions.newSnapshotId}`,
-          status: "Active Report",
-        }),
-        expect.objectContaining({
-          id: `report-${seed.lineageWithVersions.oldSnapshotId}`,
-          status: "Superseded",
-        }),
-      ]),
-    );
-    expect(traceabilityPayload.dispatches).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          currentForDispatchSnapshotId: seed.lineageWithVersions.newSnapshotId,
-          currentForDispatchUrl: `/api/report/${seed.lineageWithVersions.newSnapshotId}`,
-        }),
-      ]),
-    );
-
     const documentsResponse = await getDocumentRegistry(
       new NextRequest("http://localhost/api/documents/registry"),
     );
@@ -394,6 +345,10 @@ describe("DB integration: traceability/documents report precedence labels", () =
       grouped: {
         jobs: Array<{
           jobId: string;
+          groups: {
+            testReports: { status: string };
+            coa: { status: string };
+          };
           lots: Array<{
             lotId: string;
             groups: {
@@ -446,9 +401,43 @@ describe("DB integration: traceability/documents report precedence labels", () =
     expect(groupedJob).toBeTruthy();
     const groupedLot = groupedJob?.lots.find((lot) => lot.lotId === seed.lineageWithVersions.lotId);
     expect(groupedLot).toBeTruthy();
-    expect(groupedLot?.groups.testReports.status).toBe("Active");
-    expect(groupedLot?.groups.coa.status).toBe("Active");
+    expect(groupedJob?.groups.testReports.status).toBe("Active");
+    expect(groupedJob?.groups.coa.status).toBe("Active");
+    expect(groupedLot?.groups.testReports.status).toBe("Missing");
+    expect(groupedLot?.groups.coa.status).toBe("Missing");
     expect(groupedLot?.groups.packingList.status).toBe("Current for Dispatch");
+
+    const activeFilterResponse = await getDocumentRegistry(
+      new NextRequest("http://localhost/api/documents/registry?status=Active"),
+    );
+    expect(activeFilterResponse.status).toBe(200);
+    const activeFilterPayload = (await activeFilterResponse.json()) as { rows: Array<{ status: string }> };
+    expect(activeFilterPayload.rows.length).toBeGreaterThan(0);
+    expect(activeFilterPayload.rows.every((row) => row.status === "Active Report" || row.status === "Active COA")).toBe(true);
+
+    const supersededFilterResponse = await getDocumentRegistry(
+      new NextRequest("http://localhost/api/documents/registry?status=Superseded"),
+    );
+    expect(supersededFilterResponse.status).toBe(200);
+    const supersededFilterPayload = (await supersededFilterResponse.json()) as { rows: Array<{ status: string }> };
+    expect(supersededFilterPayload.rows.length).toBeGreaterThan(0);
+    expect(supersededFilterPayload.rows.every((row) => row.status === "Previous Report")).toBe(true);
+
+    const currentForDispatchFilterResponse = await getDocumentRegistry(
+      new NextRequest("http://localhost/api/documents/registry?status=Current%20for%20Dispatch"),
+    );
+    expect(currentForDispatchFilterResponse.status).toBe(200);
+    const currentForDispatchPayload = (await currentForDispatchFilterResponse.json()) as { rows: Array<{ status: string }> };
+    expect(currentForDispatchPayload.rows.length).toBeGreaterThan(0);
+    expect(currentForDispatchPayload.rows.every((row) => row.status === "Current for Dispatch")).toBe(true);
+
+    const missingFilterResponse = await getDocumentRegistry(
+      new NextRequest("http://localhost/api/documents/registry?status=Missing"),
+    );
+    expect(missingFilterResponse.status).toBe(200);
+    const missingFilterPayload = (await missingFilterResponse.json()) as { rows: Array<{ status: string }> };
+    expect(missingFilterPayload.rows.length).toBeGreaterThan(0);
+    expect(missingFilterPayload.rows.every((row) => row.status === "Missing")).toBe(true);
 
     expect(rows).toEqual(
       expect.arrayContaining([

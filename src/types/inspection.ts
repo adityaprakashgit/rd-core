@@ -30,6 +30,10 @@ export type InspectionJob = {
   jobStartedAt?: string | Date | null;
   sentToAdminAt?: string | Date | null;
   sentToAdminBy?: string | null;
+  finalDecisionStatus?: "PENDING" | "READY_FOR_SAMPLING" | "ON_HOLD" | "REJECTED" | string | null;
+  finalDecisionAt?: string | Date | null;
+  finalDecisionBy?: string | null;
+  finalDecisionNote?: string | null;
   adminDecisionAt?: string | Date | null;
   adminDecisionBy?: string | null;
   adminDecisionStatus?: "PASS" | "HOLD" | "REJECT" | string | null;
@@ -81,7 +85,6 @@ export type InspectionLot = {
   updatedAt?: string | Date;
   assignedTo?: PublicUser | null;
   assignedBy?: PublicUser | null;
-  sampling?: Sampling | Sampling[] | null;
   sample?: SampleRecord | null;
   bags?: InspectionBag[];
   mediaFiles?: InspectionMediaFile[];
@@ -201,22 +204,6 @@ export type InspectionBag = {
   createdAt: string | Date;
 };
 
-export type Sampling = {
-  id: string;
-  lotId: string;
-  companyId?: string;
-  beforePhotoUrl?: string | null;
-  duringPhotoUrl?: string | null;
-  afterPhotoUrl?: string | null;
-  status?: string;
-  assignedToId?: string | null;
-  assignedById?: string | null;
-  assignedAt?: string | Date | null;
-  createdAt: string | Date;
-  assignedTo?: PublicUser | null;
-  assignedBy?: PublicUser | null;
-};
-
 export type SampleEventType =
   | "SAMPLE_CREATED"
   | "SAMPLE_COLLECTED"
@@ -238,8 +225,8 @@ export type SampleRecord = {
   id: string;
   companyId: string;
   jobId: string;
-  lotId: string;
-  inspectionId: string;
+  lotId?: string | null;
+  inspectionId?: string | null;
   sampleCode: string;
   sampleStatus: string;
   sampleType?: string | null;
@@ -543,7 +530,7 @@ export type RndJobRecord = {
   rndJobNumber: string;
   companyId: string;
   parentJobId: string;
-  lotId: string;
+  lotId?: string | null;
   sampleId: string;
   packetId: string;
   previousRndJobId?: string | null;

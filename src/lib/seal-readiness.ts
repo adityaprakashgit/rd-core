@@ -1,4 +1,5 @@
 import type { InspectionLot } from "@/types/inspection";
+import { normalizeEvidenceCategoryKey } from "@/lib/evidence-definition";
 
 export type SealReadinessRow = {
   lotId: string;
@@ -23,25 +24,14 @@ export function buildSealReadinessRows(lots: InspectionLot[] | null | undefined)
       };
     }
 
-    const inspectionStatus = lot.inspection?.inspectionStatus ?? "";
-    const decisionStatus = lot.inspection?.decisionStatus ?? "";
-
-    if (inspectionStatus !== "COMPLETED") {
+    const hasBagProofCategory = (lot.mediaFiles ?? []).some((file) => normalizeEvidenceCategoryKey(file.category) === "BAG_WITH_LOT_NO");
+    const hasBagProof = hasBagProofCategory || Boolean(lot.bagPhotoUrl);
+    if (!hasBagProof) {
       return {
         lotId: lot.id,
         lotNumber,
         eligible: false,
-        reason: "Inspection not completed.",
-        alreadyAssigned: false,
-      };
-    }
-
-    if (decisionStatus !== "READY_FOR_SAMPLING") {
-      return {
-        lotId: lot.id,
-        lotNumber,
-        eligible: false,
-        reason: "Final decision must be Pass (Ready for Sampling).",
+        reason: "Bag proof is required before seal assignment.",
         alreadyAssigned: false,
       };
     }

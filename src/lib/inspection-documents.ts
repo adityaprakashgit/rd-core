@@ -6,7 +6,7 @@ import { getReportDocumentTypeLabel, type ReportBranding, type ReportDocumentTyp
 export const SEAL_LENGTH = 16;
 const WEIGHT_TOLERANCE = 0.01;
 
-export type TraceabilityLotSelect = {
+export type InspectionEvidenceLotSelect = {
   id: string;
   jobId: string;
   lotNumber: string;
@@ -61,15 +61,19 @@ export async function generateUniqueSealNumber(): Promise<string> {
   throw new Error("Unable to generate a unique seal number.");
 }
 
-export function formatTraceabilityError(details: string) {
+export function formatInspectionValidationError(details: string) {
   return { error: "Validation Error", details };
 }
 
-export function hasRequiredTraceabilityPhotos(lot: Pick<TraceabilityLotSelect, "bagPhotoUrl" | "samplingPhotoUrl" | "sealPhotoUrl">): boolean {
+export function hasRequiredInspectionEvidencePhotos(
+  lot: Pick<InspectionEvidenceLotSelect, "bagPhotoUrl" | "samplingPhotoUrl" | "sealPhotoUrl">,
+): boolean {
   return Boolean(lot.bagPhotoUrl && lot.samplingPhotoUrl && lot.sealPhotoUrl);
 }
 
-export function assertWeightsAreBalanced(lot: Pick<TraceabilityLotSelect, "grossWeight" | "tareWeight" | "netWeight" | "lotNumber">): void {
+export function assertWeightsAreBalanced(
+  lot: Pick<InspectionEvidenceLotSelect, "grossWeight" | "tareWeight" | "netWeight" | "lotNumber">,
+): void {
   if (lot.grossWeight === null || lot.tareWeight === null || lot.netWeight === null) {
     throw new Error(`Lot ${lot.lotNumber}: Missing weights.`);
   }
@@ -82,7 +86,7 @@ export function assertWeightsAreBalanced(lot: Pick<TraceabilityLotSelect, "gross
   }
 }
 
-export function assertSealIsValid(lot: Pick<TraceabilityLotSelect, "lotNumber" | "sealNumber">): void {
+export function assertSealIsValid(lot: Pick<InspectionEvidenceLotSelect, "lotNumber" | "sealNumber">): void {
   if (!lot.sealNumber) {
     throw new Error(`Lot ${lot.lotNumber}: Missing seal number.`);
   }

@@ -1,8 +1,8 @@
-# Final UAT Tracker: Operations + R&D + Traceability + Documents Revamp
+# Final UAT Tracker: Operations + R&D + Lineage + Documents Revamp
 
 ## 1. UAT Objective
 Validate connected enterprise workflow behavior across Operations, R&D, Manager, and Admin with explicit verification of:
-- lot traceability clarity
+- job/lot lineage clarity
 - workflow step clarity
 - reliable document retrieval
 - correct COA/report/dispatch linkage
@@ -38,7 +38,7 @@ Use this exact record format for each test row:
 3. R&D queue and testing
 4. Review / approval
 5. Packet ledger + retest
-6. Traceability
+6. Workflow lineage
 7. Document retrieval
 8. Manager oversight
 9. Admin settings
@@ -103,7 +103,7 @@ Use this exact record format for each test row:
 | MG-01 | Manager Team | Decision Queue/Workflow | See submitted final decisions | Submitted items visible |  | Not Tested |  |  |  |
 | MG-02 | Manager Team | Decision Queue/Workflow | Pass/Hold/Reject | Correct state transitions, notes mandatory where required |  | Not Tested |  |  |  |
 | MG-03 | Manager Team | Manager Home | Oversight sections | Active jobs, lot aging, bottlenecks, missing docs, dispatch delays, missing COA visible |  | Not Tested |  |  |  |
-| MG-04 | Manager Team | Manager Home | Open traceability quickly | Lot-centric traceability quickly accessible |  | Not Tested |  |  |  |
+| MG-04 | Manager Team | Manager Home | Open workflow lineage quickly | Job workflow lot context quickly accessible |  | Not Tested |  |  |  |
 | MG-05 | Manager Team | Reports/Documents | Distinguish active vs previous reports | Clear labels, no current output ambiguity |  | Not Tested |  |  |  |
 | MG-06 | Manager Team | Reports/Documents | Identify dispatch-default report/COA | Current for dispatch is obvious |  | Not Tested |  |  |  |
 
@@ -126,13 +126,13 @@ Use this exact record format for each test row:
 | AD-14 | Admin Team | Company Profile | Logo-based color suggestion | Suggested colors or clear fallback behavior |  | Not Tested |  |  |  |
 | AD-15 | Admin Team | Company Profile | Document branding preview | Report/packing/COA preview visible |  | Not Tested |  |  |  |
 
-## 10. Traceability UAT Checklist
+## 10. Job Workflow Lineage UAT Checklist
 | Test ID | Role | Module / Page | Scenario | Expected Result | Actual Result | Status | Severity | Screenshot / Video | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| TR-01 | Operations Team/Manager Team | Lot Traceability | Open Lot Traceability page | Inspection, samples, R&D tests, packets, documents, dispatches visible |  | Not Tested |  |  |  |
-| TR-02 | Operations Team | Packet -> Traceability | Navigate from packet to lot traceability | Correct linked record opens |  | Not Tested |  |  |  |
-| TR-03 | Operations Team/Manager Team | Lot Traceability | Check linked records clarity | Job/lot/sample/packet/report/dispatch clearly connected |  | Not Tested |  |  |  |
-| TR-04 | Manager Team/Admin Team | Lot Traceability | Check audit timeline | Lifecycle events visible and ordered |  | Not Tested |  |  |  |
+| TR-01 | Operations Team/Manager Team | Job Workflow | Open lot section from job workflow | Lot inspection evidence, decisions, and audit context visible inside canonical workflow |  | Not Tested |  |  |  |
+| TR-02 | Operations Team | Packet -> Job Workflow | Navigate from packet to job packet workflow | Correct job-level packet section opens |  | Not Tested |  |  |  |
+| TR-03 | Operations Team/Manager Team | Job Workflow | Check linked records clarity | Job lots, homogeneous sample, packets, reports, and dispatch documents clearly connected |  | Not Tested |  |  |  |
+| TR-04 | Manager Team/Admin Team | Job Workflow | Check audit timeline | Lifecycle events visible and ordered in workflow/history context |  | Not Tested |  |  |  |
 
 ## 11. Document Retrieval UAT Checklist
 | Test ID | Role | Module / Page | Scenario | Expected Result | Actual Result | Status | Severity | Screenshot / Video | Notes |
@@ -141,7 +141,7 @@ Use this exact record format for each test row:
 | DC-02 | Operations Team/R&D Team/Manager Team | Document Registry | Filter by lot/packet/job/type/status | Correct records shown |  | Not Tested |  |  |  |
 | DC-03 | Manager Team/Admin Team | Document Registry | Check active vs previous labels | `Active Report`, `Active COA`, `Previous Report`, `Current for Dispatch` shown correctly |  | Not Tested |  |  |  |
 | DC-04 | Operations Team/R&D Team | Packet Detail | Verify active/default output | Active report/COA clear, previous reports visible |  | Not Tested |  |  |  |
-| DC-05 | Manager Team/Admin Team | Lot Traceability | Verify output lineage | Active and historical outputs visible |  | Not Tested |  |  |  |
+| DC-05 | Manager Team/Admin Team | Job Workflow / Document Registry | Verify output lineage | Active and historical outputs visible |  | Not Tested |  |  |  |
 | DC-06 | Operations Team/Manager Team | Dispatch Retrieval | Dispatch default output retrieval | Dispatch uses correct active output by default |  | Not Tested |  |  |  |
 
 ## 12. Route / Label UAT Checklist
@@ -165,7 +165,7 @@ Use this exact record format for each test row:
 | RR-01 | Lint passes | QA Engineering | Not Tested |  |
 | RR-02 | Typecheck passes | QA Engineering | Not Tested |  |
 | RR-03 | Build passes | QA Engineering | Not Tested |  |
-| RR-04 | Critical traceability tests pass | QA Engineering | Not Tested |  |
+| RR-04 | Critical lineage tests pass | QA Engineering | Not Tested |  |
 | RR-05 | Submit-to-R&D handoff test passes | QA Engineering | Not Tested |  |
 | RR-06 | R&D lineage / ledger tests pass | QA Engineering | Not Tested |  |
 | RR-07 | Active/default report logic works | QA + Product | Not Tested |  |

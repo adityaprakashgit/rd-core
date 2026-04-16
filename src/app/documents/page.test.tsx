@@ -39,6 +39,24 @@ const payload = {
         missingDocuments: 1,
         lastUpdated: "2026-04-11T10:00:00.000Z",
         actions: { reportsUrl: "/reports?jobId=job-1" },
+        groups: {
+          testReports: {
+            key: "testReports",
+            label: "Test Reports",
+            status: "Active",
+            sourceStatus: "Active Report",
+            count: 1,
+            linkedActionUrl: "https://example.com/report.pdf",
+          },
+          coa: {
+            key: "coa",
+            label: "COA",
+            status: "Superseded",
+            sourceStatus: "Previous Report",
+            count: 1,
+            linkedActionUrl: "https://example.com/coa.pdf",
+          },
+        },
         lots: [
           {
             lotId: "lot-1",
@@ -47,7 +65,7 @@ const payload = {
             documentCount: 5,
             missingDocuments: 1,
             lastUpdated: "2026-04-11T09:00:00.000Z",
-            actions: { traceabilityUrl: "/traceability/lot/lot-1" },
+            actions: { workflowUrl: "/jobs/job-1/workflow?lotId=lot-1&section=lots" },
             groups: {
               inspectionUploads: {
                 key: "inspectionUploads",
@@ -60,18 +78,18 @@ const payload = {
               testReports: {
                 key: "testReports",
                 label: "Test Reports",
-                status: "Active",
-                sourceStatus: "Active Report",
-                count: 1,
-                linkedActionUrl: "https://example.com/report.pdf",
+                status: "Missing",
+                sourceStatus: null,
+                count: 0,
+                linkedActionUrl: null,
               },
               coa: {
                 key: "coa",
                 label: "COA",
-                status: "Superseded",
-                sourceStatus: "Previous Report",
-                count: 1,
-                linkedActionUrl: "https://example.com/coa.pdf",
+                status: "Missing",
+                sourceStatus: null,
+                count: 0,
+                linkedActionUrl: null,
               },
               packingList: {
                 key: "packingList",
@@ -120,7 +138,6 @@ describe("documents page", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "Open Lots" }))[0]);
 
     expect(await screen.findByText("Lot 1")).toBeInTheDocument();
-    expect(screen.getByText("Test Reports")).toBeInTheDocument();
     expect(screen.getByText("Inspection Uploads")).toBeInTheDocument();
     expect(screen.getByText("Dispatch Documents")).toBeInTheDocument();
   });
@@ -130,13 +147,11 @@ describe("documents page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderPage();
+    expect((await screen.findAllByText("Active", { selector: "span" })).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Superseded", { selector: "span" }).length).toBeGreaterThan(0);
     fireEvent.click((await screen.findAllByRole("button", { name: "Open Lots" }))[0]);
-
     const drawer = await screen.findByRole("dialog");
-    expect(within(drawer).getByText("Active", { selector: "span" })).toBeInTheDocument();
-    expect(within(drawer).getByText("Superseded", { selector: "span" })).toBeInTheDocument();
     expect(within(drawer).getByText("Current for Dispatch", { selector: "span" })).toBeInTheDocument();
-    expect(within(drawer).getByText("Missing", { selector: "span" })).toBeInTheDocument();
   });
 
   it("opens group action menu with four actions and disables missing urls", async () => {
@@ -146,15 +161,16 @@ describe("documents page", () => {
     renderPage();
     fireEvent.click((await screen.findAllByRole("button", { name: "Open Lots" }))[0]);
 
-    const buttons = await screen.findAllByLabelText(/actions$/i);
+    const drawer = await screen.findByRole("dialog");
+    const buttons = await within(drawer).findAllByLabelText(/actions$/i);
     const enabledButton = buttons.find((button) => !button.hasAttribute("disabled"));
     expect(enabledButton).toBeTruthy();
     fireEvent.click(enabledButton as HTMLElement);
 
-    expect(await screen.findByRole("menuitem", { name: "View" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Download PDF" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Share" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Print" })).toBeInTheDocument();
+    expect(await screen.findByRole("menuitem", { name: "View PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Download Report PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Share PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Print PDF" })).toBeInTheDocument();
 
     const missingButton = buttons.find((button) => button.hasAttribute("disabled"));
     expect(missingButton).toBeTruthy();
@@ -173,7 +189,7 @@ describe("documents page", () => {
       const drawer = screen.getByRole("dialog");
       expect(within(drawer).getByText("Lots")).toBeInTheDocument();
       expect(within(drawer).getByText("Lot 1")).toBeInTheDocument();
-      expect(within(drawer).getByRole("link", { name: "Open Traceability" })).toBeInTheDocument();
+      expect(within(drawer).getByRole("link", { name: "Open Lot Workflow" })).toBeInTheDocument();
     });
   });
 });

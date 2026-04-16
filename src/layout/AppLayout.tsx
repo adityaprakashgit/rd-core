@@ -176,6 +176,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const pageDefinition = resolvePageDefinition(pathname);
   const breadcrumbs = resolveBreadcrumbs(pageDefinition, pathname);
   const canSwitchRoleView = baseRole === "ADMIN";
+  const collapsedSidebarWidth = 20;
+  const expandedSidebarWidth = 60;
 
   return (
     <Box h="100dvh" bg="bg.app" overflow="hidden">
@@ -190,7 +192,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         />
       </Box>
 
-      <Box ml={{ base: 0, lg: isSidebarCollapsed ? 18 : 60 }} h="100dvh" transition="margin-left 180ms ease" overflow="hidden">
+      <Box ml={{ base: 0, lg: isSidebarCollapsed ? collapsedSidebarWidth : expandedSidebarWidth }} h="100dvh" transition="margin-left 180ms ease" overflow="hidden">
         <Header
           role={effectiveRole ?? session.role}
           displayName={displayName}

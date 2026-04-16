@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       const created = await tx.rDTrial.create({
         data: {
           experimentId: experiment.id,
-          lotId: packet.lotId,
+          lotId: null,
           packetId: packet.id,
           trialNumber,
           notes: `Trial created from packet ${packet.packetCode}`,

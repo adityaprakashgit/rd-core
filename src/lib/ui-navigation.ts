@@ -139,7 +139,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     href: "/documents",
     icon: FileText,
     roles: ["ADMIN", "OPERATIONS", "RND", "VIEWER"],
-    activeMatch: /^\/(documents|reports|traceability)(\/|$)/,
+    activeMatch: /^\/(documents|reports)(\/|$)/,
     mobileTabGroup: "reports",
     mobilePriority: 5,
     mobileLabel: "Documents",
@@ -363,17 +363,6 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
     ],
   },
   {
-    id: "traceability-lot",
-    title: "Lot Traceability",
-    subtitle: "Lot-anchored lifecycle lineage across inspection, samples, packets, documents, and audit history.",
-    moduleId: "documents",
-    matcher: /^\/traceability\/(lot|lots)\/[^/]+$/,
-    breadcrumbs: [
-      { label: "Documents", href: "/documents" },
-      { label: "Lot Traceability" },
-    ],
-  },
-  {
     id: "reference-data-home",
     title: "Master Data",
     subtitle: "Enterprise master records governing clients, materials, containers, and transporters.",
@@ -384,7 +373,7 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
   {
     id: "lot-detail-route",
     title: "Lot Detail",
-    subtitle: "Direct lot lookup route with traceability-oriented record context.",
+    subtitle: "Direct lot lookup redirected into the canonical job workflow.",
     moduleId: "documents",
     matcher: /^\/lots\/[^/]+$/,
     breadcrumbs: [
@@ -395,7 +384,7 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
   {
     id: "sample-detail-route",
     title: "Sample Detail",
-    subtitle: "Direct sample lookup route with linked lot and R&D context.",
+    subtitle: "Direct homogeneous sample lookup redirected into the job-level workflow.",
     moduleId: "rnd",
     matcher: /^\/samples\/[^/]+$/,
     breadcrumbs: [
@@ -406,7 +395,7 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
   {
     id: "packet-detail-route",
     title: "Packet Detail",
-    subtitle: "Direct packet lookup route with linked lot, dispatch, and document context.",
+    subtitle: "Direct packet lookup redirected into the job-level packet workflow.",
     moduleId: "documents",
     matcher: /^\/packets\/[^/]+$/,
     breadcrumbs: [
@@ -545,7 +534,7 @@ export function getMobileTabDefinitions(role: NormalizedRole | null | undefined)
         label: "Documents",
         href: "/documents",
         icon: FileText,
-        activeMatch: /^\/(documents|reports|traceability)(\/|$)/,
+        activeMatch: /^\/(documents|reports)(\/|$)/,
       },
       {
         id: "monitoring",
@@ -584,7 +573,7 @@ export function getMobileTabDefinitions(role: NormalizedRole | null | undefined)
       label: "Documents",
       href: "/documents",
       icon: FileText,
-      activeMatch: /^\/(documents|reports|traceability)(\/|$)/,
+      activeMatch: /^\/(documents|reports)(\/|$)/,
     },
     ...(role === "VIEWER"
       ? []

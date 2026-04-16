@@ -3,7 +3,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { assertSealIsValid, assertWeightsAreBalanced, hasRequiredTraceabilityPhotos } from "@/lib/traceability";
+import {
+  assertSealIsValid,
+  assertWeightsAreBalanced,
+  hasRequiredInspectionEvidencePhotos,
+} from "@/lib/inspection-documents";
 import { deriveSampleStatus, getSampleReadiness, mapSampleMediaByType } from "@/lib/sample-management";
 import type { SampleRecord } from "@/types/inspection";
 
@@ -120,7 +124,7 @@ export async function POST(req: NextRequest) {
               return NextResponse.json({ error: "Validation Error", details }, { status: 422 });
             }
 
-            if (!hasRequiredTraceabilityPhotos(lot)) {
+            if (!hasRequiredInspectionEvidencePhotos(lot)) {
               return NextResponse.json(
                 {
                   error: "Validation Error",

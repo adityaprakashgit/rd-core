@@ -35,7 +35,7 @@ The enterprise UI is now defined by shared primitives and templates, not page-lo
   - shared stage tabs treatment (`line-enterprise`)
   - `ProcessFlowLayout`
   - `MobileActionRail`
-- **Status and traceability**
+- **Status and lineage**
   - `WorkflowStateChip`
   - `LinkedRecordsPanel`
   - `HistoryTimeline`
@@ -110,7 +110,7 @@ Contributors **MUST NOT**:
   - `src/app/userrd/page.tsx`
   - `src/app/master/page.tsx`
   - `src/app/exceptions/page.tsx`
-  - `src/app/traceability/lot/[lotId]/page.tsx`
+  - `src/app/jobs/[jobId]/workflow/page.tsx`
 - **Interaction surface standardization**
   - `src/app/rd/page.tsx`
   - `src/app/admin/page.tsx`

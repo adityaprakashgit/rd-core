@@ -7,7 +7,7 @@ export default function LotDetailPage({ params }: { params: { lotId: string } })
     <RecordRouteRedirect
       endpoint={`/api/lots/${params.lotId}`}
       title="Lot detail"
-      buildHref={(payload) => `/traceability/lots/${payload.id}`}
+      buildHref={(payload) => `/jobs/${payload.jobId}/workflow?lotId=${payload.id}&section=lots`}
     />
   );
 }

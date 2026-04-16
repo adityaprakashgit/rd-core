@@ -18,7 +18,7 @@ It is implementation-oriented and enforceable for all UI work in this repository
 - This codebase is one module within the broader ERP architecture.
 - UI direction:
   - Zoho-like usability and cleanliness
-  - SAP/Fiori-like structure, traceability, and workflow governance
+  - SAP/Fiori-like structure, lineage visibility, and workflow governance
 
 ## 1) Core UI Principles (Enforceable)
 
@@ -30,7 +30,7 @@ It is implementation-oriented and enforceable for all UI work in this repository
    Stage (where in process) MUST NOT be conflated with status (state of record).
 4. **Non-scroll-dependent workflow orientation**  
    Process-heavy pages MUST provide stage orientation without requiring long vertical scanning.
-5. **Traceability must be visible**  
+5. **Lineage and auditability must be visible**  
    Linked records and audit timeline MUST be visible on process/detail surfaces.
 6. **Reuse before customization**  
    Existing shared primitives/templates MUST be reused before creating local UI patterns.
@@ -154,7 +154,7 @@ Migration sequence MUST follow:
 2. Canonical job workflow
 3. R&D detail alignment
 4. Packet detail alignment
-5. Traceability/document/timeline standardization
+5. Lineage/document/timeline standardization
 6. Legacy route/component cleanup
 
 ## Implementation Checks (PR/Task Gate)

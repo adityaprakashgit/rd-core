@@ -90,14 +90,6 @@ function getAuditAction(category: string, isRetake: boolean) {
   return isRetake ? "IMAGE_RETAKEN" : "IMAGE_UPLOADED";
 }
 
-function isSamplingEvidenceComplete(record: {
-  beforePhotoUrl?: string | null;
-  duringPhotoUrl?: string | null;
-  afterPhotoUrl?: string | null;
-}) {
-  return Boolean(record.beforePhotoUrl && record.duringPhotoUrl && record.afterPhotoUrl);
-}
-
 export async function POST(req: NextRequest) {
   try {
     const currentUser = await getCurrentUserFromRequest(req);
@@ -337,32 +329,20 @@ export async function POST(req: NextRequest) {
         }
 
         if (["SAMPLING_IN_PROGRESS", "BEFORE", "AFTER"].includes(category)) {
-          const existingSampling = await tx.sampling.findUnique({
-            where: { lotId },
-            select: {
-              beforePhotoUrl: true,
-              duringPhotoUrl: true,
-              afterPhotoUrl: true,
-            },
-          });
-          const wasSamplingComplete = isSamplingEvidenceComplete(existingSampling ?? {});
-          const updateData =
-            category === "BEFORE"
-              ? { beforePhotoUrl: publicUrl }
-              : category === "AFTER"
-                ? { afterPhotoUrl: publicUrl }
-                : { duringPhotoUrl: publicUrl };
-
-          const upsertedSampling = await tx.sampling.upsert({
-            where: { lotId },
-            create: {
+          const samplingEvidenceCategories = ["BEFORE", "SAMPLING_IN_PROGRESS", "AFTER"];
+          const existingSamplingMedia = await tx.mediaFile.findMany({
+            where: {
               lotId,
-              companyId: currentUser.companyId,
-              ...updateData,
+              category: { in: samplingEvidenceCategories },
             },
-            update: updateData,
+            select: {
+              category: true,
+            },
           });
-          const isSamplingNowComplete = isSamplingEvidenceComplete(upsertedSampling);
+          const existingCategories = new Set(existingSamplingMedia.map((entry) => entry.category));
+          const wasSamplingComplete = samplingEvidenceCategories.every((entry) => existingCategories.has(entry));
+          existingCategories.add(category);
+          const isSamplingNowComplete = samplingEvidenceCategories.every((entry) => existingCategories.has(entry));
 
           await tx.inspectionLot.update({
             where: { id: lotId },

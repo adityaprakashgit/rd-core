@@ -176,15 +176,27 @@ export function DetailTabsLayout({
   tabs,
   rightRail,
   defaultTab = 0,
+  activeTabIndex,
+  onTabChange,
 }: {
   tabs: DetailTab[];
   rightRail?: ReactNode;
   defaultTab?: number;
+  activeTabIndex?: number;
+  onTabChange?: (index: number) => void;
 }) {
+  const isControlled = typeof activeTabIndex === "number";
+
   return (
     <Stack direction={{ base: "column", xl: "row" }} spacing={5} align="start">
       <Box flex="1" minW={0}>
-        <Tabs variant="line-enterprise" isLazy defaultIndex={defaultTab}>
+        <Tabs
+          variant="line-enterprise"
+          isLazy
+          defaultIndex={defaultTab}
+          index={isControlled ? activeTabIndex : undefined}
+          onChange={onTabChange}
+        >
           <TabList overflowX="auto" overflowY="hidden">
             {tabs.map((tab) => (
               <Tab key={tab.id} whiteSpace="nowrap">

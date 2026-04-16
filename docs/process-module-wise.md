@@ -49,7 +49,7 @@ Create a new inspection job with company scope, assignment, serial generation, a
 ### System Outputs
 - New `InspectionJob` row is created.
 - Job is assigned to creator by default.
-- Audit log exists for traceability.
+- Audit log exists for lineage review.
 - Response returns workspace-ready job data (`workspaceJobSelect`).
 
 ### Error Handling
@@ -201,7 +201,7 @@ Register lots under a job with mandatory lot identity, quantity capture mode, an
 ## Module 3: Sampling & Seal Assignment
 
 ### Objective
-Capture sample lifecycle evidence for an approved lot, complete seal-label traceability, and transition the lot/sample to packet-ready state.
+Capture sample lifecycle evidence for an approved lot, complete seal-label evidence, and transition the lot/sample to packet-ready state.
 
 ### Entry Points
 - UI: Sample Management workspace (`/operations/job/[jobId]/lot/[lotId]`, `/userinsp/job/[jobId]/lot/[lotId]`)
@@ -245,7 +245,7 @@ Capture sample lifecycle evidence for an approved lot, complete seal-label trace
    - required sample details
    - required sample media
    - homogenized marker
-   - complete seal-label traceability
+   - complete seal-label evidence
 6. If `markReadyForPacketing = true`, system blocks transition unless readiness is fully satisfied.
 7. On success, sample status advances to `READY_FOR_PACKETING`, readiness timestamp is stored, sample events are appended, and sample audit is written.
 8. Legacy sync updates lot-level fields (`samplingPhotoUrl`, `sealPhotoUrl`, `sealNumber`, lot status progression).
@@ -258,8 +258,8 @@ Capture sample lifecycle evidence for an approved lot, complete seal-label trace
 - `Sample` record with progressive status:
   - `SAMPLING_IN_PROGRESS` -> `DETAILS_CAPTURED` -> `HOMOGENIZED` -> `SEALED` -> `READY_FOR_PACKETING`
 - `SampleEvent` history (created, collected, details, homogenized, sealed/labeled, ready).
-- `SampleSealLabel` traceability row.
-- Updated lot traceability fields (sampling/seal photos, seal number, sealAuto, status).
+- `SampleSealLabel` evidence row.
+- Updated lot evidence fields (sampling/seal photos, seal number, sealAuto, status).
 - Audit logs for sample updates/readiness and seal generation/assignment actions.
 
 ### Error Handling
@@ -283,7 +283,7 @@ Capture sample lifecycle evidence for an approved lot, complete seal-label trace
 
 ### Business Rules
 1. Sampling can proceed only after lot inspection approval for sampling.
-2. Ready-for-packeting is gated by complete details, required media, homogenization, and seal-label traceability.
+2. Ready-for-packeting is gated by complete details, required media, homogenization, and seal-label evidence.
 3. Seal number format must be exactly 16 numeric digits.
 4. Lot-level seal is immutable once assigned.
 5. All sampling and seal transitions must be auditable.
@@ -291,7 +291,7 @@ Capture sample lifecycle evidence for an approved lot, complete seal-label trace
 ### Completion Criteria (DoD)
 1. User can start sampling for an approved lot.
 2. User can save sample details and required evidence.
-3. User can generate or enter seal, save label, and persist seal traceability.
+3. User can generate or enter seal, save label, and persist seal evidence.
 4. System prevents `READY_FOR_PACKETING` transition until readiness gates are satisfied.
 5. On readiness success, sample status and lot sync fields are updated correctly.
 6. Audit/event trails reflect key transitions.

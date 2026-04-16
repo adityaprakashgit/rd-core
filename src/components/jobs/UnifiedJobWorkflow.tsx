@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Badge,
   Box,
@@ -57,6 +57,7 @@ import { getSampleReadiness } from "@/lib/sample-management";
 import { buildSealReadinessRows } from "@/lib/seal-readiness";
 import { captureScrollY, logSaveUxEvent, restoreScrollY } from "@/lib/ui-save-debug";
 import type { InspectionJob, InspectionLot, PublicUser } from "@/types/inspection";
+import type { DecisionUpdateRequest, SampleStartRequest, SampleUpdateRequest } from "@/types/workflow-api";
 
 type ClientOption = {
   id: string;
@@ -229,7 +230,10 @@ function getReadableEvidenceCategoryLabel(value: string) {
   return normalized ? getEvidenceCategoryLabel(normalized) : value;
 }
 
-function getPacketBlockerMessage(blocker: string) {
+function getPacketBlockerMessage(
+  blocker: string,
+  context?: { lotHasSealNumber?: boolean; sampleHasSealEvidence?: boolean },
+) {
   if (blocker === "Capture sample details") {
     return "Capture sample details (Sample Quantity, Sample Unit, Container Type).";
   }
@@ -239,8 +243,11 @@ function getPacketBlockerMessage(blocker: string) {
   if (blocker === "Mark sample homogenized") {
     return "Mark homogeneous proof in Sampling before packet creation.";
   }
-  if (blocker === "Complete seal traceability") {
-    return "Complete seal traceability (seal number and seal time) before packet creation.";
+  if (blocker === "Complete seal evidence") {
+    if (context?.lotHasSealNumber && !context?.sampleHasSealEvidence) {
+      return "Seal exists on lot; complete sample seal evidence sync in Sampling/Seal.";
+    }
+    return "Complete seal evidence (seal number and seal time) before packet creation.";
   }
   return blocker;
 }
@@ -278,6 +285,7 @@ function getSamplingRequiredChecklist(sample: InspectionLot["sample"] | null | u
 
 export function UnifiedJobWorkflow() {
   const { jobId } = useParams<{ jobId: string }>();
+  const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
@@ -315,8 +323,8 @@ export function UnifiedJobWorkflow() {
   });
   const [lotForm, setLotForm] = useState({
     lotNumber: "",
+    materialName: "",
     bagCount: "1",
-    weight: "",
     weightUnit: "KG",
   });
   const [sampleForm, setSampleForm] = useState({
@@ -397,6 +405,7 @@ export function UnifiedJobWorkflow() {
       });
       setLotForm((current) => ({
         ...current,
+        materialName: current.materialName || workflowPayload.job.commodity || "",
         lotNumber:
           workflowPayload.settings.workflow.autoLotNumbering
             ? ""
@@ -454,14 +463,14 @@ export function UnifiedJobWorkflow() {
     () => job?.lots?.find((lot) => lot.id === selectedLotId) ?? job?.lots?.[0] ?? null,
     [job?.lots, selectedLotId],
   );
-  const selectedSample = selectedLot?.sample ?? null;
+  const selectedSample = payload?.sample ?? selectedLot?.sample ?? null;
   const autoLotNumberPreview = useMemo(() => {
     if (!settings?.workflow.autoLotNumbering || !job) {
       return "";
     }
     return buildAutoLotNumber(settings.workflow, job.lots ?? []);
-  }, [settings?.workflow.autoLotNumbering, settings?.workflow.lotNumberPrefix, settings?.workflow.lotNumberSequenceFormat, job]);
-  const packets = useMemo(() => selectedSample?.packets ?? [], [selectedSample?.packets]);
+  }, [settings, job]);
+  const packets = useMemo(() => payload?.packets ?? selectedSample?.packets ?? [], [payload?.packets, selectedSample?.packets]);
   const sampleReadiness = useMemo(() => getSampleReadiness(selectedSample), [selectedSample]);
   const samplingRequiredChecklist = useMemo(() => getSamplingRequiredChecklist(selectedSample), [selectedSample]);
   const rndAssignees = payload?.rndAssignees ?? [];
@@ -470,13 +479,23 @@ export function UnifiedJobWorkflow() {
     () => (selectedSample ? `packet-draft:${jobId}:${selectedSample.id}` : null),
     [jobId, selectedSample],
   );
+  const samplingBlockingLots = useMemo(
+    () =>
+      (job?.lots ?? []).filter(
+        (lot) =>
+          lot.inspection?.inspectionStatus !== "COMPLETED" ||
+          lot.inspection?.decisionStatus !== "READY_FOR_SAMPLING",
+      ),
+    [job?.lots],
+  );
+  const allLotsReadyForHomogeneousSampling = Boolean(job?.lots?.length) && samplingBlockingLots.length === 0;
   const packetStageBlockers = useMemo(() => {
     const blockers: string[] = [];
     if (!selectedSample) {
       blockers.push("Sample is required before packet creation.");
     }
-    if (selectedLot?.inspection?.decisionStatus !== "READY_FOR_SAMPLING") {
-      blockers.push("Final decision must be Pass before packet creation.");
+    if (!allLotsReadyForHomogeneousSampling) {
+      blockers.push("All lots must pass inspection before packet creation.");
     }
     if (selectedSample) {
       for (const missing of sampleReadiness.missing) {
@@ -484,20 +503,31 @@ export function UnifiedJobWorkflow() {
       }
     }
     return blockers;
-  }, [selectedSample, selectedLot?.inspection?.decisionStatus, sampleReadiness.missing]);
-  const missingRequiredImageProof = useMemo(() => {
-    if (!selectedLot || !settings) {
+  }, [allLotsReadyForHomogeneousSampling, selectedSample, sampleReadiness.missing]);
+  const decisionMissingProofLots = useMemo(() => {
+    if (!job?.lots?.length || !settings) {
       return [];
     }
-    return getMissingRequiredImageProofLabels(
-      settings.images.requiredImageCategories,
-      (selectedLot.mediaFiles ?? []).map((file) => file.category),
-    );
-  }, [selectedLot, settings]);
+    return (job.lots ?? [])
+      .map((lot) => ({
+        lotNumber: lot.lotNumber,
+        missing: getMissingRequiredImageProofLabels(
+          settings.images.requiredImageCategories,
+          (lot.mediaFiles ?? []).map((file) => file.category),
+        ),
+      }))
+      .filter((entry) => entry.missing.length > 0);
+  }, [job?.lots, settings]);
   const sealReadinessRows = useMemo(() => buildSealReadinessRows(job?.lots), [job?.lots]);
   const readySealLots = useMemo(
     () => sealReadinessRows.filter((entry) => entry.eligible),
     [sealReadinessRows],
+  );
+  const requiredImageCategories = settings?.images.requiredImageCategories ?? [];
+  const optionalImageCategories = settings?.images.optionalImageCategories ?? [];
+  const allLotsHaveSeal = useMemo(
+    () => (job?.lots ?? []).every((lot) => Boolean(lot.sample?.sealLabel?.sealNo || lot.sealNumber)),
+    [job?.lots],
   );
 
   const packetAllocation = useMemo(() => {
@@ -731,11 +761,10 @@ export function UnifiedJobWorkflow() {
         body: JSON.stringify({
           jobId,
           lotNumber: settings?.workflow.autoLotNumbering ? nextAutoLotNumber : lotForm.lotNumber,
-          materialName: job?.commodity || "Item",
+          materialName: lotForm.materialName.trim() || job?.commodity || "Item",
           quantityMode: "SINGLE_PIECE",
-          bagCount: Number(lotForm.bagCount) || 1,
-          grossWeight: lotForm.weight.trim() ? Number(lotForm.weight) : undefined,
-          netWeight: lotForm.weight.trim() ? Number(lotForm.weight) : undefined,
+          bagCount: 1,
+          totalBags: 1,
           weightUnit: lotForm.weightUnit,
         }),
       });
@@ -743,21 +772,16 @@ export function UnifiedJobWorkflow() {
         throw new Error("Lot could not be created.");
       }
       const createdLot = (await response.json()) as { id?: string | null };
-      await fetchWorkflow({ initial: false, keepSection: activeSection, keepScrollY: captureScrollY() });
-      if (createdLot?.id) {
-        setSelectedLotId(createdLot.id);
-      } else {
-        const latestLotId = [...(job?.lots ?? [])].sort(
-          (left, right) => Number(new Date(right.createdAt)) - Number(new Date(left.createdAt)),
-        )[0]?.id;
-        if (latestLotId) {
-          setSelectedLotId(latestLotId);
-        }
-      }
+      await fetchWorkflow({
+        initial: false,
+        keepSection: activeSection,
+        keepScrollY: captureScrollY(),
+        preferredLotId: createdLot?.id ?? null,
+      });
       setLotForm((current) => ({
         ...current,
+        materialName: job?.commodity || current.materialName,
         bagCount: "1",
-        weight: "",
         weightUnit: "KG",
       }));
       toast({ title: "Lot created", status: "success" });
@@ -794,13 +818,17 @@ export function UnifiedJobWorkflow() {
   };
 
   const ensureInspectionRecord = async () => {
-    if (!selectedLot) {
+    if (!selectedLot || !job) {
       return;
     }
     const response = await fetch("/api/inspection/execution", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lotId: selectedLot.id }),
+      body: JSON.stringify({
+        jobId: job.id,
+        lotId: selectedLot.id,
+        caller: "UnifiedJobWorkflow",
+      }),
     });
     if (!response.ok) {
       throw new Error("Inspection record could not be initialized.");
@@ -808,7 +836,7 @@ export function UnifiedJobWorkflow() {
   };
 
   const handleDecision = async (decision: "PENDING" | "READY_FOR_SAMPLING" | "ON_HOLD" | "REJECTED") => {
-    if (!selectedLot) {
+    if (!job) {
       return;
     }
     setSaving(true);
@@ -820,14 +848,16 @@ export function UnifiedJobWorkflow() {
           : decision === "PENDING"
             ? "Ready for Decision"
             : "Approved for Sampling";
+      const decisionPayload: DecisionUpdateRequest = {
+        jobId: job.id,
+        caller: "UnifiedJobWorkflow",
+        decisionStatus: decision,
+        overallRemark,
+      };
       const response = await fetch("/api/inspection/execution", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lotId: selectedLot.id,
-          decisionStatus: decision,
-          overallRemark,
-        }),
+        body: JSON.stringify(decisionPayload),
       });
       if (!response.ok) {
         let details = "";
@@ -849,21 +879,34 @@ export function UnifiedJobWorkflow() {
   };
 
   const handleStartSampling = async () => {
-    if (!selectedLot) {
+    if (!job) {
+      return;
+    }
+    if (!allLotsReadyForHomogeneousSampling) {
+      toast({
+        title: "Homogeneous sampling blocked",
+        description: `All lots must pass inspection first. Blocking lots: ${
+          samplingBlockingLots.map((lot) => lot.lotNumber).join(", ") || "None"
+        }.`,
+        status: "warning",
+      });
       return;
     }
     setSaving(true);
     try {
+      const sampleStartPayload: SampleStartRequest = {
+        jobId: job.id,
+        caller: "UnifiedJobWorkflow",
+        ...(settings?.workflow.autoSampleIdGeneration ? {} : { sampleCode: sampleForm.sampleCode }),
+      };
       const response = await fetch("/api/inspection/sample-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lotId: selectedLot.id,
-          ...(settings?.workflow.autoSampleIdGeneration ? {} : { sampleCode: sampleForm.sampleCode }),
-        }),
+        body: JSON.stringify(sampleStartPayload),
       });
       if (!response.ok) {
-        throw new Error("Sampling could not be started.");
+        const payload = (await response.json().catch(() => null)) as { details?: string; error?: string } | null;
+        throw new Error(payload?.details || payload?.error || "Sampling could not be started.");
       }
       await fetchWorkflow({ initial: false, keepSection: activeSection, keepScrollY: captureScrollY() });
       toast({ title: "Sampling started", status: "success" });
@@ -875,24 +918,26 @@ export function UnifiedJobWorkflow() {
   };
 
   const handleSaveSample = async () => {
-    if (!selectedLot) {
+    if (!job) {
       return;
     }
     setSaving(true);
     try {
+      const sampleUpdatePayload: SampleUpdateRequest = {
+        jobId: job.id,
+        caller: "UnifiedJobWorkflow",
+        ...(settings?.workflow.autoSampleIdGeneration ? {} : { sampleCode: sampleForm.sampleCode }),
+        sampleType: sampleForm.sampleType,
+        samplingMethod: sampleForm.samplingMethod,
+        sampleQuantity: sampleForm.sampleQuantity,
+        sampleUnit: sampleForm.sampleUnit,
+        containerType: sampleForm.containerType,
+        remarks: sampleForm.remarks,
+      };
       const response = await fetch("/api/inspection/sample-management", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lotId: selectedLot.id,
-          ...(settings?.workflow.autoSampleIdGeneration ? {} : { sampleCode: sampleForm.sampleCode }),
-          sampleType: sampleForm.sampleType,
-          samplingMethod: sampleForm.samplingMethod,
-          sampleQuantity: sampleForm.sampleQuantity,
-          sampleUnit: sampleForm.sampleUnit,
-          containerType: sampleForm.containerType,
-          remarks: sampleForm.remarks,
-        }),
+        body: JSON.stringify(sampleUpdatePayload),
       });
       if (!response.ok) {
         throw new Error("Sample details could not be saved.");
@@ -907,15 +952,20 @@ export function UnifiedJobWorkflow() {
   };
 
   const handleMarkHomogeneous = async () => {
-    if (!selectedLot) {
+    if (!job) {
       return;
     }
     setSaving(true);
     try {
+      const sampleMarkPayload: SampleUpdateRequest = {
+        jobId: job.id,
+        caller: "UnifiedJobWorkflow",
+        markHomogenized: true,
+      };
       const response = await fetch("/api/inspection/sample-management", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lotId: selectedLot.id, markHomogenized: true }),
+        body: JSON.stringify(sampleMarkPayload),
       });
       if (!response.ok) {
         throw new Error("Homogeneous proof could not be marked.");
@@ -930,14 +980,14 @@ export function UnifiedJobWorkflow() {
   };
 
   const handleUploadHomogenizedSamplePhoto = async (file: File) => {
-    if (!selectedLot || !selectedSample) {
+    if (!job || !selectedSample) {
       return;
     }
     setSaving(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("lotId", selectedLot.id);
+      formData.append("jobId", job.id);
       formData.append("category", "HOMOGENEOUS");
       const uploadRes = await fetch("/api/media/upload", { method: "POST", body: formData });
       if (!uploadRes.ok) {
@@ -947,19 +997,21 @@ export function UnifiedJobWorkflow() {
       if (!uploadPayload.url) {
         throw new Error("Homogenized sample photo URL is missing.");
       }
+      const sampleMediaPayload: SampleUpdateRequest = {
+        jobId: job.id,
+        caller: "UnifiedJobWorkflow",
+        mediaEntries: [
+          {
+            mediaType: "HOMOGENIZED_SAMPLE",
+            fileUrl: uploadPayload.url,
+            remarks: "Homogenized sample proof",
+          },
+        ],
+      };
       const response = await fetch("/api/inspection/sample-management", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lotId: selectedLot.id,
-          mediaEntries: [
-            {
-              mediaType: "HOMOGENIZED_SAMPLE",
-              fileUrl: uploadPayload.url,
-              remarks: "Homogenized sample proof",
-            },
-          ],
-        }),
+        body: JSON.stringify(sampleMediaPayload),
       });
       if (!response.ok) {
         let details = "";
@@ -985,20 +1037,22 @@ export function UnifiedJobWorkflow() {
   };
 
   const handleSaveSeal = async (sealNo: string) => {
-    if (!selectedLot) {
+    if (!job || !selectedLot) {
       return;
     }
     setSaving(true);
     try {
+      const sampleSealPayload: SampleUpdateRequest = {
+        jobId: job.id,
+        caller: "UnifiedJobWorkflow",
+        sealNo,
+        sealAuto: false,
+        markSealed: true,
+      };
       const response = await fetch("/api/inspection/sample-management", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lotId: selectedLot.id,
-          sealNo,
-          sealAuto: false,
-          markSealed: true,
-        }),
+        body: JSON.stringify(sampleSealPayload),
       });
       if (!response.ok) {
         throw new Error("Seal could not be saved.");
@@ -1020,7 +1074,7 @@ export function UnifiedJobWorkflow() {
     if (eligible.length === 0) {
       toast({
         title: "No eligible lots",
-        description: "Complete Final Decision (Pass) for at least one lot before bulk seal generation.",
+        description: "Complete the job-level Final Decision (Pass) before bulk seal generation.",
         status: "warning",
       });
       return;
@@ -1325,39 +1379,69 @@ export function UnifiedJobWorkflow() {
     { id: "job", label: "Job Basics" },
     { id: "lots", label: "Lots" },
     { id: "images", label: "Images" },
-    { id: "decision", label: "Final Decision" },
-    { id: "sampling", label: "Sampling" },
     { id: "seal", label: "Seal" },
+    { id: "decision", label: "Final Decision" },
+    { id: "sampling", label: "Homogeneous Sample" },
     { id: "packets", label: "Packets" },
     { id: "handover", label: "Submit to R&D" },
   ];
 
+  const handleSectionChange = (nextSection: WorkflowSectionId, options?: { syncUrl?: boolean }) => {
+    setActiveSection(nextSection);
+    activeSectionRef.current = nextSection;
+
+    if (options?.syncUrl === false) {
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextSection === "job") {
+      params.delete("section");
+    } else {
+      params.set("section", nextSection);
+    }
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
   const focusSectionForNextAction = () => {
     if (nextPrimaryAction === "Add Lot") {
-      setActiveSection("lots");
+      handleSectionChange("lots");
       void handleCreateLot();
       return;
     }
+    if (nextPrimaryAction === "Save Images and Continue") {
+      handleSectionChange("lots");
+      return;
+    }
+    if (nextPrimaryAction === "Assign Seal") {
+      handleSectionChange("seal");
+      return;
+    }
     if (nextPrimaryAction === "Submit for Decision" || nextPrimaryAction === "Pass / Hold / Reject") {
-      setActiveSection("decision");
+      handleSectionChange("decision");
+      return;
+    }
+    if (nextPrimaryAction === "Resolve Lot Inspection") {
+      handleSectionChange("lots");
       return;
     }
     if (nextPrimaryAction === "Start Sampling") {
-      setActiveSection("sampling");
+      handleSectionChange("sampling");
       void handleStartSampling();
       return;
     }
     if (nextPrimaryAction === "Mark Homogeneous Proof") {
-      setActiveSection("sampling");
+      handleSectionChange("sampling");
       void handleMarkHomogeneous();
       return;
     }
     if (nextPrimaryAction === "Create Packets") {
-      setActiveSection("packets");
+      handleSectionChange("packets");
       void handleCreatePackets();
       return;
     }
-    setActiveSection("handover");
+    handleSectionChange("handover");
     void handleSubmitToRnd();
   };
 
@@ -1378,27 +1462,40 @@ export function UnifiedJobWorkflow() {
     }
     if (activeSection === "images") {
       return (
-        <Button onClick={() => setActiveSection("decision")} isDisabled={!selectedLot}>
-          Continue to Decision
+        <Button onClick={() => handleSectionChange("seal")} isDisabled={!selectedLot}>
+          Continue to Seal
         </Button>
       );
     }
     if (activeSection === "decision") {
       const canApprove = canApproveFinalDecision(currentUser?.role, settings?.workflow.finalDecisionApproverPolicy ?? "ADMIN_ONLY");
       return canApprove ? (
-        <Button onClick={() => void handleDecision("READY_FOR_SAMPLING")} isLoading={saving} isDisabled={!selectedLot}>
+        <Button
+          onClick={() => void handleDecision("READY_FOR_SAMPLING")}
+          isLoading={saving}
+          isDisabled={!job || decisionMissingProofLots.length > 0 || !allLotsHaveSeal}
+        >
           Pass
         </Button>
       ) : (
-        <Button variant="outline" onClick={() => void handleDecision("PENDING")} isLoading={saving} isDisabled={!selectedLot}>
+        <Button
+          variant="outline"
+          onClick={() => void handleDecision("PENDING")}
+          isLoading={saving}
+          isDisabled={!job || decisionMissingProofLots.length > 0 || !allLotsHaveSeal}
+        >
           Submit for Decision
         </Button>
       );
     }
     if (activeSection === "sampling") {
       return !selectedSample ? (
-        <Button onClick={() => void handleStartSampling()} isLoading={saving} isDisabled={!selectedLot}>
-          Start Sampling
+        <Button
+          onClick={() => void handleStartSampling()}
+          isLoading={saving}
+          isDisabled={!allLotsReadyForHomogeneousSampling}
+        >
+          Create Homogeneous Sample
         </Button>
       ) : (
         <Button onClick={() => void handleSaveSample()} isLoading={saving}>
@@ -1511,17 +1608,23 @@ export function UnifiedJobWorkflow() {
           bg="bg.surface"
           px={3}
           py={2}
-          position="sticky"
-          top={{ base: "76px", lg: "88px" }}
-          zIndex={2}
+          position="relative"
         >
-          <Tabs variant="line-enterprise" index={Math.max(workflowSections.findIndex((section) => section.id === activeSection), 0)}>
-            <TabList overflowX="auto" overflowY="hidden">
+          <Tabs
+            variant="line-enterprise"
+            index={Math.max(workflowSections.findIndex((section) => section.id === activeSection), 0)}
+            onChange={(index) => {
+              const nextSection = workflowSections[index]?.id;
+              if (nextSection) {
+                handleSectionChange(nextSection);
+              }
+            }}
+          >
+            <TabList overflowX="auto" overflowY="hidden" aria-label="Workflow sections">
               {workflowSections.map((section) => (
                 <Tab
                   key={section.id}
                   whiteSpace="nowrap"
-                  onClick={() => setActiveSection(section.id)}
                 >
                   {section.label}
                 </Tab>
@@ -1597,89 +1700,182 @@ export function UnifiedJobWorkflow() {
                 <CardBody>
                   <VStack align="stretch" spacing={4}>
                     <Heading as="h2" size="md">2. Lots</Heading>
-                    <HStack spacing={2} flexWrap="wrap">
-                      {(job.lots ?? []).map((lot) => (
-                        <Button key={lot.id} size="sm" variant={selectedLot?.id === lot.id ? "solid" : "outline"} onClick={() => setSelectedLotId(lot.id)}>
-                          {lot.lotNumber}
-                        </Button>
-                      ))}
-                    </HStack>
-                    <EnterpriseStickyTable mt={4}>
+                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                      <FormControl>
+                        <FormLabel>Lot Number</FormLabel>
+                        <Input
+                          value={
+                            settings.workflow.autoLotNumbering
+                              ? autoLotNumberPreview || buildAutoLotNumber(settings.workflow, job.lots ?? [])
+                              : lotForm.lotNumber
+                          }
+                          onChange={(event) => setLotForm((current) => ({ ...current, lotNumber: event.target.value }))}
+                          isReadOnly={settings.workflow.autoLotNumbering}
+                          placeholder={settings.workflow.autoLotNumbering ? "Auto-generated" : "Enter lot number"}
+                        />
+                        <FormHelperText>
+                          {settings.workflow.autoLotNumbering
+                            ? "Auto numbering is ON. Lot number is generated."
+                            : "Auto numbering is OFF. Enter lot number manually."}
+                        </FormHelperText>
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Material Name</FormLabel>
+                        <Input
+                          value={lotForm.materialName}
+                          onChange={(event) => setLotForm((current) => ({ ...current, materialName: event.target.value }))}
+                          placeholder="Defaults from Job item; editable per lot."
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Bag Count</FormLabel>
+                        <Input
+                          type="number"
+                          min={1}
+                          value="1"
+                          isReadOnly
+                        />
+                        <FormHelperText>One lot equals one bag.</FormHelperText>
+                      </FormControl>
+                    </SimpleGrid>
+                    <Button display={desktopPrimaryDisplay} alignSelf="start" size="sm" onClick={() => void handleCreateLot()} isLoading={saving}>
+                      Add Lot
+                    </Button>
+
+                    <Heading as="h3" size="sm">Created Lots</Heading>
+                    <EnterpriseStickyTable>
                       <Table size="sm">
                         <Thead>
                           <Tr>
                             <Th>Lot Number</Th>
-                            <Th>Bag Count</Th>
-                            <Th>Gross Wt</Th>
-                            <Th>Net Wt</Th>
-                            <Th>Unit</Th>
-                            <Th>Action</Th>
+                            <Th>Material Name</Th>
+                            <Th>Quantity Mode</Th>
+                            <Th>Total Bags</Th>
+                            <Th>Created At</Th>
+                            <Th>Actions</Th>
                           </Tr>
                         </Thead>
                         <Tbody>
-                          <Tr>
-                            <Td>
-                              <Input
-                                size="sm"
-                                value={
-                                  settings.workflow.autoLotNumbering
-                                    ? autoLotNumberPreview || buildAutoLotNumber(settings.workflow, job.lots ?? [])
-                                    : lotForm.lotNumber
-                                }
-                                onChange={(event) => setLotForm((current) => ({ ...current, lotNumber: event.target.value }))}
-                                isReadOnly={settings.workflow.autoLotNumbering}
-                                placeholder={settings.workflow.autoLotNumbering ? "Auto-generated" : "Enter lot number"}
-                              />
-                            </Td>
-                            <Td>
-                              <Input size="sm" type="number" value={lotForm.bagCount} onChange={(event) => setLotForm((current) => ({ ...current, bagCount: event.target.value }))} />
-                            </Td>
-                            <Td>
-                              <Input size="sm" type="number" inputMode="decimal" value={lotForm.grossWeight} onChange={(event) => setLotForm((current) => ({ ...current, grossWeight: event.target.value }))} />
-                            </Td>
-                            <Td>
-                              <Input size="sm" type="number" inputMode="decimal" value={lotForm.netWeight} onChange={(event) => setLotForm((current) => ({ ...current, netWeight: event.target.value }))} />
-                            </Td>
-                            <Td>
-                              <Input size="sm" value={lotForm.weightUnit} onChange={(event) => setLotForm((current) => ({ ...current, weightUnit: event.target.value }))} />
-                            </Td>
-                            <Td>
-                              <Button size="sm" onClick={() => void handleCreateLot()} isLoading={saving}>Add Lot</Button>
-                            </Td>
-                          </Tr>
                           {(job.lots ?? []).map((lot) => (
                             <Tr key={lot.id} bg={selectedLot?.id === lot.id ? "brand.50" : undefined}>
-                                <Td>{lot.lotNumber}</Td>
-                                <Td>{lot.bagCount ?? lot.totalBags ?? "Not Available"}</Td>
-                                <Td>{lot.grossWeight !== null && lot.grossWeight !== undefined ? lot.grossWeight : "Not Available"}</Td>
-                                <Td>{lot.netWeight !== null && lot.netWeight !== undefined ? lot.netWeight : "Not Available"}</Td>
-                                <Td>{lot.weightUnit ?? "Not Available"}</Td>
-                                <Td>
-                                  <HStack spacing={2}>
-                                    <Button
-                                      size="xs"
-                                      variant={selectedLot?.id === lot.id ? "solid" : "outline"}
-                                      colorScheme="brand"
-                                      onClick={() => setSelectedLotId(lot.id)}
-                                    >
-                                      {selectedLot?.id === lot.id ? "Selected" : "Select"}
-                                    </Button>
-                                    <Button size="xs" variant="ghost" onClick={() => setEditLotId(lot.id)}>
-                                      Edit
-                                    </Button>
-                                  </HStack>
-                                </Td>
+                              <Td>{lot.lotNumber}</Td>
+                              <Td>{lot.materialName || "Not Available"}</Td>
+                              <Td>{(lot.quantityMode || "SINGLE_PIECE").replaceAll("_", " ")}</Td>
+                              <Td>{lot.bagCount ?? lot.totalBags ?? "Not Available"}</Td>
+                              <Td>{formatDate(lot.createdAt)}</Td>
+                              <Td>
+                                <HStack spacing={2}>
+                                  <Button
+                                    size="xs"
+                                    variant={selectedLot?.id === lot.id ? "solid" : "outline"}
+                                    colorScheme="brand"
+                                    onClick={() => setSelectedLotId(lot.id)}
+                                  >
+                                    {selectedLot?.id === lot.id ? "Selected" : "Select Lot"}
+                                  </Button>
+                                  <Button size="xs" variant="ghost" onClick={() => setEditLotId(lot.id)}>
+                                    Edit Lot
+                                  </Button>
+                                </HStack>
+                              </Td>
                             </Tr>
                           ))}
                         </Tbody>
                       </Table>
                     </EnterpriseStickyTable>
-                    {editLotId ? (
+
+                    <Heading as="h3" size="sm">Lot Images (Inline Capture)</Heading>
+                    {!selectedLot ? (
+                      <EmptyWorkState title="No lot selected" description="Select a lot to capture required images." />
+                    ) : (
+                      <EnterpriseStickyTable>
+                        <Table size="sm">
+                          <Thead>
+                            <Tr>
+                              <Th>Image Category</Th>
+                              <Th>Policy</Th>
+                              <Th>Status</Th>
+                              <Th>Preview</Th>
+                              <Th>Action</Th>
+                            </Tr>
+                          </Thead>
+                          <Tbody>
+                            {[...requiredImageCategories, ...optionalImageCategories].map((label) => {
+                              const uploadCategory = getUploadCategoryKey(label);
+                              const normalizedUploadCategory = normalizeEvidenceCategoryKey(uploadCategory);
+                              const mediaForCategory = (selectedLot.mediaFiles ?? []).filter((file) => {
+                                const normalizedMediaCategory = normalizeEvidenceCategoryKey(file.category);
+                                return Boolean(normalizedUploadCategory && normalizedMediaCategory === normalizedUploadCategory);
+                              });
+                              const latestMedia = mediaForCategory[mediaForCategory.length - 1];
+                              const previewUrl = latestMedia?.storageKey ?? "";
+                              const exists = Boolean(latestMedia);
+                              const readableLabel = getReadableEvidenceCategoryLabel(label);
+                              const isRequired = requiredImageCategories.includes(label);
+                              return (
+                                <Tr key={label}>
+                                  <Td>{readableLabel}</Td>
+                                  <Td>
+                                    <Badge colorScheme={isRequired ? "orange" : "gray"}>{isRequired ? "Required" : "Optional"}</Badge>
+                                  </Td>
+                                  <Td>
+                                    <Badge colorScheme={exists ? "green" : isRequired ? "orange" : "gray"}>
+                                      {exists ? "Uploaded" : isRequired ? "Missing" : "Not uploaded"}
+                                    </Badge>
+                                  </Td>
+                                  <Td>
+                                    {exists && previewUrl ? (
+                                      <HStack spacing={2}>
+                                        <Image
+                                          src={previewUrl}
+                                          alt={`${readableLabel} preview`}
+                                          boxSize="48px"
+                                          objectFit="cover"
+                                          borderRadius="md"
+                                          borderWidth="1px"
+                                          borderColor="border.default"
+                                        />
+                                        <Button
+                                          size="xs"
+                                          variant="ghost"
+                                          onClick={() => window.open(previewUrl, "_blank", "noopener,noreferrer")}
+                                        >
+                                          View Image
+                                        </Button>
+                                      </HStack>
+                                    ) : (
+                                      <Text fontSize="sm" color="text.secondary">No preview available</Text>
+                                    )}
+                                  </Td>
+                                  <Td>
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedImageLabel(label);
+                                        fileRef.current?.click();
+                                      }}
+                                    >
+                                      {exists ? "Replace Image" : "Upload Image"}
+                                    </Button>
+                                  </Td>
+                                </Tr>
+                              );
+                            })}
+                          </Tbody>
+                        </Table>
+                      </EnterpriseStickyTable>
+                    )}
+                    {settings.images.imageTimestampRequired ? (
+                      <Text fontSize="sm" color="text.secondary">Timestamp overlay is enabled for image capture in this company configuration.</Text>
+                    ) : null}
+
+                    {editLotId && job.lots?.find((lot) => lot.id === editLotId) ? (
                       <LotEditModal
                         isOpen={true}
                         onClose={() => setEditLotId(null)}
                         onSaved={() => fetchWorkflow({ initial: false, keepSection: activeSection })}
-                        lot={job.lots?.find((l) => l.id === editLotId)!}
+                        lot={job.lots.find((lot) => lot.id === editLotId)!}
                       />
                     ) : null}
                   </VStack>
@@ -1692,6 +1888,9 @@ export function UnifiedJobWorkflow() {
                 <CardBody>
                   <VStack align="stretch" spacing={4}>
                     <Heading as="h2" size="md">3. Images</Heading>
+                    <Text fontSize="sm" color="text.secondary">
+                      Capture and assignment now happen in Lots. This section is a read-only summary for review.
+                    </Text>
                     {!selectedLot ? (
                       <EmptyWorkState title="No lot selected" description="Select a lot to capture required images." />
                     ) : (
@@ -1702,11 +1901,10 @@ export function UnifiedJobWorkflow() {
                               <Th>Image Category</Th>
                               <Th>Preview</Th>
                               <Th>Status</Th>
-                              <Th>Action</Th>
                             </Tr>
                           </Thead>
                           <Tbody>
-                            {settings.images.requiredImageCategories.map((label) => {
+                            {[...requiredImageCategories, ...optionalImageCategories].map((label) => {
                               const uploadCategory = getUploadCategoryKey(label);
                               const normalizedUploadCategory = normalizeEvidenceCategoryKey(uploadCategory);
                               const mediaForCategory = (selectedLot.mediaFiles ?? []).filter((file) => {
@@ -1745,19 +1943,9 @@ export function UnifiedJobWorkflow() {
                                     )}
                                   </Td>
                                   <Td>
-                                    <Badge colorScheme={exists ? "green" : "orange"}>{exists ? "Uploaded" : "Missing"}</Badge>
-                                  </Td>
-                                  <Td>
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setSelectedImageLabel(label);
-                                        fileRef.current?.click();
-                                      }}
-                                    >
-                                      Upload Images
-                                    </Button>
+                                    <Badge colorScheme={exists ? "green" : requiredImageCategories.includes(label) ? "orange" : "gray"}>
+                                      {exists ? "Uploaded" : requiredImageCategories.includes(label) ? "Missing" : "Not uploaded"}
+                                    </Badge>
                                   </Td>
                                 </Tr>
                               );
@@ -1792,18 +1980,28 @@ export function UnifiedJobWorkflow() {
               <Card variant="outline">
                 <CardBody>
                   <VStack align="stretch" spacing={4}>
-                    <Heading as="h2" size="md">4. Final Decision</Heading>
+                    <Heading as="h2" size="md">5. Final Decision</Heading>
                     {!selectedLot ? (
-                      <EmptyWorkState title="No lot selected" description="Select a lot to submit or approve the decision." />
+                      <EmptyWorkState title="No lots available" description="Create at least one lot before submitting or approving the job decision." />
                     ) : (
                       <>
                         <Text fontSize="sm" color="text.secondary">
-                          Operations submit lots for decision only after required proof is complete. Required proof is checked from lot and inspection media. Final Pass, Hold, and Reject are controlled by the configured approver policy.
+                          Final Decision is job-level. Operations can submit only after required lot proof is complete. Pass, Hold, and Reject are controlled by the configured approver policy.
                         </Text>
-                        {missingRequiredImageProof.length > 0 ? (
+                        {decisionMissingProofLots.length > 0 ? (
                           <Text fontSize="sm" color="orange.600">
-                            Missing required proof: {missingRequiredImageProof.join(", ")}.
+                            Missing required proof in lots: {decisionMissingProofLots.map((entry) => `${entry.lotNumber} (${entry.missing.join(", ")})`).join("; ")}.
                           </Text>
+                        ) : null}
+                        {!allLotsHaveSeal ? (
+                          <HStack spacing={3} align="start" flexWrap="wrap">
+                            <Text fontSize="sm" color="orange.600">
+                              Complete seal assignment for every lot in the Seal step before submitting for decision.
+                            </Text>
+                            <Button size="xs" variant="outline" onClick={() => handleSectionChange("seal")}>
+                              Go to Seal
+                            </Button>
+                          </HStack>
                         ) : null}
                         <HStack spacing={3} flexWrap="wrap">
                           <Button
@@ -1811,7 +2009,7 @@ export function UnifiedJobWorkflow() {
                             variant="outline"
                             onClick={() => void handleDecision("PENDING")}
                             isLoading={saving}
-                            isDisabled={missingRequiredImageProof.length > 0}
+                            isDisabled={decisionMissingProofLots.length > 0 || !allLotsHaveSeal}
                           >
                             Submit for Decision
                           </Button>
@@ -1821,7 +2019,7 @@ export function UnifiedJobWorkflow() {
                                 display={desktopPrimaryDisplay}
                                 onClick={() => void handleDecision("READY_FOR_SAMPLING")}
                                 isLoading={saving}
-                                isDisabled={missingRequiredImageProof.length > 0}
+                                isDisabled={decisionMissingProofLots.length > 0 || !allLotsHaveSeal}
                               >
                                 Pass
                               </Button>
@@ -1831,7 +2029,7 @@ export function UnifiedJobWorkflow() {
                           ) : null}
                         </HStack>
                         <Text fontSize="sm" color="text.secondary">
-                          Current Decision: {selectedLot.inspection?.decisionStatus?.replaceAll("_", " ") ?? "PENDING"}
+                          Current Decision: {payload?.decision?.status?.replaceAll("_", " ") ?? "PENDING"}
                         </Text>
                       </>
                     )}
@@ -1844,13 +2042,66 @@ export function UnifiedJobWorkflow() {
               <Card variant="outline">
                 <CardBody>
                   <VStack align="stretch" spacing={4}>
-                    <Heading as="h2" size="md">5. Sampling</Heading>
-                    {!selectedLot ? (
-                      <EmptyWorkState title="No lot selected" description="Select a lot to manage sample details." />
+                    <Heading as="h2" size="md">6. Homogeneous Sampling</Heading>
+                    <Text fontSize="sm" color="text.secondary">
+                      Create one job-level homogeneous sample by taking scoops from every passed lot, mixing them in one bag, then sealing it once.
+                    </Text>
+                    {!job.lots?.length ? (
+                      <EmptyWorkState title="No lots available" description="Create at least one lot before capturing the job-level homogeneous sample." />
                     ) : (
                       <>
+                        <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" p={3}>
+                          <VStack align="stretch" spacing={2}>
+                            <HStack justify="space-between" align="start" flexWrap="wrap">
+                              <Box>
+                                <Text fontSize="sm" fontWeight="semibold" color="text.primary">
+                                  Contributor lots
+                                </Text>
+                                <Text fontSize="sm" color="text.secondary">
+                                  Every lot must be inspection-passed before this job sample can start.
+                                </Text>
+                              </Box>
+                              <Badge colorScheme={allLotsReadyForHomogeneousSampling ? "green" : "orange"}>
+                                {allLotsReadyForHomogeneousSampling
+                                  ? "All lots ready"
+                                  : `${samplingBlockingLots.length} blocking`}
+                              </Badge>
+                            </HStack>
+                            <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={2}>
+                              {(job.lots ?? []).map((lot) => {
+                                const ready =
+                                  lot.inspection?.inspectionStatus === "COMPLETED" &&
+                                  lot.inspection?.decisionStatus === "READY_FOR_SAMPLING";
+                                return (
+                                  <HStack key={lot.id} justify="space-between" borderWidth="1px" borderColor="border.default" borderRadius="md" px={3} py={2}>
+                                    <Box>
+                                      <Text fontSize="sm" fontWeight="semibold">{lot.lotNumber}</Text>
+                                      <Text fontSize="xs" color="text.secondary">{lot.materialName || job.commodity}</Text>
+                                    </Box>
+                                    <WorkflowStateChip status={ready ? "READY_FOR_SAMPLING" : lot.inspection?.decisionStatus ?? "PENDING"} />
+                                  </HStack>
+                                );
+                              })}
+                            </SimpleGrid>
+                          </VStack>
+                        </Box>
+                        {!allLotsReadyForHomogeneousSampling ? (
+                          <ExceptionBanner
+                            status="warning"
+                            title="Homogeneous sampling blocked"
+                            description={`Complete/pass inspection for: ${samplingBlockingLots.map((lot) => lot.lotNumber).join(", ")}.`}
+                          />
+                        ) : null}
                         {!selectedSample ? (
-                          <Button display={desktopPrimaryDisplay} alignSelf="start" onClick={() => void handleStartSampling()} isLoading={saving}>Start Sampling</Button>
+                          <Button
+                            display={desktopPrimaryDisplay}
+                            alignSelf="start"
+                            onClick={() => void handleStartSampling()}
+                            isLoading={saving}
+                            isDisabled={!allLotsReadyForHomogeneousSampling}
+                          >
+                            Create Homogeneous Sample
+                          </Button>
                         ) : null}
                         <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
                           <FormControl>
@@ -1864,6 +2115,7 @@ export function UnifiedJobWorkflow() {
                               onChange={(event) => setSampleForm((current) => ({ ...current, sampleCode: event.target.value }))}
                               placeholder={settings.workflow.autoSampleIdGeneration ? "Auto generated after start" : "Enter Sample ID"}
                             />
+                            <FormHelperText>One canonical homogeneous sample is created for the parent job.</FormHelperText>
                           </FormControl>
                           <FormControl>
                             <FormLabel>Container Type</FormLabel>
@@ -1903,7 +2155,7 @@ export function UnifiedJobWorkflow() {
                         <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" p={3}>
                           <VStack align="stretch" spacing={1.5}>
                             <Text fontSize="sm" fontWeight="semibold" color="text.primary">
-                              Current saved sample
+                              Current job sample
                             </Text>
                             {selectedSample ? (
                               <>
@@ -1917,7 +2169,7 @@ export function UnifiedJobWorkflow() {
                                   Container Type: {selectedSample.containerType || "Not set"}
                                 </Text>
                                 <Text fontSize="sm" color="text.secondary">
-                                  Homogeneous Proof: {selectedSample.homogeneousProofDone || selectedSample.homogenizedAt ? "Marked" : "Not marked"}
+                                  Scoop confirmation: {selectedSample.homogeneousProofDone || selectedSample.homogenizedAt ? "Scoops mixed from every lot" : "Not confirmed"}
                                 </Text>
                                 <Text fontSize="sm" color="text.secondary">
                                   Homogenized Photo: {selectedSample.media?.some((entry) => String(entry.mediaType).toUpperCase() === "HOMOGENIZED_SAMPLE") ? "Uploaded" : "Not uploaded"}
@@ -1950,7 +2202,7 @@ export function UnifiedJobWorkflow() {
                             isLoading={saving}
                             isDisabled={!settings.sampling.homogeneousProofRequired}
                           >
-                            Mark Homogeneous Proof
+                            Confirm Scoops Mixed
                           </Button>
                           <Button
                             variant="outline"
@@ -1989,13 +2241,20 @@ export function UnifiedJobWorkflow() {
               <Card variant="outline">
                 <CardBody>
                   <VStack align="stretch" spacing={4}>
-                    <Heading as="h2" size="md">6. Seal</Heading>
+                    <Heading as="h2" size="md">4. Seal</Heading>
+                    <Text fontSize="sm" color="text.secondary">
+                      Assign and review seals in this step before decision submission.
+                    </Text>
                     {!selectedLot ? (
                       <EmptyWorkState title="No lot selected" description="Select a lot to manage seal flow." />
                     ) : (
                       <>
                         <HStack spacing={3} flexWrap="wrap">
-                          <SealScanner onScanned={(sealNo) => void handleSaveSeal(sealNo)} onManualConfirm={(sealNo) => void handleSaveSeal(sealNo)} isDisabled={!settings.seal.sealScanRequired && Boolean(selectedSample?.sealLabel?.sealNo)} />
+                          <SealScanner
+                            onScanned={(sealNo) => void handleSaveSeal(sealNo)}
+                            onManualConfirm={(sealNo) => void handleSaveSeal(sealNo)}
+                            isDisabled={!settings.seal.sealScanRequired && Boolean(selectedSample?.sealLabel?.sealNo)}
+                          />
                           <Button
                             display={desktopPrimaryDisplay}
                             variant="outline"
@@ -2005,28 +2264,30 @@ export function UnifiedJobWorkflow() {
                           >
                             Generate Seal Numbers
                           </Button>
-                          <Badge colorScheme={readySealLots.length > 0 ? "green" : "orange"}>
-                            Ready to generate: {readySealLots.length} lots
-                          </Badge>
                         </HStack>
+                        <Badge colorScheme={readySealLots.length > 0 ? "green" : "orange"} alignSelf="start">
+                          Ready to generate: {readySealLots.length} lots
+                        </Badge>
                         <Text fontSize="sm" color="text.secondary">
-                          Bulk generation requires lots with inspection completed and final decision as Pass (Ready for Sampling).
+                          Bulk generation requires bag proof on eligible lots.
                         </Text>
                         {sealGenerationSummary ? (
-                          <ExceptionBanner
-                            status={sealGenerationSummary.failed.length > 0 ? "warning" : "info"}
-                            title={`Generated: ${sealGenerationSummary.generated.length} | Skipped: ${sealGenerationSummary.skipped.length} | Failed: ${sealGenerationSummary.failed.length}`}
-                            description={[
-                              sealGenerationSummary.skipped.length > 0
-                                ? `Skipped lots: ${sealGenerationSummary.skipped.map((entry) => `${entry.lotNumber} (${entry.reason})`).join("; ")}`
-                                : "",
-                              sealGenerationSummary.failed.length > 0
-                                ? `Failed lots: ${sealGenerationSummary.failed.map((entry) => `${entry.lotNumber} (${entry.reason})`).join("; ")}`
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                          />
+                          <VStack align="stretch" spacing={2}>
+                            <ExceptionBanner
+                              status={sealGenerationSummary.failed.length > 0 ? "warning" : "info"}
+                              title={`Generated: ${sealGenerationSummary.generated.length} | Skipped: ${sealGenerationSummary.skipped.length} | Failed: ${sealGenerationSummary.failed.length}`}
+                              description={
+                                sealGenerationSummary.failed.length > 0
+                                  ? `Failed lots: ${sealGenerationSummary.failed.map((entry) => `${entry.lotNumber} (${entry.reason})`).join("; ")}`
+                                  : "No API failures. Skipped lots were not eligible for seal generation."
+                              }
+                            />
+                            {sealGenerationSummary.skipped.length > 0 ? (
+                              <Text fontSize="sm" color="text.secondary">
+                                Skipped lots: {sealGenerationSummary.skipped.map((entry) => `${entry.lotNumber} (${entry.reason})`).join("; ")}
+                              </Text>
+                            ) : null}
+                          </VStack>
                         ) : null}
                         <EnterpriseStickyTable>
                           <Table size="sm">
@@ -2091,8 +2352,8 @@ export function UnifiedJobWorkflow() {
                             <Text fontWeight="semibold">{job.inspectionSerialNumber || job.jobReferenceNumber || "Not Available"}</Text>
                           </Box>
                           <Box>
-                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Lot Number</Text>
-                            <Text fontWeight="semibold">{selectedLot?.lotNumber ?? "Not Available"}</Text>
+                            <Text fontSize="xs" textTransform="uppercase" color="text.muted">Contributor Lots</Text>
+                            <Text fontWeight="semibold">{job.lots?.length ?? 0} lot(s)</Text>
                           </Box>
                           <Box>
                             <Text fontSize="xs" textTransform="uppercase" color="text.muted">Sample ID</Text>
@@ -2107,7 +2368,7 @@ export function UnifiedJobWorkflow() {
                           <Box>
                             <Text fontSize="xs" textTransform="uppercase" color="text.muted">Container / Seal</Text>
                             <Text fontWeight="semibold">
-                              {selectedSample.containerType || "Container not set"} / {selectedSample.sealLabel?.sealNo || selectedLot?.sealNumber || "Seal not set"}
+                              {selectedSample.containerType || "Container not set"} / {selectedSample.sealLabel?.sealNo || "Seal not set"}
                             </Text>
                           </Box>
                           <Box>
@@ -2120,13 +2381,22 @@ export function UnifiedJobWorkflow() {
                           <VStack align="stretch" spacing={2}>
                             <ExceptionBanner
                               title="Packet blockers"
-                              description={packetStageBlockers.map((blocker) => getPacketBlockerMessage(blocker)).join(" ")}
+                              description={packetStageBlockers
+                                .map((blocker) =>
+                                  getPacketBlockerMessage(blocker, {
+                                    lotHasSealNumber: Boolean(selectedLot?.sealNumber),
+                                    sampleHasSealEvidence: Boolean(
+                                      selectedSample?.sealLabel?.sealNo && selectedSample?.sealLabel?.sealedAt,
+                                    ),
+                                  }),
+                                )
+                                .join(" ")}
                               status="warning"
                             />
                             <Button
                               alignSelf="start"
                               size="sm"
-                              onClick={() => setActiveSection("sampling")}
+                              onClick={() => handleSectionChange("sampling")}
                             >
                               Complete Sampling Now
                             </Button>
@@ -2399,7 +2669,11 @@ export function UnifiedJobWorkflow() {
                   { label: "Sample ID", value: selectedSample?.sampleCode || "Not Available" },
                   { label: "Packet Count", value: `${packets.length}` },
                   { label: "Documents", value: `${job.reportSnapshots?.length ?? 0}`, href: `/documents?job=${job.inspectionSerialNumber || job.jobReferenceNumber || job.id}` },
-                  { label: "History", value: "Open", href: `/traceability/lots/${selectedLot?.id ?? ""}` },
+                  {
+                    label: "Lot Workflow",
+                    value: selectedLot ? "Open" : "Select a lot",
+                    href: selectedLot ? `/jobs/${job.id}/workflow?lotId=${selectedLot.id}&section=lots` : undefined,
+                  },
                 ]}
               />
 
@@ -2422,7 +2696,7 @@ export function UnifiedJobWorkflow() {
                 />
               ) : null}
 
-              {selectedLot?.inspection?.decisionStatus === "ON_HOLD" || selectedLot?.inspection?.decisionStatus === "REJECTED" ? (
+              {payload?.decision?.status === "ON_HOLD" || payload?.decision?.status === "REJECTED" ? (
                 <ExceptionBanner
                   title="Decision blocks progression"
                   description="Hold and Reject block downstream sampling and packet work until resolved."

@@ -102,7 +102,7 @@ export function getSampleReadiness(sample: SampleRecord | null | undefined) {
   }
 
   if (!hasSealAndLabel(sample)) {
-    missing.push("Complete seal traceability");
+    missing.push("Complete seal evidence");
   }
 
   return {

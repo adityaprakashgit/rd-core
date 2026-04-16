@@ -193,7 +193,7 @@ export function Header({
         </Box>
       </HStack>
 
-      <HStack spacing={1.5} flexWrap="nowrap" justify="flex-end" align="center">
+      <HStack spacing={1.5} flexWrap="nowrap" justify="flex-end" align="center" minW={0}>
         <Box position="relative" ref={searchRef} display={{ base: "none", xl: "block" }}>
           <Input
             size="sm"
@@ -278,6 +278,7 @@ export function Header({
           <Select
             size="sm"
             maxW={{ base: "full", sm: "44" }}
+            flexShrink={0}
             value={viewMode}
             onChange={(event) => onViewModeChange(event.target.value === "all" ? "all" : "my")}
             aria-label="Workspace view"
@@ -293,6 +294,7 @@ export function Header({
           <Select
             size="sm"
             maxW={{ base: "full", sm: "44" }}
+            flexShrink={0}
             value={normalizedRole ?? "OPERATIONS"}
             onChange={(event) => onRoleViewChange(event.target.value as NormalizedRole)}
             aria-label="Role view"
@@ -315,8 +317,17 @@ export function Header({
             px={{ base: 2, md: 2.5 }}
             minW={{ base: "40px", md: "44px" }}
             maxW={{ base: "40px", md: "44px", lg: "220px" }}
+            w={{ base: "40px", md: "44px", lg: "auto" }}
+            flexShrink={0}
           >
-            <Text noOfLines={1} display={{ base: "none", lg: "inline" }}>
+            <Text
+              noOfLines={1}
+              display={{ base: "none", lg: "inline" }}
+              maxW="150px"
+              whiteSpace="nowrap"
+              overflow="hidden"
+              textOverflow="ellipsis"
+            >
               {displayName}
             </Text>
           </MenuButton>

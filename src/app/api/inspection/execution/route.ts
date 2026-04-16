@@ -58,6 +58,24 @@ function jsonError(error: string, details: string, status: number, code = "INSPE
   return NextResponse.json({ error, details, code }, { status });
 }
 
+function logLotIdCompatibilityUsage(input: {
+  route: string;
+  caller?: string | null;
+  hasJobId: boolean;
+  hasLotId: boolean;
+}) {
+  console.warn(
+    JSON.stringify({
+      event: "deprecated_lot_id_compat",
+      route: input.route,
+      caller: input.caller ?? "unknown",
+      hasJobId: input.hasJobId,
+      hasLotId: input.hasLotId,
+      message: "jobId is canonical; lotId-only payload is deprecated compatibility input.",
+    }),
+  );
+}
+
 function mapDecisionOutcome(decisionStatus: InspectionDecisionStatus | string | null | undefined) {
   if (decisionStatus === "READY_FOR_SAMPLING") {
     return "PASS";
@@ -132,12 +150,32 @@ async function getLotScope(tx: PrismaLike, lotId: string, companyId: string) {
       weightUnit: true,
       remarks: true,
       status: true,
+      sealNumber: true,
       bagPhotoUrl: true,
       samplingPhotoUrl: true,
       sealPhotoUrl: true,
       mediaFiles: {
         select: {
           category: true,
+        },
+      },
+      sample: {
+        select: {
+          sealLabel: {
+            select: {
+              sealNo: true,
+            },
+          },
+        },
+      },
+      inspection: {
+        select: {
+          id: true,
+          mediaFiles: {
+            select: {
+              category: true,
+            },
+          },
         },
       },
       createdAt: true,
@@ -158,6 +196,80 @@ async function getLotScope(tx: PrismaLike, lotId: string, companyId: string) {
   }
 
   return lot;
+}
+
+async function getJobScope(tx: PrismaLike, jobId: string, companyId: string) {
+  const job = await tx.inspectionJob.findUnique({
+    where: { id: jobId },
+    select: {
+      id: true,
+      companyId: true,
+      status: true,
+      finalDecisionStatus: true,
+      finalDecisionNote: true,
+      lots: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          jobId: true,
+          companyId: true,
+          lotNumber: true,
+          materialName: true,
+          materialCategory: true,
+          totalBags: true,
+          bagCount: true,
+          pieceCount: true,
+          weightUnit: true,
+          remarks: true,
+          status: true,
+          sealNumber: true,
+          bagPhotoUrl: true,
+          samplingPhotoUrl: true,
+          sealPhotoUrl: true,
+          mediaFiles: {
+            select: {
+              category: true,
+            },
+          },
+          sample: {
+            select: {
+              sealLabel: {
+                select: {
+                  sealNo: true,
+                },
+              },
+            },
+          },
+          inspection: {
+            select: {
+              id: true,
+              mediaFiles: {
+                select: {
+                  category: true,
+                },
+              },
+            },
+          },
+          createdAt: true,
+          updatedAt: true,
+          job: {
+            select: {
+              id: true,
+              clientName: true,
+              commodity: true,
+              status: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!job || job.companyId !== companyId) {
+    throw new AuthorizationError("Cross-company access is not allowed.");
+  }
+
+  return job;
 }
 
 async function buildInspectionPayload(tx: PrismaLike, lotId: string, companyId: string) {
@@ -372,9 +484,19 @@ export async function PATCH(request: NextRequest) {
     authorize(currentUser, "CREATE_LOT");
 
     const body = await request.json();
-    const lotId = typeof body?.lotId === "string" ? body.lotId.trim() : "";
-    if (!lotId) {
-      return jsonError("Validation Error", "lotId is required.", 400);
+    const requestedLotId = typeof body?.lotId === "string" ? body.lotId.trim() : "";
+    const requestedJobId = typeof body?.jobId === "string" ? body.jobId.trim() : "";
+    const caller = typeof body?.caller === "string" ? body.caller.trim() : "";
+    if (!requestedLotId && !requestedJobId) {
+      return jsonError("Validation Error", "jobId is required. lotId-only requests are deprecated compatibility input.", 400);
+    }
+    if (requestedLotId && !requestedJobId) {
+      logLotIdCompatibilityUsage({
+        route: "/api/inspection/execution",
+        caller,
+        hasJobId: false,
+        hasLotId: true,
+      });
     }
 
     const decisionStatus = normalizeDecisionStatus(body?.decisionStatus);
@@ -388,7 +510,20 @@ export async function PATCH(request: NextRequest) {
 
     const payload = await prisma.$transaction(async (tx) => {
       const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
-      const lot = await getLotScope(tx, lotId, currentUser.companyId);
+      const jobScope = requestedJobId
+        ? await getJobScope(tx, requestedJobId, currentUser.companyId)
+        : null;
+      const resolvedLotId =
+        requestedLotId ||
+        jobScope?.lots.find((lot) => lot.status !== "READY_FOR_RND" && lot.status !== "LOCKED")?.id ||
+        jobScope?.lots[0]?.id ||
+        "";
+      if (!resolvedLotId) {
+        throw new Error("JOB_HAS_NO_LOTS");
+      }
+      const lotId = resolvedLotId;
+      const lot = await getLotScope(tx, resolvedLotId, currentUser.companyId);
+      const scopedLots = jobScope?.lots ?? [lot];
       if (lot.job.status === "LOCKED") {
         throw new Error("JOB_LOCKED");
       }
@@ -492,7 +627,7 @@ export async function PATCH(request: NextRequest) {
           entity: "INSPECTION",
           action: "CHECKLIST_RESPONSE_SAVED",
           metadata: {
-            lotId,
+            lotId: resolvedLotId,
             inspectionId: inspection.id,
             responseCount: rawResponses.length,
           },
@@ -522,7 +657,7 @@ export async function PATCH(request: NextRequest) {
           entity: "INSPECTION",
           action: "ISSUE_CREATED",
           metadata: {
-            lotId,
+            lotId: resolvedLotId,
             inspectionId: inspection.id,
             issueCount: normalizedIssues.length,
           },
@@ -541,16 +676,6 @@ export async function PATCH(request: NextRequest) {
         mediaCategories: mergeCanonicalMediaCategories(refreshed.mediaFiles, lot.mediaFiles),
         requiredMediaCategories: resolveRequiredImageUploadCategories(workflowPolicy.images.requiredImageCategories),
       });
-      const resolvedEvidence = resolveEvidenceCategoriesForLot({
-        lot,
-        inspectionMedia: refreshed.mediaFiles,
-        lotMedia: lot.mediaFiles,
-      });
-      const missingRequiredCategories = resolveMissingRequiredEvidenceCategories(
-        workflowPolicy.images.requiredImageCategories,
-        resolvedEvidence,
-      );
-
       const nextOverallRemark = overallRemarkProvided ? overallRemark : refreshed.overallRemark;
       const nextDecisionStatus = decisionStatus ?? (refreshed.decisionStatus as InspectionDecisionStatus);
       const issueDraftErrors =
@@ -581,8 +706,26 @@ export async function PATCH(request: NextRequest) {
       if ((issueDraftErrors.length > 0 || validationErrors.length > 0) && nextDecisionStatus !== "PENDING") {
         throw new Error(`VALIDATION:${[...issueDraftErrors, ...validationErrors].join(" ")}`);
       }
-      if (requiresRequiredImageProofForDecision(decisionStatus) && missingRequiredCategories.length > 0) {
-        throw new Error(`PROOF_REQUIRED:${missingRequiredCategories.join(" | ")}`);
+      if (decisionStatus === "PENDING" || decisionStatus === "READY_FOR_SAMPLING") {
+        const missingSealLot = scopedLots.find((entry) => !entry.sealNumber && !entry.sample?.sealLabel?.sealNo);
+        if (missingSealLot) {
+          throw new Error("SEAL_REQUIRED_FOR_DECISION_SUBMISSION");
+        }
+      }
+      if (requiresRequiredImageProofForDecision(decisionStatus)) {
+        const missingAcrossLots = scopedLots.flatMap((entry) =>
+          resolveMissingRequiredEvidenceCategories(
+            workflowPolicy.images.requiredImageCategories,
+            resolveEvidenceCategoriesForLot({
+              lot: entry,
+              inspectionMedia: entry.inspection?.mediaFiles,
+              lotMedia: entry.mediaFiles,
+            }),
+          ),
+        );
+        if (missingAcrossLots.length > 0) {
+          throw new Error(`PROOF_REQUIRED:${Array.from(new Set(missingAcrossLots)).join(" | ")}`);
+        }
       }
 
       const nextInspectionStatus = nextDecisionStatus && nextDecisionStatus !== "PENDING" ? "COMPLETED" : "IN_PROGRESS";
@@ -617,10 +760,50 @@ export async function PATCH(request: NextRequest) {
         },
       });
 
-      await tx.inspectionLot.update({
-        where: { id: lotId },
-        data: { status: nextLotStatus },
-      });
+      if (decisionStatus) {
+        await tx.inspectionLot.updateMany({
+          where: { jobId: lot.jobId },
+          data: { status: nextLotStatus },
+        });
+      } else {
+        await tx.inspectionLot.update({
+          where: { id: resolvedLotId },
+          data: { status: nextLotStatus },
+        });
+      }
+
+      if (decisionStatus) {
+        const decisionAt = decisionStatus !== "PENDING" ? new Date() : null;
+        await tx.inspectionJob.update({
+          where: { id: lot.jobId },
+          data: {
+            finalDecisionStatus: decisionStatus,
+            finalDecisionAt: decisionAt,
+            finalDecisionBy: decisionStatus !== "PENDING" ? currentUser.id : null,
+            finalDecisionNote: nextOverallRemark ?? null,
+          },
+        });
+
+        await tx.inspection.updateMany({
+          where: { jobId: lot.jobId },
+          data: {
+            decisionStatus,
+            ...(decisionStatus === "PENDING"
+              ? {
+                  sentToAdminAt: inspection.sentToAdminAt ?? new Date(),
+                  sentToAdminBy: inspection.sentToAdminBy ?? currentUser.id,
+                  decisionAt: null,
+                  decisionBy: null,
+                  decisionOutcome: null,
+                }
+              : {
+                  decisionAt: decisionAt ?? new Date(),
+                  decisionBy: currentUser.id,
+                  decisionOutcome: mapDecisionOutcome(decisionStatus),
+                }),
+          },
+        });
+      }
 
       if (decisionStatus) {
         await recordAuditLog(tx, {
@@ -630,7 +813,7 @@ export async function PATCH(request: NextRequest) {
           action: "DECISION_SELECTED",
           to: decisionStatus,
           metadata: {
-            lotId,
+            lotId: resolvedLotId,
             inspectionId: inspection.id,
           },
         });
@@ -644,7 +827,8 @@ export async function PATCH(request: NextRequest) {
           action: "INSPECTION_COMPLETED",
           to: nextDecisionStatus ?? "PENDING",
           metadata: {
-            lotId,
+            lotId: resolvedLotId,
+            jobId: lot.jobId,
             inspectionId: inspection.id,
             samplingBlockedFlag: assessment.samplingBlockedFlag,
           },
@@ -658,7 +842,8 @@ export async function PATCH(request: NextRequest) {
           from: lot.status,
           to: nextLotStatus,
           metadata: {
-            lotId,
+            lotId: resolvedLotId,
+            jobId: lot.jobId,
             inspectionId: inspection.id,
           },
         });
@@ -669,7 +854,7 @@ export async function PATCH(request: NextRequest) {
         companyId: currentUser.companyId,
       });
 
-      return buildInspectionPayload(tx, lotId, currentUser.companyId);
+      return buildInspectionPayload(tx, resolvedLotId, currentUser.companyId);
     });
 
     return NextResponse.json(payload);
@@ -681,6 +866,9 @@ export async function PATCH(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to save inspection.";
     if (message === "JOB_LOCKED") {
       return jsonError("Forbidden", "This job is LOCKED. No inspection changes are allowed.", 403, "INSPECTION_JOB_LOCKED");
+    }
+    if (message === "JOB_HAS_NO_LOTS") {
+      return jsonError("Validation Error", "Create at least one lot before decision review.", 422, "JOB_HAS_NO_LOTS");
     }
     if (message.startsWith("VALIDATION:")) {
       return jsonError("Validation Error", message.replace("VALIDATION:", "").trim(), 422, "INSPECTION_VALIDATION_FAILED");
@@ -705,6 +893,14 @@ export async function PATCH(request: NextRequest) {
     }
     if (message === "DECISION_NOTE_REQUIRED") {
       return jsonError("Validation Error", "Notes are required for Hold and Reject decisions.", 400, "DECISION_NOTE_REQUIRED");
+    }
+    if (message === "SEAL_REQUIRED_FOR_DECISION_SUBMISSION") {
+      return jsonError(
+        "Validation Error",
+        "Complete seal assignment in Seal step before submitting or approving decision.",
+        422,
+        "SEAL_REQUIRED_FOR_DECISION_SUBMISSION",
+      );
     }
 
     return jsonError("System Error", message, 500, "INSPECTION_PATCH_FAILED");

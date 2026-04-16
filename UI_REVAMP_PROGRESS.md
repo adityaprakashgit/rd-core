@@ -193,3 +193,74 @@
 ### Rollback Note
 - No destructive migration behavior.
 - Backfill updates only all-empty rows and does not alter intentional non-empty admin policies.
+
+## Lot-First Workflow Slice (Incremental)
+- Unified workflow Lot step hardened as the primary execution surface for this slice:
+  - lot creation simplified with editable `Material Name` defaulted from Job item,
+  - explicit lot-numbering mode hint (`Auto numbering ON/OFF`),
+  - created-lots table with `Lot Number`, `Material Name`, `Quantity Mode`, `Total Bags`, `Created At`, and `Select/Edit`.
+- Inline lot-level image capture added in Step 2 (Lots):
+  - required/optional policy categories render with status, thumbnail preview, and upload/replace actions.
+- Inline seal assignment moved to Step 2 (Lots):
+  - scan/manual + bulk generation controls surfaced in Lot step,
+  - existing backend prerequisite gate unchanged (`READY_FOR_SAMPLING` required) with explicit blocker copy.
+- Step 3 (Images) and Step 6 (Seal) retained for compatibility as read-only mirrors with guidance text:
+  - “Capture and assignment now happen in Lots.”
+- Validation re-run for this slice:
+  - `npm run lint` pass (warnings unchanged, pre-existing),
+  - `npx tsc --noEmit` pass,
+  - `npm run build` pass,
+  - targeted `vitest` pass (`seal-readiness`, `image-proof-policy`).
+
+## UI/API Mapping Hardening + Cleanup Pipeline
+- P0 seal mapping mismatch fixed:
+  - `lot.sealNumber` is now included in workspace job selectors used by `/api/jobs/[id]/workflow`.
+  - Workflow summary seal blocker logic now honors either `sample.sealLabel.sealNo` or `lot.sealNumber`.
+  - Seal summary now treats skipped lots separately and reports API failures only for true failed calls.
+- Contract guardrails added:
+  - selector contract tests added to prevent regression when critical fields are omitted from Prisma selects.
+  - workflow summary regression tests added for seal mapping / next-action behavior.
+- Shared summary mapping moved to reusable helper:
+  - `src/lib/job-workflow-summary.ts` is now the canonical workflow summary builder used by route handlers and tests.
+- Controlled cleanup/reset tooling added:
+  - script: `src/scripts/workflow-cleanup.mjs`
+  - supports explicit job-targeted dry-run, backup snapshot, confirm token, and two modes:
+    - `repair`: non-destructive seal-label backfill from lot seal numbers
+    - `destructive`: delete targeted jobs (cascade) after explicit confirmation
+  - npm commands:
+    - `npm run cleanup:workflow:dry-run -- --jobIds=<job1,job2>`
+    - `npm run cleanup:workflow:repair -- --jobIds=<job1,job2> --confirm-token=<token>`
+    - `npm run cleanup:workflow:destructive -- --jobIds=<job1,job2> --confirm-token=<token>`
+
+## Unified Workflow Tabination Hardening (Seal Before Decision)
+- Workflow stage tab order on `/jobs/[jobId]/workflow` updated to locked sequence:
+  - `Job Basics -> Lots -> Images -> Seal -> Final Decision -> Sampling -> Packets -> Submit to R&D`.
+- Stage heading numbers aligned with tab order:
+  - `4. Seal`, `5. Final Decision`, `6. Sampling`, `7. Packet Creation`, `8. Submit to R&D`.
+- Next-action section routing hardened in UI:
+  - explicit handling for `Save Images and Continue` added (routes to `Lots` instead of falling through).
+  - existing deterministic mappings retained (`Assign Seal -> Seal`, `Submit/Pass/Hold/Reject -> Final Decision`, `Start Sampling/Mark Homogeneous -> Sampling`, `Create Packets -> Packets`, `Submit to R&D -> Submit to R&D`).
+- No workflow policy relaxation introduced; this slice is navigation and stage-orientation consistency only.
+
+## Database Startup Recovery Hardening
+- Local database startup flow is now guarded with explicit diagnostics and recovery commands:
+  - `npm run db:doctor` (validate URL, host/port reachability, and DB connectivity),
+  - `npm run db:bootstrap` (create missing DB, run `prisma migrate deploy`, run `prisma generate`).
+- `predev` now runs DB preflight guard with actionable next-step messaging before schema checks.
+- Recovery runbook added in README so Prisma startup errors no longer surface as opaque schema-engine failures.
+
+## Packet Readiness Traceability Alignment
+- Fixed packet-readiness mismatch where UI could show lot seal while packet API still blocked with `Complete seal traceability`.
+- `sample-management` start flow now syncs pre-existing `InspectionLot.sealNumber` into `SampleSealLabel` (`sealNo`, `sealedAt`, `sealStatus=COMPLETED`) when sample is created.
+- Added targeted repair tooling for existing records:
+  - `npm run repair:sample-seal:dry-run`
+  - `npm run repair:sample-seal:execute`
+- Added operator diagnostic script:
+  - `npm run packet:health -- --sampleId=<id> --sessionCookie='<cookie>'`
+  - confirms DB query health and validates `/api/rd/packet` response shape for scoped checks.
+- Packet blocker UX copy now clarifies seal traceability origin when lot seal exists but sample traceability fields are missing.
+
+## Documents Registry Job-Level Report/COA Lock
+- `/documents` now treats **Test Report** and **COA** as job-level artifacts only.
+- Lot rows remain lot-scoped and now focus on `Inspection Uploads`, `Packing List`, and `Dispatch Documents`.
+- Job-level missing counters include Report/COA once per job; lot-level missing counters no longer mirror report/COA gaps.

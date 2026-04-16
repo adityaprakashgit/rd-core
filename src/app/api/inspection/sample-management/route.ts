@@ -61,6 +61,24 @@ function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
 }
 
+function logLotIdCompatibilityUsage(input: {
+  route: string;
+  caller?: string | null;
+  hasJobId: boolean;
+  hasLotId: boolean;
+}) {
+  console.warn(
+    JSON.stringify({
+      event: "deprecated_lot_id_compat",
+      route: input.route,
+      caller: input.caller ?? "unknown",
+      hasJobId: input.hasJobId,
+      hasLotId: input.hasLotId,
+      message: "jobId is canonical; lotId-only payload is deprecated compatibility input.",
+    }),
+  );
+}
+
 function normalizeText(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -112,109 +130,108 @@ async function createSampleEvent(
   });
 }
 
-async function getLotScope(tx: PrismaLike, lotId: string, companyId: string) {
-  const lot = await tx.inspectionLot.findUnique({
-    where: { id: lotId },
-    select: {
-      id: true,
-      jobId: true,
-      companyId: true,
-      lotNumber: true,
-      status: true,
-      bagPhotoUrl: true,
-      sealPhotoUrl: true,
-      samplingPhotoUrl: true,
-      job: {
-        select: {
-          id: true,
-          companyId: true,
-          inspectionSerialNumber: true,
-          status: true,
-        },
-      },
-      inspection: {
-        select: {
-          id: true,
-          inspectionStatus: true,
-          decisionStatus: true,
-        },
-      },
-    },
-  });
+async function getSamplingScope(
+  tx: PrismaLike,
+  input: { jobId?: string | null; lotId?: string | null; companyId: string; requireDecisionApproval?: boolean },
+) {
+  const requestedJobId = input.jobId?.trim() ?? "";
+  const requestedLotId = input.lotId?.trim() ?? "";
 
-  if (!lot || lot.companyId !== companyId) {
-    throw new Error("FORBIDDEN");
+  if (!requestedJobId && !requestedLotId) {
+    throw new Error("JOB_ID_REQUIRED");
   }
 
-  if (!lot.inspection) {
-    throw new Error("INSPECTION_REQUIRED");
+  const lotSelect = {
+    id: true,
+    jobId: true,
+    companyId: true,
+    lotNumber: true,
+    sealNumber: true,
+    status: true,
+    bagPhotoUrl: true,
+    sealPhotoUrl: true,
+    samplingPhotoUrl: true,
+    job: {
+      select: {
+        id: true,
+        companyId: true,
+        inspectionSerialNumber: true,
+        status: true,
+        finalDecisionStatus: true,
+      },
+    },
+    inspection: {
+      select: {
+        id: true,
+        inspectionStatus: true,
+        decisionStatus: true,
+      },
+    },
+  } satisfies Prisma.InspectionLotSelect;
+
+  const lotById = requestedLotId
+    ? await tx.inspectionLot.findUnique({
+        where: { id: requestedLotId },
+        select: lotSelect,
+      })
+    : null;
+
+  const resolvedJobId = requestedJobId || lotById?.jobId || "";
+  if (!resolvedJobId) {
+    throw new Error("JOB_ID_REQUIRED");
+  }
+
+  const lot = lotById
+    ? lotById
+    : await tx.inspectionLot.findFirst({
+        where: { jobId: resolvedJobId, companyId: input.companyId },
+        orderBy: { createdAt: "asc" },
+        select: lotSelect,
+      });
+
+  if (!lot || lot.companyId !== input.companyId) {
+    throw new Error("FORBIDDEN");
   }
 
   if (lot.job.status === "LOCKED") {
     throw new Error("JOB_LOCKED");
   }
 
-  if (
-    lot.inspection &&
-    (lot.inspection.inspectionStatus !== "COMPLETED" || lot.inspection.decisionStatus !== "READY_FOR_SAMPLING")
-  ) {
-    throw new Error("LOT_NOT_APPROVED");
+  if (input.requireDecisionApproval !== false) {
+    const lots = await tx.inspectionLot.findMany({
+      where: { jobId: lot.jobId, companyId: input.companyId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        lotNumber: true,
+        inspection: {
+          select: {
+            inspectionStatus: true,
+            decisionStatus: true,
+          },
+        },
+      },
+    });
+    const blockingLots = lots.filter(
+      (entry) =>
+        entry.inspection?.inspectionStatus !== "COMPLETED" ||
+        entry.inspection?.decisionStatus !== "READY_FOR_SAMPLING",
+    );
+
+    if (lots.length === 0 || blockingLots.length > 0) {
+      throw new Error(
+        `ALL_LOTS_NOT_READY:${blockingLots.map((entry) => entry.lotNumber).join(", ") || "No lots available"}`,
+      );
+    }
   }
 
   return lot;
 }
 
-async function syncLegacySampling(
-  tx: Prisma.TransactionClient,
-  sample: SampleRecord,
-  options?: {
-    sealAuto?: boolean;
-  },
-) {
-  const mediaMap = mapSampleMediaByType(sample.media);
-  const containerPhotoUrl = mediaMap.SAMPLE_CONTAINER?.fileUrl ?? mediaMap.SAMPLE_CONDITION?.fileUrl ?? null;
-  const beforePhotoUrl =
-    mediaMap.SAMPLE_CONDITION?.fileUrl ??
-    mediaMap.SAMPLING_IN_PROGRESS?.fileUrl ??
-    mediaMap.SAMPLE_CONTAINER?.fileUrl ??
-    null;
-  const duringPhotoUrl = mediaMap.SAMPLING_IN_PROGRESS?.fileUrl ?? null;
-  const afterPhotoUrl = mediaMap.SEALED_SAMPLE?.fileUrl ?? mediaMap.SAMPLE_CONTAINER?.fileUrl ?? null;
-
-  await tx.sampling.upsert({
-    where: { lotId: sample.lotId },
-    update: {
-      beforePhotoUrl,
-      duringPhotoUrl,
-      afterPhotoUrl,
-      status: sample.sampleStatus,
-    },
-    create: {
-      lotId: sample.lotId,
-      companyId: sample.companyId,
-      beforePhotoUrl,
-      duringPhotoUrl,
-      afterPhotoUrl,
-      status: sample.sampleStatus,
-    },
-  });
-
-  await tx.inspectionLot.update({
-    where: { id: sample.lotId },
-    data: {
-      status: sample.sampleStatus === "READY_FOR_PACKETING" ? "SAMPLED" : "SAMPLING_IN_PROGRESS",
-      bagPhotoUrl: containerPhotoUrl ?? undefined,
-      samplingPhotoUrl: duringPhotoUrl ?? afterPhotoUrl ?? beforePhotoUrl,
-      sealPhotoUrl: mediaMap.SEALED_SAMPLE?.fileUrl ?? undefined,
-      ...(sample.sealLabel?.sealNo ? { sealNumber: sample.sealLabel.sealNo } : {}),
-      ...(typeof options?.sealAuto === "boolean" ? { sealAuto: options.sealAuto } : {}),
-    },
-  });
-}
-
-async function fetchSample(tx: PrismaLike, lotId: string) {
-  return tx.sample.findUnique({
-    where: { lotId },
+async function fetchSample(tx: PrismaLike, jobId: string) {
+  return tx.sample.findFirst({
+    where: { jobId },
+    orderBy: { createdAt: "desc" },
     include: sampleInclude,
   });
 }
@@ -231,51 +248,27 @@ async function getWorkflowPolicy(tx: PrismaLike, companyId: string) {
 async function ensureSampleStarted(
   tx: Prisma.TransactionClient,
   input: {
-    lotId: string;
+    jobId?: string | null;
+    lotId?: string | null;
     companyId: string;
     userId: string;
     sampleCode?: string | null;
   },
 ) {
-  const lot = await getLotScope(tx, input.lotId, input.companyId);
+  const lot = await getSamplingScope(tx, {
+    jobId: input.jobId,
+    lotId: input.lotId,
+    companyId: input.companyId,
+    requireDecisionApproval: true,
+  });
   const workflowPolicy = await getWorkflowPolicy(tx, input.companyId);
-  const existingSample = await fetchSample(tx, input.lotId);
+  const existingSample = await fetchSample(tx, lot.jobId);
   if (existingSample) {
     return existingSample;
   }
 
-  let inspectionId = lot.inspection?.id;
-  if (!inspectionId) {
-    const autoInspection = await tx.inspection.create({
-      data: {
-        jobId: lot.jobId,
-        lotId: lot.id,
-        inspectorId: input.userId,
-        inspectionStatus: "COMPLETED",
-        decisionStatus: "READY_FOR_SAMPLING",
-        samplingBlockedFlag: false,
-        completedAt: new Date(),
-        overallRemark: "Auto-created from sample management flow.",
-      },
-      select: { id: true },
-    });
-    inspectionId = autoInspection.id;
-
-    await recordAuditLog(tx, {
-      jobId: lot.jobId,
-      userId: input.userId,
-      entity: "INSPECTION",
-      action: "INSPECTION_AUTO_CREATED",
-      to: "READY_FOR_SAMPLING",
-      metadata: {
-        lotId: lot.id,
-        inspectionId,
-      },
-    });
-  }
-
   const sampleCode = workflowPolicy.workflow.autoSampleIdGeneration
-    ? buildSampleCode(lot.job.inspectionSerialNumber, lot.lotNumber)
+    ? buildSampleCode(lot.job.inspectionSerialNumber, "HOMO")
     : input.sampleCode?.trim() || null;
   if (!sampleCode) {
     throw new Error("SAMPLE_CODE_REQUIRED");
@@ -284,8 +277,8 @@ async function ensureSampleStarted(
     data: {
       companyId: input.companyId,
       jobId: lot.jobId,
-      lotId: lot.id,
-      inspectionId,
+      lotId: null,
+      inspectionId: null,
       sampleCode,
       sampleStatus: "SAMPLING_IN_PROGRESS",
       samplingDate: new Date(),
@@ -298,13 +291,17 @@ async function ensureSampleStarted(
     sampleId: created.id,
     eventType: "SAMPLE_CREATED",
     performedById: input.userId,
+    remarks: "Job-level homogeneous sample created from all passed lots.",
+    metadata: {
+      contributorMode: "ALL_JOB_LOTS",
+    },
   });
 
   await createSampleEvent(tx, {
     sampleId: created.id,
     eventType: "SAMPLE_COLLECTED",
     performedById: input.userId,
-    remarks: "Sampling started.",
+    remarks: "Scoops from every lot must be mixed in one homogeneous bag.",
   });
 
   await recordAuditLog(tx, {
@@ -315,18 +312,17 @@ async function ensureSampleStarted(
     to: "SAMPLING_IN_PROGRESS",
     metadata: {
       sampleId: created.id,
-      lotId: lot.id,
       sampleCode: created.sampleCode,
+      contributorMode: "ALL_JOB_LOTS",
     },
   });
 
-  await syncLegacySampling(tx, created as unknown as SampleRecord);
   await recomputeJobWorkflowMilestones(tx, {
     jobId: lot.jobId,
     companyId: input.companyId,
   });
 
-  return (await fetchSample(tx, input.lotId)) ?? created;
+  return (await fetchSample(tx, lot.jobId)) ?? created;
 }
 
 export async function GET(request: NextRequest) {
@@ -337,20 +333,14 @@ export async function GET(request: NextRequest) {
     }
 
     const lotId = request.nextUrl.searchParams.get("lotId");
-    if (!lotId) {
-      return jsonError("Validation Error", "lotId is required.", 400);
-    }
-
-    const lot = await prisma.inspectionLot.findUnique({
-      where: { id: lotId },
-      select: { companyId: true },
+    const jobId = request.nextUrl.searchParams.get("jobId");
+    const scope = await getSamplingScope(prisma, {
+      lotId,
+      jobId,
+      companyId: currentUser.companyId,
+      requireDecisionApproval: false,
     });
-
-    if (!lot || lot.companyId !== currentUser.companyId) {
-      return jsonError("Forbidden", "Cross-company access is not allowed.", 403);
-    }
-
-    const sample = await fetchSample(prisma, lotId);
+    const sample = await fetchSample(prisma, scope.jobId);
     return NextResponse.json(sample);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load sample management record.";
@@ -367,13 +357,24 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const lotId = typeof body?.lotId === "string" ? body.lotId.trim() : "";
+    const jobId = typeof body?.jobId === "string" ? body.jobId.trim() : "";
+    const caller = typeof body?.caller === "string" ? body.caller.trim() : "";
     const sampleCode = typeof body?.sampleCode === "string" ? body.sampleCode.trim() : "";
-    if (!lotId) {
-      return jsonError("Validation Error", "lotId is required.", 400);
+    if (!lotId && !jobId) {
+      return jsonError("Validation Error", "jobId is required. lotId-only requests are deprecated compatibility input.", 400);
+    }
+    if (lotId && !jobId) {
+      logLotIdCompatibilityUsage({
+        route: "/api/inspection/sample-management",
+        caller,
+        hasJobId: false,
+        hasLotId: true,
+      });
     }
 
     const sample = await prisma.$transaction((tx) =>
       ensureSampleStarted(tx, {
+        jobId,
         lotId,
         companyId: currentUser.companyId,
         userId: currentUser.id,
@@ -393,12 +394,18 @@ export async function POST(request: NextRequest) {
       return jsonError("Forbidden", "This job is LOCKED for audit integrity. No modifications allowed.", 403);
     }
 
-    if (message === "LOT_NOT_APPROVED") {
-      return jsonError("Validation Error", "Lot inspection must be completed and approved for sampling first.", 422);
+    if (message === "JOB_NOT_APPROVED" || message.startsWith("ALL_LOTS_NOT_READY:")) {
+      const lots = message.startsWith("ALL_LOTS_NOT_READY:") ? message.replace("ALL_LOTS_NOT_READY:", "") : "";
+      return jsonError(
+        "Validation Error",
+        lots
+          ? `All lots must pass inspection before creating the homogeneous sample. Blocking lots: ${lots}.`
+          : "All lots must pass inspection before creating the homogeneous sample.",
+        422,
+      );
     }
-
-    if (message === "INSPECTION_REQUIRED") {
-      return jsonError("Validation Error", "Inspection record is required before sampling can begin.", 422);
+    if (message === "JOB_ID_REQUIRED") {
+      return jsonError("Validation Error", "jobId is required.", 400);
     }
     if (message === "SAMPLE_CODE_REQUIRED") {
       return jsonError("Validation Error", "Sample ID is required when auto sample ID generation is disabled.", 400);
@@ -416,13 +423,24 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
     const lotId = typeof body?.lotId === "string" ? body.lotId.trim() : "";
-    if (!lotId) {
-      return jsonError("Validation Error", "lotId is required.", 400);
+    const jobId = typeof body?.jobId === "string" ? body.jobId.trim() : "";
+    const caller = typeof body?.caller === "string" ? body.caller.trim() : "";
+    if (!lotId && !jobId) {
+      return jsonError("Validation Error", "jobId is required. lotId-only requests are deprecated compatibility input.", 400);
+    }
+    if (lotId && !jobId) {
+      logLotIdCompatibilityUsage({
+        route: "/api/inspection/sample-management",
+        caller,
+        hasJobId: false,
+        hasLotId: true,
+      });
     }
 
     const sample = await prisma.$transaction(async (tx) => {
       const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
       const started = await ensureSampleStarted(tx, {
+        jobId,
         lotId,
         companyId: currentUser.companyId,
         userId: currentUser.id,
@@ -549,7 +567,7 @@ export async function PATCH(request: NextRequest) {
         });
       }
 
-      const refreshed = (await fetchSample(tx, lotId)) as unknown as SampleRecord | null;
+      const refreshed = (await fetchSample(tx, started.jobId)) as unknown as SampleRecord | null;
       if (!refreshed) {
         throw new Error("SAMPLE_NOT_FOUND");
       }
@@ -646,16 +664,12 @@ export async function PATCH(request: NextRequest) {
         },
       });
 
-      await syncLegacySampling(tx, finalized, {
-        sealAuto: sealNo !== undefined || markSealed || markLabeled ? sealAuto : undefined,
-      });
-
       await recomputeJobWorkflowMilestones(tx, {
         jobId: finalized.jobId,
         companyId: currentUser.companyId,
       });
 
-      return (await fetchSample(tx, lotId)) ?? finalized;
+      return (await fetchSample(tx, finalized.jobId)) ?? finalized;
     });
 
     return NextResponse.json(sample);
@@ -670,12 +684,18 @@ export async function PATCH(request: NextRequest) {
       return jsonError("Forbidden", "This job is LOCKED for audit integrity. No modifications allowed.", 403);
     }
 
-    if (message === "LOT_NOT_APPROVED") {
-      return jsonError("Validation Error", "Lot inspection must be completed and approved for sampling first.", 422);
+    if (message === "JOB_NOT_APPROVED" || message.startsWith("ALL_LOTS_NOT_READY:")) {
+      const lots = message.startsWith("ALL_LOTS_NOT_READY:") ? message.replace("ALL_LOTS_NOT_READY:", "") : "";
+      return jsonError(
+        "Validation Error",
+        lots
+          ? `All lots must pass inspection before creating the homogeneous sample. Blocking lots: ${lots}.`
+          : "All lots must pass inspection before creating the homogeneous sample.",
+        422,
+      );
     }
-
-    if (message === "INSPECTION_REQUIRED") {
-      return jsonError("Validation Error", "Inspection record is required before sampling can begin.", 422);
+    if (message === "JOB_ID_REQUIRED") {
+      return jsonError("Validation Error", "jobId is required.", 400);
     }
 
     if (message === "INVALID_SAMPLE_QUANTITY") {

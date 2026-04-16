@@ -105,7 +105,7 @@ Legend:
 | Packet Quantity Exceeds Sample Available | Explicit quantity guard | Exact | `src/app/api/rd/packet/route.ts` |
 | Packet Already Reserved or Used | Allocation state model supports this | Exact | `src/app/api/rd/packet/route.ts`, `src/lib/packet-management.ts` |
 | Packet Reuse Blocked | Blocked/used readiness logic enforced | Exact | `src/app/api/rd/packet/route.ts`, `src/lib/packet-management.ts` |
-| Preserve Job, Lot, Test Lineage | Traceability fields and packet lineage retained | Exact | `src/lib/traceability.ts`, `src/app/api/report/generate/route.ts` |
+| Preserve Job, Lot, Test Lineage | Evidence fields and packet lineage retained | Exact | `src/lib/inspection-documents.ts`, `src/app/api/report/generate/route.ts` |
 
 ## 7) Dispatch / Report Output Lane
 
@@ -115,7 +115,7 @@ Legend:
 | Prepare Output for Dispatch | Reporting/export endpoints exist | Exact | `src/app/api/report/export/route.ts`, `src/app/api/report/packing-list/route.ts` |
 | Packing List Attempted Before Report Approval | Partially enforced through validation/state checks, not one dedicated guard node | Partial | `src/app/api/inspection/qa/route.ts`, `src/lib/report-validation.ts`, `src/app/api/report/packing-list/route.ts` |
 | Packing List Precondition Failed | Explicit precondition errors | Exact | `src/app/api/report/packing-list/route.ts` |
-| Generate Packing List (Traceable) | PDF + traceability + audit log | Exact | `src/app/api/report/packing-list/route.ts`, `src/lib/traceability.ts` |
+| Generate Packing List (Auditable) | PDF + evidence lineage + audit log | Exact | `src/app/api/report/packing-list/route.ts`, `src/lib/inspection-documents.ts` |
 | Compare Operational Flow | Ops dashboards and queue tracking exist | Exact | `src/app/operations/page.tsx`, `src/app/userinsp/page.tsx` |
 | Write Final Audit Log | Audit logging for report artifacts and transitions exists | Exact | `src/lib/audit.ts`, `src/app/api/report/packing-list/route.ts`, `src/app/api/report/stickers/route.ts` |
 | End | Terminal status represented (`LOCKED`, `COMPLETED`, `DISPATCHED`) not a literal End node | Partial | `src/lib/workflow-stage.ts` |

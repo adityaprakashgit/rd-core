@@ -40,7 +40,7 @@ describe("/api/rd/packet POST readiness errors", () => {
 
   it("returns actionable readiness blockers when sample is not ready", async () => {
     mocks.transactionMock.mockRejectedValue(
-      new Error("SAMPLE_NOT_READY:Complete seal traceability | Mark sample homogenized"),
+      new Error("SAMPLE_NOT_READY:Complete seal evidence | Mark sample homogenized"),
     );
 
     const response = await POST(
@@ -56,6 +56,6 @@ describe("/api/rd/packet POST readiness errors", () => {
     expect(response.status).toBe(422);
     const payload = (await response.json()) as { details?: string };
     expect(payload.details).toContain("Sample is not ready for packeting yet.");
-    expect(payload.details).toContain("Complete seal traceability");
+    expect(payload.details).toContain("Complete seal evidence");
   });
 });

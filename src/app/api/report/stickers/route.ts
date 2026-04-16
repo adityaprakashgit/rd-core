@@ -6,7 +6,7 @@ import bwipjs from "bwip-js";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { buildStickerHtml, renderHtmlToPdf } from "@/lib/traceability";
+import { buildStickerHtml, renderHtmlToPdf } from "@/lib/inspection-documents";
 
 export const runtime = "nodejs";
 

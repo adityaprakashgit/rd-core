@@ -20,7 +20,7 @@ export function StageAwareLotWorkspace({
 }: {
   backHref: (jobId: string, viewMode: string) => string;
 }) {
-  const { lotId } = useParams<{ jobId: string; lotId: string }>();
+  const { jobId, lotId } = useParams<{ jobId: string; lotId: string }>();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function StageAwareLotWorkspace({
     setLoadError(null);
 
     try {
-      const res = await fetch(`/api/inspection/execution?lotId=${lotId}`);
+      const res = await fetch(`/api/inspection/execution?lotId=${lotId}&jobId=${jobId}`);
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { details?: string } | null;
         throw new Error(payload?.details ?? "Failed to resolve lot stage.");
@@ -49,7 +49,7 @@ export function StageAwareLotWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [lotId]);
+  }, [jobId, lotId]);
 
   useEffect(() => {
     void probeStage();

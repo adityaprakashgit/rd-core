@@ -43,14 +43,25 @@ export async function POST(req: NextRequest) {
           include: {
             bags: true,
             sampling: true,
-            sample: {
-              include: {
-                media: true,
-                sealLabel: true,
-                events: true,
-                packets: true,
-              },
-            },
+          },
+        },
+        samples: {
+          include: {
+            media: true,
+            sealLabel: true,
+            events: true,
+            packets: true,
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        rndJobs: {
+          where: {
+            resultPrecedence: "ACTIVE",
+            status: { in: ["APPROVED", "COMPLETED"] },
+          },
+          orderBy: { reviewedAt: "desc" },
+          include: {
+            readings: true,
           },
         },
         experiments: {

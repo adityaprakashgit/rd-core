@@ -36,7 +36,6 @@ type ExceptionQueueRow = {
     lot: string | null;
     packet: string | null;
     documents: string | null;
-    traceability: string | null;
   };
 };
 
@@ -120,6 +119,7 @@ export async function GET(request: NextRequest) {
           inspectionSerialNumber: true,
           jobReferenceNumber: true,
           status: true,
+          createdAt: true,
           assignedToId: true,
           assignedTo: {
             select: {
@@ -181,6 +181,28 @@ export async function GET(request: NextRequest) {
               },
             },
           },
+          samples: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              sampleCode: true,
+              sampleStatus: true,
+              createdAt: true,
+              packets: {
+                select: {
+                  id: true,
+                  packetCode: true,
+                  createdAt: true,
+                  allocation: {
+                    select: {
+                      allocationStatus: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       }),
       prisma.workflowEscalation.findMany({
@@ -237,75 +259,71 @@ export async function GET(request: NextRequest) {
 
     for (const job of jobs) {
       const jobNumber = job.inspectionSerialNumber || job.jobReferenceNumber;
+      const jobSample = job.samples[0] ?? null;
+      const ownerId = job.assignedToId || null;
+      const ownerName = userName(job.assignedTo);
+      const hasCoa = jobSample
+        ? activeReportLineage.has(`${job.id}::${jobSample.id}`) || job.reportSnapshots.length > 0
+        : job.reportSnapshots.length > 0;
 
-      for (const lot of job.lots) {
-        const hasCoa = lot.sample
-          ? activeReportLineage.has(`${job.id}::${lot.sample.id}`) || job.reportSnapshots.length > 0
-          : job.reportSnapshots.length > 0;
-        const ownerId = lot.assignedToId || job.assignedToId || null;
-        const ownerName = lot.assignedToId ? userName(lot.assignedTo) : userName(job.assignedTo);
+      if (!jobSample) {
+        const ageHours = ageHoursFrom(job.createdAt);
+        derivedRows.push({
+          id: `derived-no-sample-${job.id}`,
+          exceptionType: "Job without homogeneous sample",
+          jobId: job.id,
+          jobNumber,
+          lotId: null,
+          lotNumber: "Job-level",
+          packetId: null,
+          packetCode: null,
+          blockingStage: "Homogeneous Sampling",
+          ageHours,
+          ownerId,
+          owner: ownerName,
+          slaState: resolveSla(ageHours),
+          source: "Derived",
+          status: "OPEN",
+          blockerText: "Create the job-level homogeneous sample after all lots pass inspection.",
+          links: {
+            job: `/jobs/${job.id}/workflow?section=sampling`,
+            lot: null,
+            packet: null,
+            documents: `/documents?job=${jobNumber}`,
+          },
+        });
+        continue;
+      }
 
-        if (!lot.sample) {
-          const ageHours = ageHoursFrom(lot.createdAt);
-          derivedRows.push({
-            id: `derived-no-sample-${lot.id}`,
-            exceptionType: "Lot without sample",
-            jobId: job.id,
-            jobNumber,
-            lotId: lot.id,
-            lotNumber: lot.lotNumber,
-            packetId: null,
-            packetCode: null,
-            blockingStage: "Lab Testing",
-            ageHours,
-            ownerId,
-            owner: ownerName,
-            slaState: resolveSla(ageHours),
-            source: "Derived",
-            status: "OPEN",
-            blockerText: "Sampling has not been completed for this lot.",
-            links: {
-              job: `/operations/job/${job.id}`,
-              lot: `/operations/job/${job.id}/lot/${lot.id}`,
-              packet: null,
-              documents: `/documents?job=${jobNumber}&lot=${lot.lotNumber}`,
-              traceability: `/traceability/lot/${lot.id}`,
-            },
-          });
-          continue;
-        }
+      if (!hasCoa) {
+        const ageHours = ageHoursFrom(jobSample.createdAt);
+        derivedRows.push({
+          id: `derived-rnd-pending-${jobSample.id}`,
+          exceptionType: "Homogeneous sample without approved R&D result",
+          jobId: job.id,
+          jobNumber,
+          lotId: null,
+          lotNumber: "Job-level",
+          packetId: null,
+          packetCode: null,
+          blockingStage: "Lab Testing",
+          ageHours,
+          ownerId,
+          owner: ownerName,
+          slaState: resolveSla(ageHours),
+          source: "Derived",
+          status: "OPEN",
+          blockerText: "R&D attempts are not completed/approved for the job-level homogeneous sample.",
+          links: {
+            job: `/userrd/job/${job.id}`,
+            lot: null,
+            packet: null,
+            documents: `/documents?job=${jobNumber}`,
+          },
+        });
+      }
 
-        const completedTrialCount = lot.trials.filter((trial) => trial.measurements.length > 0).length;
-        if (completedTrialCount === 0) {
-          const ageHours = ageHoursFrom(lot.sample.createdAt);
-          derivedRows.push({
-            id: `derived-rnd-pending-${lot.sample.id}`,
-            exceptionType: "Sample without completed R&D",
-            jobId: job.id,
-            jobNumber,
-            lotId: lot.id,
-            lotNumber: lot.lotNumber,
-            packetId: null,
-            packetCode: null,
-            blockingStage: "Lab Testing",
-            ageHours,
-            ownerId,
-            owner: ownerName,
-            slaState: resolveSla(ageHours),
-            source: "Derived",
-            status: "OPEN",
-            blockerText: "R&D trials are not completed for this sample.",
-            links: {
-              job: `/userrd/job/${job.id}`,
-              lot: `/operations/job/${job.id}/lot/${lot.id}`,
-              packet: null,
-              documents: `/documents?job=${jobNumber}&lot=${lot.lotNumber}`,
-              traceability: `/traceability/lot/${lot.id}`,
-            },
-          });
-        }
-
-        for (const packet of lot.sample.packets) {
+      for (const packet of jobSample.packets) {
           const packetAge = ageHoursFrom(packet.createdAt);
           const allocationStatus = packet.allocation?.allocationStatus || "BLOCKED";
 
@@ -315,8 +333,8 @@ export async function GET(request: NextRequest) {
               exceptionType: "Packet without COA",
               jobId: job.id,
               jobNumber,
-              lotId: lot.id,
-              lotNumber: lot.lotNumber,
+              lotId: null,
+              lotNumber: "Job-level",
               packetId: packet.id,
               packetCode: packet.packetCode,
               blockingStage: "Report",
@@ -329,10 +347,9 @@ export async function GET(request: NextRequest) {
               blockerText: "COA is missing for packet release.",
               links: {
                 job: `/userrd/job/${job.id}`,
-                lot: `/operations/job/${job.id}/lot/${lot.id}`,
-                packet: `/operations/job/${job.id}/lot/${lot.id}/packet`,
-                documents: `/documents?job=${jobNumber}&lot=${lot.lotNumber}&packet=${packet.packetCode}`,
-                traceability: `/traceability/lot/${lot.id}`,
+                lot: null,
+                packet: `/operations/job/${job.id}/packet`,
+                documents: `/documents?job=${jobNumber}&packet=${packet.packetCode}`,
               },
             });
           }
@@ -343,8 +360,8 @@ export async function GET(request: NextRequest) {
               exceptionType: "Dispatch without attached documents",
               jobId: job.id,
               jobNumber,
-              lotId: lot.id,
-              lotNumber: lot.lotNumber,
+              lotId: null,
+              lotNumber: "Job-level",
               packetId: packet.id,
               packetCode: packet.packetCode,
               blockingStage: "Packing List",
@@ -357,25 +374,24 @@ export async function GET(request: NextRequest) {
               blockerText: "Dispatch cannot proceed until required documents are attached.",
               links: {
                 job: `/reports?job=${job.id}`,
-                lot: `/operations/job/${job.id}/lot/${lot.id}`,
-                packet: `/operations/job/${job.id}/lot/${lot.id}/packet`,
-                documents: `/documents?job=${jobNumber}&lot=${lot.lotNumber}&packet=${packet.packetCode}`,
-                traceability: `/traceability/lot/${lot.id}`,
+                lot: null,
+                packet: `/operations/job/${job.id}/packet`,
+                documents: `/documents?job=${jobNumber}&packet=${packet.packetCode}`,
               },
             });
           }
-        }
+      }
 
-        if (!["APPROVED", "READY_FOR_PACKETING"].includes(lot.sample.sampleStatus)) {
-          const ageHours = ageHoursFrom(lot.sample.createdAt);
+        if (!["APPROVED", "READY_FOR_PACKETING"].includes(jobSample.sampleStatus)) {
+          const ageHours = ageHoursFrom(jobSample.createdAt);
           if (ageHours >= 48) {
             derivedRows.push({
-              id: `derived-overdue-approval-${lot.sample.id}`,
+              id: `derived-overdue-approval-${jobSample.id}`,
               exceptionType: "Overdue approvals",
               jobId: job.id,
               jobNumber,
-              lotId: lot.id,
-              lotNumber: lot.lotNumber,
+              lotId: null,
+              lotNumber: "Job-level",
               packetId: null,
               packetCode: null,
               blockingStage: "Final Pass",
@@ -387,16 +403,14 @@ export async function GET(request: NextRequest) {
               status: "OPEN",
               blockerText: "Approval is overdue and blocks progression.",
               links: {
-                job: `/operations/job/${job.id}`,
-                lot: `/operations/job/${job.id}/lot/${lot.id}`,
+                job: `/jobs/${job.id}/workflow?section=sampling`,
+                lot: null,
                 packet: null,
-                documents: `/documents?job=${jobNumber}&lot=${lot.lotNumber}`,
-                traceability: `/traceability/lot/${lot.id}`,
+                documents: `/documents?job=${jobNumber}`,
               },
             });
           }
         }
-      }
     }
 
     const escalationRows: ExceptionQueueRow[] = escalations.map((entry) => {
@@ -423,7 +437,6 @@ export async function GET(request: NextRequest) {
           lot: entry.jobId && entry.lotId ? `/operations/job/${entry.jobId}/lot/${entry.lotId}` : null,
           packet: null,
           documents: entry.jobId ? `/documents?job=${entry.jobId}` : null,
-          traceability: entry.lotId ? `/traceability/lot/${entry.lotId}` : null,
         },
       };
     });

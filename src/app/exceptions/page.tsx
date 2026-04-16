@@ -48,7 +48,6 @@ type ExceptionRow = {
     lot: string | null;
     packet: string | null;
     documents: string | null;
-    traceability: string | null;
   };
 };
 
@@ -217,7 +216,7 @@ export default function ManagerWorkspacePage() {
       stage: row.blockingStage,
       age: `${row.ageHours}h`,
       owner: row.owner,
-      actionHref: row.links.traceability || row.links.documents || row.links.job,
+      actionHref: row.links.lot || row.links.documents || row.links.job,
     }));
   }, [exceptions]);
 
@@ -256,7 +255,7 @@ export default function ManagerWorkspacePage() {
         stage: row.blockingStage,
         age: `${row.ageHours}h`,
         owner: row.owner,
-        actionHref: row.links.documents || row.links.traceability || row.links.job,
+        actionHref: row.links.documents || row.links.lot || row.links.job,
       }));
   }, [exceptions]);
 
@@ -271,7 +270,7 @@ export default function ManagerWorkspacePage() {
         stage: row.blockingStage,
         age: `${row.ageHours}h`,
         owner: row.owner,
-        actionHref: row.links.documents || row.links.traceability || row.links.job,
+        actionHref: row.links.documents || row.links.lot || row.links.job,
       }));
 
     const jobDerived: ManagerIssueRow[] = [];
@@ -386,7 +385,7 @@ export default function ManagerWorkspacePage() {
                 { id: "milestone", header: "Current Milestone", render: (row) => row.currentMilestone },
                 { id: "sample", header: "Sample Status", render: (row) => row.sampleStatus },
                 { id: "blocker", header: "Blocker", render: (row) => row.blocker },
-              ]} rowActions={[{ id: "open-lot", label: "Open Traceability", onClick: (row) => { router.push(`/traceability/lots/${row.lotRefId}`); } }]} /></EnterpriseStickyTable>
+              ]} rowActions={[{ id: "open-lot", label: "Open Lot Workflow", onClick: (row) => { router.push(`/jobs/${row.jobRefId}/workflow?lotId=${row.lotRefId}&section=lots`); } }]} /></EnterpriseStickyTable>
             </VStack>
 
             <VStack align="stretch" spacing={2}>

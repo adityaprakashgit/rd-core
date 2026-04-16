@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -34,6 +34,27 @@ function formatDate(value: string | Date | null | undefined) {
   if (!value) return "-";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString();
+}
+
+const RND_JOB_SECTIONS = [
+  "overview",
+  "source",
+  "setup",
+  "readings",
+  "attachments",
+  "review",
+  "report",
+  "history",
+] as const;
+
+type RndJobSectionId = (typeof RND_JOB_SECTIONS)[number];
+
+function normalizeRndJobSection(value: string | null | undefined): RndJobSectionId {
+  if (!value) return "overview";
+  const normalized = value.trim().toLowerCase();
+  return (RND_JOB_SECTIONS as readonly string[]).includes(normalized)
+    ? (normalized as RndJobSectionId)
+    : "overview";
 }
 
 type DetailPayload = {
@@ -85,7 +106,8 @@ export default function RndJobDetailPage() {
   const toast = useToast();
 
   const rndJobId = params?.rndJobId;
-  const requestedTab = searchParams.get("tab")?.toLowerCase();
+  const requestedSection = searchParams.get("section");
+  const requestedTab = searchParams.get("tab");
 
   const [payload, setPayload] = useState<DetailPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +115,10 @@ export default function RndJobDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [setupDirty, setSetupDirty] = useState(false);
+  const setupDirtyRef = useRef(false);
+  const [activeSection, setActiveSection] = useState<RndJobSectionId>(
+    normalizeRndJobSection(requestedSection ?? requestedTab),
+  );
 
   const [setupForm, setSetupForm] = useState({
     packetUse: "",
@@ -118,6 +144,10 @@ export default function RndJobDetailPage() {
     useType: "TESTING",
     reason: "",
   });
+
+  useEffect(() => {
+    setupDirtyRef.current = setupDirty;
+  }, [setupDirty]);
 
   const fetchDetail = useCallback(async (options?: { initial?: boolean; syncSetupForm?: boolean }) => {
     if (!rndJobId) return;
@@ -155,7 +185,7 @@ export default function RndJobDetailPage() {
         priority: job.priority ?? "MEDIUM",
         remarks: job.remarks ?? "",
       };
-      if (isInitial || syncSetupForm || !setupDirty) {
+      if (isInitial || syncSetupForm || !setupDirtyRef.current) {
         setSetupForm(nextSetupForm);
         if (isInitial || syncSetupForm) {
           setSetupDirty(false);
@@ -176,11 +206,28 @@ export default function RndJobDetailPage() {
         setIsRefreshingDetail(false);
       }
     }
-  }, [rndJobId, setupDirty]);
+  }, [rndJobId]);
 
   useEffect(() => {
     void fetchDetail({ initial: true, syncSetupForm: true });
   }, [fetchDetail]);
+
+  useEffect(() => {
+    const nextSection = normalizeRndJobSection(requestedSection ?? requestedTab);
+    setActiveSection(nextSection);
+
+    if (!requestedSection && requestedTab) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("tab");
+      if (nextSection === "overview") {
+        params.delete("section");
+      } else {
+        params.set("section", nextSection);
+      }
+      const query = params.toString();
+      router.replace(query ? `/rnd/jobs/${rndJobId}?${query}` : `/rnd/jobs/${rndJobId}`, { scroll: false });
+    }
+  }, [requestedSection, requestedTab, rndJobId, router, searchParams]);
 
   const job = payload?.job as Record<string, unknown> | undefined;
 
@@ -218,12 +265,27 @@ export default function RndJobDetailPage() {
     return () => clearTimeout(timer);
   }, [approverSearch]);
 
-  const defaultTab = useMemo(() => {
-    if (!requestedTab) return 0;
-    const list = ["overview", "source", "setup", "readings", "attachments", "review", "report", "history"];
-    const index = list.indexOf(requestedTab);
+  const activeTabIndex = useMemo(() => {
+    const index = RND_JOB_SECTIONS.indexOf(activeSection);
     return index >= 0 ? index : 0;
-  }, [requestedTab]);
+  }, [activeSection]);
+
+  const handleSectionChange = useCallback(
+    (nextSection: RndJobSectionId) => {
+      if (!rndJobId) return;
+      setActiveSection(nextSection);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("tab");
+      if (nextSection === "overview") {
+        params.delete("section");
+      } else {
+        params.set("section", nextSection);
+      }
+      const query = params.toString();
+      router.push(query ? `/rnd/jobs/${rndJobId}?${query}` : `/rnd/jobs/${rndJobId}`, { scroll: false });
+    },
+    [rndJobId, router, searchParams],
+  );
 
   const handleTransition = useCallback(
     async (toStatus: string) => {
@@ -413,7 +475,6 @@ export default function RndJobDetailPage() {
             <WorkflowBadge status={status} />
           </HStack>
           <SimpleInfo label="Parent Job Number" value={String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-")} />
-          <SimpleInfo label="Lot Number" value={String((job.lot as { lotNumber?: string } | null)?.lotNumber ?? "-")} />
           <SimpleInfo label="Sample ID" value={String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-")} />
           <SimpleInfo label="Packet ID" value={String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-")} />
           <SimpleInfo label="Packet Weight" value={(() => {
@@ -429,19 +490,15 @@ export default function RndJobDetailPage() {
     },
     {
       id: "source",
-      label: "Source Packet / Lot",
+      label: "Source Packet",
       content: (
         <VStack align="stretch" spacing={3}>
           <SimpleInfo label="Linked Parent Job" value={String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-")} />
-          <SimpleInfo label="Linked Lot" value={String((job.lot as { lotNumber?: string } | null)?.lotNumber ?? "-")} />
           <SimpleInfo label="Linked Sample" value={String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-")} />
           <SimpleInfo label="Linked Packet" value={String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-")} />
           <SimpleInfo label="Packet Purpose" value={String(job.packetUse ?? "-")} />
           <SimpleInfo label="Previous R&D Job" value={String((job.previousRndJob as { rndJobNumber?: string } | null)?.rndJobNumber ?? "-")} />
           <HStack spacing={2}>
-            <Button size="sm" variant="outline" onClick={() => router.push(`/traceability/lot/${String(job.lotId ?? "")}`)}>
-              Open Traceability
-            </Button>
             <Button size="sm" variant="outline" onClick={() => router.push(`/jobs/${String(job.parentJobId ?? "")}/workflow`)}>
               Open Parent Workflow
             </Button>
@@ -844,13 +901,18 @@ export default function RndJobDetailPage() {
 
         <DetailTabsLayout
           tabs={tabs}
-          defaultTab={defaultTab}
+          activeTabIndex={activeTabIndex}
+          onTabChange={(index) => {
+            const next = RND_JOB_SECTIONS[index];
+            if (next) {
+              handleSectionChange(next);
+            }
+          }}
           rightRail={
             <VStack align="stretch" spacing={3}>
               <LinkedRecordsPanel
                 items={[
                   { label: "Parent Job", value: String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-"), href: `/jobs/${String(job.parentJobId ?? "")}/workflow` },
-                  { label: "Lot", value: String((job.lot as { lotNumber?: string } | null)?.lotNumber ?? "-"), href: `/traceability/lot/${String(job.lotId ?? "")}` },
                   { label: "Sample", value: String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-") },
                   { label: "Packet", value: String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-") },
                 ]}

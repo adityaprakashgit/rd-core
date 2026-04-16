@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
-import { toNumeric } from "@/lib/traceability";
+import { toNumeric } from "@/lib/inspection-documents";
 import { recordAuditLog } from "@/lib/audit";
 
 async function syncLotWeights(tx: Prisma.TransactionClient, lotId: string) {

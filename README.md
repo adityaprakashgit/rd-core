@@ -24,6 +24,39 @@ You can run the checks manually with:
 npm run db:prepare
 ```
 
+### Database Startup Recovery (Local Postgres)
+
+If the app fails with a Prisma/database startup error, use this sequence:
+
+```bash
+npm run db:doctor
+npm run db:bootstrap
+npm run dev
+```
+
+What these do:
+- `db:doctor`: validates `DATABASE_URL`, checks Postgres reachability, and verifies database connectivity with actionable errors.
+- `db:bootstrap`: creates the target database if missing, applies migrations (`prisma migrate deploy`), and runs `prisma generate`.
+
+Common troubleshooting:
+- **Postgres not running**: start your local Postgres service, then rerun `db:doctor`.
+- **Database missing** (`rd_core`): run `db:bootstrap`.
+- **Auth failed**: correct username/password in `.env` `DATABASE_URL`.
+- **Packet create blocked but app is up**: this is usually readiness validation, not DB outage. Run `npm run packet:health -- --sampleId=<sampleId> --sessionCookie='<cookie>'` for a DB + packet endpoint diagnostic.
+
+Example local URL:
+
+```bash
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/rd_core"
+```
+
+Repair historical seal-traceability mismatch (lot sealed but sample seal label incomplete):
+
+```bash
+npm run repair:sample-seal:dry-run
+npm run repair:sample-seal:execute
+```
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.

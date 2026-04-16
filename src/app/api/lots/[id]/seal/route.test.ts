@@ -30,7 +30,7 @@ vi.mock("@/lib/rbac", async () => {
   };
 });
 
-vi.mock("@/lib/traceability", () => ({
+vi.mock("@/lib/inspection-documents", () => ({
   generateUniqueSealNumber: mocks.generateUniqueSealNumberMock,
   isValidSealNumber: mocks.isValidSealNumberMock,
 }));

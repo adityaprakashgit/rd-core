@@ -3,9 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "db:doctor": "node src/scripts/db-recovery.mjs doctor",
+    "db:bootstrap": "node src/scripts/db-recovery.mjs bootstrap",
+    "packet:health": "node src/scripts/packet-api-health-check.mjs",
+    "repair:sample-seal:dry-run": "node src/scripts/repair-sample-seal-evidence.mjs",
+    "repair:sample-seal:execute": "node src/scripts/repair-sample-seal-evidence.mjs --execute",
     "db:check": "prisma migrate status",
     "db:prepare": "npm run db:check && prisma generate",
-    "predev": "npm run db:prepare",
+    "predev": "node src/scripts/db-recovery.mjs predev && npm run db:prepare",
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
@@ -17,7 +22,10 @@
     "repro:critical:headed": "node scripts/e2e/recycos-regression-pack.mjs --all --headed --slow-mo 400",
     "format": "prettier --write .",
     "seed:demo": "node src/scripts/reset-demo-data.mjs",
-    "telemetry:report:daily": "node src/scripts/evidence-funnel-daily-report.mjs"
+    "telemetry:report:daily": "node src/scripts/evidence-funnel-daily-report.mjs",
+    "cleanup:workflow:dry-run": "node src/scripts/workflow-cleanup.mjs --dry-run",
+    "cleanup:workflow:repair": "node src/scripts/workflow-cleanup.mjs --mode=repair --execute",
+    "cleanup:workflow:destructive": "node src/scripts/workflow-cleanup.mjs --mode=destructive --execute"
   },
   "dependencies": {
     "@chakra-ui/react": "^2.10.9",

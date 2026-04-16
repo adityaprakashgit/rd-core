@@ -12,7 +12,7 @@ export type SealPrerequisiteBlock = {
  * SEAL_ASSIGNMENT_POLICY controls seal assignment prerequisites.
  * OPEN: no readiness prerequisites beyond auth/scope.
  * INSPECTION_READY: requires inspection completed + decision ready for sampling.
- * EVIDENCE_READY (default): INSPECTION_READY + bag and sampling traceability photos.
+ * EVIDENCE_READY (default): INSPECTION_READY + bag and sampling evidence photos.
  */
 export function getSealAssignmentPolicy(raw: string | null | undefined = process.env.SEAL_ASSIGNMENT_POLICY): SealAssignmentPolicy {
   const normalized = typeof raw === "string" ? raw.trim().toUpperCase() : "";
@@ -41,32 +41,12 @@ export function evaluateSealAssignmentPrerequisites(input: {
   if (input.policy === "OPEN") {
     return null;
   }
-
-  const inspectionReady = input.inspectionStatus === "COMPLETED" && input.decisionStatus === "READY_FOR_SAMPLING";
-  if (!inspectionReady) {
+  if (!input.bagPhotoUrl) {
     return {
       status: 422,
-      code: "SEAL_PREREQ_INSPECTION_NOT_READY",
-      details: "Seal assignment requires inspection completion with READY_FOR_SAMPLING decision.",
+      code: "SEAL_PREREQ_BAG_PHOTO_MISSING",
+      details: "Seal assignment requires bag proof before decision submission.",
     };
-  }
-
-  if (input.policy === "EVIDENCE_READY") {
-    if (!input.bagPhotoUrl) {
-      return {
-        status: 422,
-        code: "SEAL_PREREQ_BAG_PHOTO_MISSING",
-        details: "Seal assignment requires a bag traceability photo.",
-      };
-    }
-
-    if (!input.samplingPhotoUrl) {
-      return {
-        status: 422,
-        code: "SEAL_PREREQ_SAMPLING_PHOTO_MISSING",
-        details: "Seal assignment requires a sampling traceability photo.",
-      };
-    }
   }
 
   return null;

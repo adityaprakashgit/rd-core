@@ -14,16 +14,8 @@ function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });
 }
 
-function deriveTotalBags(input: {
-  quantityMode: "SINGLE_PIECE" | "MULTI_WEIGHT";
-  bagCount?: number | null;
-  pieceCount?: number | null;
-  totalBags?: number | null;
-}) {
-  if (input.quantityMode === "MULTI_WEIGHT") {
-    return Math.max(input.totalBags ?? input.bagCount ?? 1, 1);
-  }
-  return Math.max(input.bagCount ?? input.pieceCount ?? input.totalBags ?? 1, 1);
+function normalizeLotNumber(value: string) {
+  return value.trim().replace(/\s+/g, " ").toUpperCase();
 }
 
 function deriveLotStatus(input: {
@@ -115,8 +107,11 @@ export async function POST(req: NextRequest) {
       return jsonError("Validation Error", "jobId and materialName are required fields.", 400);
     }
 
-    if (quantityMode === "MULTI_WEIGHT" && totalBags !== null && totalBags < 1) {
-      return jsonError("Validation Error", "Multi-weight lots must expect at least one weight row.", 400);
+    if (quantityMode === "MULTI_WEIGHT") {
+      return jsonError("Validation Error", "One lot equals one bag. Multi-weight mode is not allowed.", 400);
+    }
+    if ((bagCount ?? 1) > 1 || (pieceCount ?? 1) > 1 || (totalBags ?? 1) > 1) {
+      return jsonError("Validation Error", "One lot equals one bag. bagCount/totalBags must be 1.", 400);
     }
 
     const access = await validateJobAccess(jobId, currentUser.companyId);
@@ -141,26 +136,45 @@ export async function POST(req: NextRequest) {
     if (!lotNumber) {
       return jsonError("Validation Error", "lotNumber is required when auto lot numbering is disabled.", 400);
     }
+    const normalizedLotNumber = normalizeLotNumber(lotNumber);
+    const duplicate = await prisma.inspectionLot.findFirst({
+      where: {
+        jobId,
+        companyId: currentUser.companyId,
+        lotNumber: { equals: normalizedLotNumber, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      return jsonError("Duplicate Lot Error", "Lot number already exists for this job.", 409);
+    }
 
     const lot = await prisma.$transaction(async (tx) => {
       const created = await tx.inspectionLot.create({
         data: {
           jobId,
           companyId: currentUser.companyId,
-          lotNumber,
+          lotNumber: normalizedLotNumber,
           materialName,
           materialCategory: materialCategory || null,
-          quantityMode,
-          bagCount,
-          pieceCount,
-          totalBags: deriveTotalBags({ quantityMode, bagCount, pieceCount, totalBags }),
+          quantityMode: "SINGLE_PIECE",
+          bagCount: 1,
+          pieceCount: 1,
+          totalBags: 1,
           grossWeight,
           netWeight,
           weightUnit: weightUnit || null,
           remarks: remarks || null,
           status: mergeLotStatus(
             null,
-            deriveLotStatus({ quantityMode, materialName, bagCount, pieceCount, grossWeight, netWeight }),
+            deriveLotStatus({
+              quantityMode: "SINGLE_PIECE",
+              materialName,
+              bagCount: 1,
+              pieceCount: 1,
+              grossWeight,
+              netWeight,
+            }),
           ),
         },
         include: {
@@ -180,7 +194,9 @@ export async function POST(req: NextRequest) {
           lotId: created.id,
           lotNumber: created.lotNumber,
           materialName: created.materialName,
-          quantityMode: created.quantityMode,
+          quantityMode: "SINGLE_PIECE",
+          bagCount: 1,
+          totalBags: 1,
         },
       });
 
@@ -329,6 +345,30 @@ export async function PATCH(req: NextRequest) {
     const totalBags = body?.totalBags === undefined ? undefined : body.totalBags === null ? null : Number(body.totalBags);
     const grossWeight = body?.grossWeight === undefined ? undefined : body.grossWeight === null ? null : Number(body.grossWeight);
     const netWeight = body?.netWeight === undefined ? undefined : body.netWeight === null ? null : Number(body.netWeight);
+    const requestedLotNumber = typeof body?.lotNumber === "string" ? body.lotNumber.trim() : undefined;
+
+    if (quantityMode === "MULTI_WEIGHT") {
+      return jsonError("Validation Error", "One lot equals one bag. Multi-weight mode is not allowed.", 400);
+    }
+    if ((bagCount ?? 1) > 1 || (pieceCount ?? 1) > 1 || (totalBags ?? 1) > 1) {
+      return jsonError("Validation Error", "One lot equals one bag. bagCount/totalBags must be 1.", 400);
+    }
+
+    const normalizedLotNumber = requestedLotNumber ? normalizeLotNumber(requestedLotNumber) : undefined;
+    if (normalizedLotNumber) {
+      const duplicate = await prisma.inspectionLot.findFirst({
+        where: {
+          id: { not: lotId },
+          jobId: existing.jobId,
+          companyId: currentUser.companyId,
+          lotNumber: { equals: normalizedLotNumber, mode: "insensitive" },
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        return jsonError("Duplicate Lot Error", "Lot number already exists for this job.", 409);
+      }
+    }
 
     const lot = await prisma.$transaction(async (tx) => {
       const conditionalUpdate = await tx.inspectionLot.updateMany({
@@ -337,14 +377,13 @@ export async function PATCH(req: NextRequest) {
           updatedAt: existing.updatedAt,
         },
         data: {
+          ...(normalizedLotNumber !== undefined ? { lotNumber: normalizedLotNumber } : {}),
           ...(materialName !== undefined ? { materialName } : {}),
           ...(typeof body?.materialCategory === "string" ? { materialCategory: body.materialCategory.trim() || null } : {}),
-          ...(body?.quantityMode !== undefined ? { quantityMode } : {}),
-          ...(bagCount !== undefined ? { bagCount } : {}),
-          ...(pieceCount !== undefined ? { pieceCount } : {}),
-          ...(totalBags !== undefined
-            ? { totalBags: deriveTotalBags({ quantityMode, bagCount: bagCount ?? undefined, pieceCount: pieceCount ?? undefined, totalBags }) }
-            : {}),
+          quantityMode: "SINGLE_PIECE",
+          bagCount: 1,
+          pieceCount: 1,
+          totalBags: 1,
           ...(grossWeight !== undefined ? { grossWeight } : {}),
           ...(netWeight !== undefined ? { netWeight } : {}),
           ...(typeof body?.weightUnit === "string" ? { weightUnit: body.weightUnit.trim() || null } : {}),
@@ -352,10 +391,10 @@ export async function PATCH(req: NextRequest) {
           status: mergeLotStatus(
             existing.status,
             deriveLotStatus({
-              quantityMode,
+              quantityMode: "SINGLE_PIECE",
               materialName: materialName ?? existing.materialName ?? "",
-              bagCount: bagCount ?? undefined,
-              pieceCount: pieceCount ?? undefined,
+              bagCount: 1,
+              pieceCount: 1,
               grossWeight: grossWeight ?? undefined,
               netWeight: netWeight ?? undefined,
             }),

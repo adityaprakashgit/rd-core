@@ -16,25 +16,18 @@ function makeLot(overrides: Partial<InspectionLot>): InspectionLot {
 }
 
 describe("buildSealReadinessRows", () => {
-  it("marks READY_FOR_SAMPLING completed inspection lot as eligible", () => {
+  it("marks lot with bag proof as eligible", () => {
     const rows = buildSealReadinessRows([
       makeLot({
-        inspection: {
-          id: "insp-1",
-          jobId: "job-1",
-          lotId: "lot-1",
-          inspectorId: "u-1",
-          inspectionStatus: "COMPLETED",
-          decisionStatus: "READY_FOR_SAMPLING",
-          startedAt: new Date(),
-          identityRiskFlag: false,
-          packagingRiskFlag: false,
-          materialRiskFlag: false,
-          samplingBlockedFlag: false,
-          issueCount: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+        mediaFiles: [
+          {
+            id: "m-1",
+            category: "BAG_WITH_LOT_NO",
+            storageKey: "/bag.jpg",
+            fileName: "bag.jpg",
+            createdAt: new Date(),
+          },
+        ],
       }),
     ]);
 
@@ -42,30 +35,15 @@ describe("buildSealReadinessRows", () => {
     expect(rows[0]?.reason).toBe("Ready for generation.");
   });
 
-  it("marks non-ready lot with blocker reason", () => {
+  it("marks lot without bag proof as blocked", () => {
     const rows = buildSealReadinessRows([
       makeLot({
-        inspection: {
-          id: "insp-1",
-          jobId: "job-1",
-          lotId: "lot-1",
-          inspectorId: "u-1",
-          inspectionStatus: "IN_PROGRESS",
-          decisionStatus: "PENDING",
-          startedAt: new Date(),
-          identityRiskFlag: false,
-          packagingRiskFlag: false,
-          materialRiskFlag: false,
-          samplingBlockedFlag: false,
-          issueCount: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+        mediaFiles: [],
       }),
     ]);
 
     expect(rows[0]?.eligible).toBe(false);
-    expect(rows[0]?.reason).toBe("Inspection not completed.");
+    expect(rows[0]?.reason).toBe("Bag proof is required before seal assignment.");
   });
 
   it("excludes lots with existing seals", () => {

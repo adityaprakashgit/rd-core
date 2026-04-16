@@ -99,6 +99,26 @@ export async function GET(request: NextRequest) {
           { commodity: { contains: query, mode: "insensitive" } },
           { plantLocation: { contains: query, mode: "insensitive" } },
           {
+            samples: {
+              some: {
+                OR: [
+                  { sampleCode: { contains: query, mode: "insensitive" } },
+                  { sealLabel: { sealNo: { contains: query, mode: "insensitive" } } },
+                  {
+                    packets: {
+                      some: {
+                        OR: [
+                          { packetCode: { contains: query, mode: "insensitive" } },
+                          { allocation: { allocatedToId: { contains: query, mode: "insensitive" } } },
+                        ],
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          {
             lots: {
               some: {
                 OR: [
@@ -167,6 +187,30 @@ export async function GET(request: NextRequest) {
             },
           },
         },
+        samples: {
+          select: {
+            id: true,
+            sampleCode: true,
+            sealLabel: {
+              select: {
+                sealNo: true,
+              },
+            },
+            packets: {
+              select: {
+                id: true,
+                packetCode: true,
+                allocation: {
+                  select: {
+                    id: true,
+                    allocationStatus: true,
+                    allocatedToId: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -214,7 +258,7 @@ export async function GET(request: NextRequest) {
             type: "lot",
             label: lot.lotNumber,
             subLabel: `${jobNumber}${lot.materialName ? ` • ${lot.materialName}` : ""}`,
-            href: `/traceability/lot/${lot.id}`,
+            href: `/jobs/${job.id}/workflow?lotId=${lot.id}&section=lots`,
           });
         }
 
@@ -228,8 +272,8 @@ export async function GET(request: NextRequest) {
             id: `sample-${sample.id}`,
             type: "sample",
             label: sample.sampleCode || "Sample",
-            subLabel: `${lot.lotNumber} • ${jobNumber}`,
-            href: `/userrd/job/${job.id}`,
+            subLabel: `Homogeneous sample • ${jobNumber}`,
+            href: `/jobs/${job.id}/workflow?section=sampling`,
           });
         }
 
@@ -239,8 +283,8 @@ export async function GET(request: NextRequest) {
               id: `packet-${packet.id}`,
               type: "packet",
               label: packet.packetCode,
-              subLabel: `${lot.lotNumber} • ${jobNumber}`,
-              href: `/operations/job/${job.id}/lot/${lot.id}/packet`,
+              subLabel: `Job packet • ${jobNumber}`,
+              href: `/operations/job/${job.id}/packet`,
             });
           }
 
@@ -251,7 +295,42 @@ export async function GET(request: NextRequest) {
               type: "dispatch",
               label: dispatchId,
               subLabel: `${packet.packetCode} • ${packet.allocation?.allocationStatus ?? "Unknown"}`,
-              href: `/operations/job/${job.id}/lot/${lot.id}/packet`,
+              href: `/operations/job/${job.id}/packet`,
+            });
+          }
+        }
+      }
+
+      for (const sample of job.samples) {
+        if (textMatch(sample.sampleCode, query) || textMatch(sample.sealLabel?.sealNo, query)) {
+          groups.samples.push({
+            id: `sample-${sample.id}`,
+            type: "sample",
+            label: sample.sampleCode || "Sample",
+            subLabel: `Homogeneous sample • ${jobNumber}`,
+            href: `/jobs/${job.id}/workflow?section=sampling`,
+          });
+        }
+
+        for (const packet of sample.packets) {
+          if (textMatch(packet.packetCode, query)) {
+            groups.packets.push({
+              id: `packet-${packet.id}`,
+              type: "packet",
+              label: packet.packetCode,
+              subLabel: `Job packet • ${jobNumber}`,
+              href: `/operations/job/${job.id}/packet`,
+            });
+          }
+
+          const dispatchId = packet.allocation?.id ?? packet.allocation?.allocatedToId ?? null;
+          if (dispatchId && textMatch(dispatchId, query)) {
+            groups.dispatches.push({
+              id: `dispatch-${packet.id}`,
+              type: "dispatch",
+              label: dispatchId,
+              subLabel: `${packet.packetCode} • ${packet.allocation?.allocationStatus ?? "Unknown"}`,
+              href: `/operations/job/${job.id}/packet`,
             });
           }
         }
@@ -277,4 +356,3 @@ export async function GET(request: NextRequest) {
     return jsonError("Search Error", message, 500);
   }
 }
-

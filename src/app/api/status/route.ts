@@ -25,7 +25,7 @@ type StatusPayload = {
   };
 };
 
-const REQUIRED_TABLES = ["User", "UserProfile", "InspectionJob", "InspectionLot", "Sampling", "AuditLog"] as const;
+const REQUIRED_TABLES = ["User", "UserProfile", "InspectionJob", "InspectionLot", "Sample", "AuditLog"] as const;
 
 export async function GET() {
   const apiStart = Date.now();

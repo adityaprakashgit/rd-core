@@ -247,8 +247,8 @@ export function PacketManagementWorkspace() {
 
     try {
       const [executionRes, sampleRes] = await Promise.all([
-        fetch(`/api/inspection/execution?lotId=${lotId}`),
-        fetch(`/api/inspection/sample-management?lotId=${lotId}`),
+        fetch(`/api/inspection/execution?lotId=${lotId}&jobId=${jobId}`),
+        fetch(`/api/inspection/sample-management?jobId=${jobId}`),
       ]);
 
       if (!executionRes.ok || !sampleRes.ok) {
@@ -281,7 +281,7 @@ export function PacketManagementWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [lotId]);
+  }, [jobId, lotId]);
 
   useEffect(() => {
     void fetchData();
@@ -408,13 +408,13 @@ export function PacketManagementWorkspace() {
         id: "stage-not-ready",
         title: "Stage not ready",
         description: "No packet is marked AVAILABLE for downstream dispatch preparation.",
-        actionLabel: "Open Traceability",
-        actionHref: `/traceability/lot/${lotId}`,
+        actionLabel: "Open Job Workflow",
+        actionHref: `/jobs/${jobId}/workflow?section=packets`,
       });
     }
 
     return blockers;
-  }, [hasDispatchArtifact, hasLinkedCoa, jobId, lotId, lotNumber, pathname, readyPackets.length, selectedPacketReadiness]);
+  }, [hasDispatchArtifact, hasLinkedCoa, jobId, lotNumber, pathname, readyPackets.length, selectedPacketReadiness]);
 
   const updateDraft = useCallback(
     (packetId: string, patch: Partial<PacketDraft>) => {
@@ -863,8 +863,7 @@ export function PacketManagementWorkspace() {
                 ]}
                 rowActions={[
                   { id: "select", label: "Open Packet Detail", onClick: (row) => setSelectedPacketId(row.id) },
-                  { id: "lot-map", label: "Packet-to-Lot Mapping", onClick: (row) => router.push(`/operations/job/${jobId}/lot/${row.lotId ?? lotId}`) },
-                  { id: "trace", label: "Open Traceability", onClick: (row) => router.push(`/traceability/lot/${row.lotId ?? lotId}`) },
+                  { id: "workflow", label: "Open Job Packets", onClick: () => router.push(`/jobs/${jobId}/workflow?section=packets`) },
                 ]}
               />
             </VStack>
@@ -892,13 +891,13 @@ export function PacketManagementWorkspace() {
                     ),
                   },
                   {
-                    id: "source-lot",
-                    label: "Source Lot",
+                    id: "source-sample",
+                    label: "Source Sample",
                     content: (
                       <LinkedRecordsPanel
                         items={[
                           { label: "Job Number", value: jobId, href: `/userrd/job/${jobId}` },
-                          { label: "Lot Number", value: lot.lotNumber, href: pathname.replace(/\/packet$/, "") },
+                          { label: "Contributor Lots", value: "All passed job lots" },
                           { label: "Sample", value: sample.sampleCode || "Not Available" },
                           { label: "Packet", value: selectedPacket?.packetCode ?? "Not Available" },
                         ]}
@@ -932,7 +931,7 @@ export function PacketManagementWorkspace() {
                         <Button as="a" href={activeReportUrl ?? `/reports?jobId=${jobId}`} target={activeReportUrl ? "_blank" : undefined} variant="outline">
                           Download Report PDF
                         </Button>
-                        <Button variant="outline" onClick={() => router.push(`/traceability/lot/${lotId}`)}>Open Traceability</Button>
+                        <Button variant="outline" onClick={() => router.push(`/jobs/${jobId}/workflow?section=packets`)}>Open Job Packets</Button>
                         <WorkflowStateChip status={hasLinkedCoa ? "COA_AVAILABLE" : "COA_PENDING"} />
                         <Button as="a" href={activeCoaUrl ?? "/documents"} target={activeCoaUrl ? "_blank" : undefined} variant="outline">
                           Active COA
@@ -993,11 +992,11 @@ export function PacketManagementWorkspace() {
                     <LinkedRecordsPanel
                       items={[
                         { label: "Job Number", value: jobId, href: `/userrd/job/${jobId}` },
-                        { label: "Lot Number", value: lot.lotNumber, href: pathname.replace(/\/packet$/, "") },
+                        { label: "Contributor Lots", value: "All passed job lots" },
                         { label: "Current Step", value: lot.job.status.replaceAll("_", " ") },
                         { label: "Sample", value: sample.sampleCode || "Not Available" },
                         { label: "Packet", value: selectedPacket?.packetCode ?? "Not Available" },
-                        { label: "Traceability", value: "Open", href: `/traceability/lot/${lotId}` },
+                        { label: "Job Packets", value: "Open", href: `/jobs/${jobId}/workflow?section=packets` },
                       ]}
                     />
                     <HistoryTimeline

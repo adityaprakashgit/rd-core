@@ -165,7 +165,7 @@ export const LOT_SAMPLING_STEP_DEFINITIONS: ReadonlyArray<{
   note: string;
 }> = [
   { key: "before", category: "BEFORE", title: "Before", note: "Initial condition capture" },
-  { key: "during", category: "DURING", title: "During", note: "Mid-process traceability" },
+  { key: "during", category: "DURING", title: "During", note: "Mid-process evidence" },
   { key: "after", category: "AFTER", title: "After", note: "Post-process evidence" },
 ];
 
@@ -211,7 +211,7 @@ export const SAMPLE_EVIDENCE_ITEMS: ReadonlyArray<{
     uploadCategory: "BAG_CONDITION",
     required: false,
     title: "Sample container",
-    note: "Optional traceability photo for the selected container.",
+    note: "Optional evidence photo for the selected container.",
   },
   {
     mediaType: "SAMPLE_LABEL",

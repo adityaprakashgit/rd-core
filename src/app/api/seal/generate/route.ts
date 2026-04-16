@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { generateUniqueSealNumber, isValidSealNumber } from "@/lib/traceability";
+import { generateUniqueSealNumber, isValidSealNumber } from "@/lib/inspection-documents";
 
 function jsonError(error: string, details: string, status: number) {
   return NextResponse.json({ error, details }, { status });

@@ -100,8 +100,6 @@ model User {
   assignedJobsAuthored     InspectionJob[] @relation("InspectionJobAssignedBy")
   assignedLots             InspectionLot[] @relation("InspectionLotAssignedTo")
   assignedLotsAuthored     InspectionLot[] @relation("InspectionLotAssignedBy")
-  assignedSampling         Sampling[]      @relation("SamplingAssignedTo")
-  assignedSamplingAuthored Sampling[]      @relation("SamplingAssignedBy")
   samplesCreated           Sample[]        @relation("SampleCreatedBy")
   sampleEventsPerformed    SampleEvent[]   @relation("SampleEventPerformedBy")
   sampleMediaCaptured      SampleMedia[]   @relation("SampleMediaCapturedBy")
@@ -319,6 +317,10 @@ model InspectionJob {
   jobStartedAt    DateTime?
   sentToAdminAt   DateTime?
   sentToAdminBy   String?
+  finalDecisionStatus String?
+  finalDecisionAt DateTime?
+  finalDecisionBy String?
+  finalDecisionNote String?
   adminDecisionAt DateTime?
   adminDecisionBy String?
   adminDecisionStatus String?
@@ -421,7 +423,6 @@ model InspectionLot {
   assignedBy User?         @relation("InspectionLotAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
 
   bags     InspectionBag[]
-  sampling Sampling[]
   workflowEscalations WorkflowEscalation[]
 
   @@unique([jobId, lotNumber])
@@ -647,8 +648,8 @@ model Sample {
   id                  String    @id @default(cuid())
   companyId           String
   jobId               String
-  lotId               String    @unique
-  inspectionId        String    @unique
+  lotId               String?   @unique
+  inspectionId        String?   @unique
   sampleCode          String    @unique
   sampleStatus        String    @default("CREATED")
   sampleType          String?
@@ -666,8 +667,8 @@ model Sample {
   updatedAt           DateTime  @updatedAt
 
   job        InspectionJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  lot        InspectionLot    @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  inspection Inspection       @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  lot        InspectionLot?   @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  inspection Inspection?      @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
   createdBy  User             @relation("SampleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   events     SampleEvent[]
   media      SampleMedia[]
@@ -675,15 +676,15 @@ model Sample {
   packets    Packet[]
   rndJobs    RndJob[]
 
+  @@unique([jobId])
   @@index([companyId, sampleStatus])
-  @@index([jobId, createdAt])
 }
 
 model Packet {
   id             String    @id @default(cuid())
   companyId      String
   jobId          String
-  lotId          String
+  lotId          String?
   sampleId       String
   packetCode     String    @unique
   packetNo       Int
@@ -701,7 +702,7 @@ model Packet {
   updatedAt      DateTime  @updatedAt
 
   job        InspectionJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  lot        InspectionLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  lot        InspectionLot? @relation(fields: [lotId], references: [id], onDelete: SetNull)
   sample     Sample         @relation(fields: [sampleId], references: [id], onDelete: Cascade)
   createdBy  User           @relation("PacketCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   events     PacketEvent[]
@@ -832,29 +833,6 @@ model SampleSealLabel {
   sample Sample @relation(fields: [sampleId], references: [id], onDelete: Cascade)
 }
 
-model Sampling {
-  id        String @id @default(cuid())
-  lotId     String @unique
-  companyId String
-
-  beforePhotoUrl String?
-  duringPhotoUrl String?
-  afterPhotoUrl  String?
-
-  status       String    @default("PENDING")
-  assignedToId String?
-  assignedById String?
-  assignedAt   DateTime?
-  createdAt    DateTime  @default(now())
-
-  lot        InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  assignedTo User?         @relation("SamplingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  assignedBy User?         @relation("SamplingAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
-
-  @@index([companyId])
-  @@index([companyId, assignedToId])
-}
-
 model HomogeneousSample {
   id    String @id @default(cuid())
   jobId String
@@ -971,7 +949,7 @@ model RndJob {
   rndJobNumber    String      @unique
   companyId       String
   parentJobId     String
-  lotId           String
+  lotId           String?
   sampleId        String
   packetId        String
   previousRndJobId String?
@@ -995,7 +973,7 @@ model RndJob {
   updatedAt       DateTime     @updatedAt
 
   parentJob       InspectionJob @relation(fields: [parentJobId], references: [id], onDelete: Cascade)
-  lot             InspectionLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  lot             InspectionLot? @relation(fields: [lotId], references: [id], onDelete: SetNull)
   sample          Sample        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
   packet          Packet        @relation(fields: [packetId], references: [id], onDelete: Cascade)
   previousRndJob  RndJob?       @relation("RndJobRetestLineage", fields: [previousRndJobId], references: [id], onDelete: SetNull)

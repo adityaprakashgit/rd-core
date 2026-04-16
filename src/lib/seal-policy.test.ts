@@ -31,33 +31,33 @@ describe("seal policy", () => {
     const autoPathBlock = evaluateSealAssignmentPrerequisites({
       policy: "EVIDENCE_READY",
       jobStatus: "IN_PROGRESS",
-      inspectionStatus: "COMPLETED",
-      decisionStatus: "READY_FOR_SAMPLING",
-      bagPhotoUrl: "/bag.jpg",
-      samplingPhotoUrl: null,
+      inspectionStatus: "IN_PROGRESS",
+      decisionStatus: "PENDING",
+      bagPhotoUrl: null,
+      samplingPhotoUrl: "/sampling.jpg",
     });
 
     const manualPathBlock = evaluateSealAssignmentPrerequisites({
       policy: "EVIDENCE_READY",
       jobStatus: "IN_PROGRESS",
-      inspectionStatus: "COMPLETED",
-      decisionStatus: "READY_FOR_SAMPLING",
-      bagPhotoUrl: "/bag.jpg",
-      samplingPhotoUrl: null,
+      inspectionStatus: "IN_PROGRESS",
+      decisionStatus: "PENDING",
+      bagPhotoUrl: null,
+      samplingPhotoUrl: "/sampling.jpg",
     });
 
     expect(autoPathBlock).toEqual(manualPathBlock);
-    expect(autoPathBlock?.code).toBe("SEAL_PREREQ_SAMPLING_PHOTO_MISSING");
+    expect(autoPathBlock?.code).toBe("SEAL_PREREQ_BAG_PHOTO_MISSING");
   });
 
-  it("allows assignment when evidence policy is satisfied", () => {
+  it("allows assignment when bag proof policy is satisfied", () => {
     const block = evaluateSealAssignmentPrerequisites({
       policy: "EVIDENCE_READY",
       jobStatus: "IN_PROGRESS",
-      inspectionStatus: "COMPLETED",
-      decisionStatus: "READY_FOR_SAMPLING",
+      inspectionStatus: "IN_PROGRESS",
+      decisionStatus: "PENDING",
       bagPhotoUrl: "/bag.jpg",
-      samplingPhotoUrl: "/sampling.jpg",
+      samplingPhotoUrl: null,
     });
 
     expect(block).toBeNull();

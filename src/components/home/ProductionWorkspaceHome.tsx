@@ -417,11 +417,12 @@ export function ProductionWorkspaceHome({
                     },
                     { id: "open-docs", label: "Open Documents", onClick: (row) => router.push(`/documents?job=${row.inspectionId}`) },
                     {
-                      id: "open-traceability",
-                      label: "Open Traceability",
+                      id: "open-lot-workflow",
+                      label: "Open Lot Workflow",
                       onClick: (row) => {
-                        if (row.lotRefId) {
-                          router.push(`/traceability/lot/${row.lotRefId}`);
+                        const job = getJobById(row.jobRefId);
+                        if (job && row.lotRefId) {
+                          router.push(lotHref(job, row.lotRefId));
                         }
                       },
                       isDisabled: (row) => !row.lotRefId,
@@ -489,9 +490,12 @@ export function ProductionWorkspaceHome({
                     },
                     { id: "open-docs", label: "Open Documents", onClick: (row) => router.push(`/documents?lot=${row.lotNumber}`) },
                     {
-                      id: "open-traceability",
-                      label: "Open Traceability",
-                      onClick: (row) => router.push(`/traceability/lot/${row.lotRefId}`),
+                      id: "open-lot-workflow",
+                      label: "Open Lot Workflow",
+                      onClick: (row) => {
+                        const job = getJobById(row.jobRefId);
+                        if (job) router.push(lotHref(job, row.lotRefId));
+                      },
                     },
                   ]}
                 />
@@ -537,9 +541,12 @@ export function ProductionWorkspaceHome({
                       },
                     },
                     {
-                      id: "open-traceability",
-                      label: "Open Traceability",
-                      onClick: (row) => router.push(`/traceability/lot/${row.lotRefId}`),
+                      id: "open-lot-workflow",
+                      label: "Open Lot Workflow",
+                      onClick: (row) => {
+                        const job = getJobById(row.jobRefId);
+                        if (job) router.push(lotHref(job, row.lotRefId));
+                      },
                     },
                   ]}
                 />
@@ -585,9 +592,12 @@ export function ProductionWorkspaceHome({
                       },
                     },
                     {
-                      id: "open-traceability",
-                      label: "Open Traceability",
-                      onClick: (row) => router.push(`/traceability/lot/${row.lotRefId}`),
+                      id: "open-lot-workflow",
+                      label: "Open Lot Workflow",
+                      onClick: (row) => {
+                        const job = getJobById(row.jobRefId);
+                        if (job) router.push(lotHref(job, row.lotRefId));
+                      },
                     },
                   ]}
                 />

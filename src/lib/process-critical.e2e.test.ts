@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateSamplingWriteGate } from "./sampling-gate";
 import { evaluateSealAssignmentPrerequisites } from "./seal-policy";
 import {
   getExportPolicyBlockReason,
@@ -10,17 +9,7 @@ import {
 import { MOBILE_ACTION_RAIL_BOTTOM_OFFSET, MOBILE_CONTENT_BOTTOM_PADDING } from "./mobile-bottom-ui";
 
 describe("critical process e2e coverage", () => {
-  it("allows happy path across sampling gate, seal guard, and export policy", () => {
-    const samplingGate = evaluateSamplingWriteGate({
-      lotExists: true,
-      lotCompanyId: "company-1",
-      userCompanyId: "company-1",
-      jobStatus: "IN_PROGRESS",
-      inspectionStatus: "COMPLETED",
-      decisionStatus: "READY_FOR_SAMPLING",
-    });
-    expect(samplingGate).toBeNull();
-
+  it("allows happy path across seal guard and export policy", () => {
     const sealGuard = evaluateSealAssignmentPrerequisites({
       policy: "EVIDENCE_READY",
       jobStatus: "IN_PROGRESS",
@@ -37,16 +26,6 @@ describe("critical process e2e coverage", () => {
   });
 
   it("blocks key invalid states with deterministic reason codes", () => {
-    const samplingGate = evaluateSamplingWriteGate({
-      lotExists: true,
-      lotCompanyId: "company-1",
-      userCompanyId: "company-1",
-      jobStatus: "LOCKED",
-      inspectionStatus: "COMPLETED",
-      decisionStatus: "READY_FOR_SAMPLING",
-    });
-    expect(samplingGate?.code).toBe("SAMPLING_JOB_LOCKED");
-
     const sealGuard = evaluateSealAssignmentPrerequisites({
       policy: "EVIDENCE_READY",
       jobStatus: "IN_PROGRESS",

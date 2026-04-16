@@ -7,7 +7,7 @@ export default function PacketDetailPage({ params }: { params: { packetId: strin
     <RecordRouteRedirect
       endpoint={`/api/packets/${params.packetId}`}
       title="Packet detail"
-      buildHref={(payload) => `/jobs/${payload.jobId}/workflow?lotId=${payload.lotId}&section=packets`}
+      buildHref={(payload) => `/jobs/${payload.jobId}/workflow?section=packets`}
     />
   );
 }

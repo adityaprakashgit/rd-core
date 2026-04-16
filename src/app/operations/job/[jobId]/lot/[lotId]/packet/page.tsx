@@ -5,6 +5,6 @@ export default async function LotPacketPage({
 }: {
   params: Promise<{ jobId: string; lotId: string }>;
 }) {
-  const { jobId, lotId } = await params;
-  redirect(`/jobs/${jobId}/workflow?lotId=${lotId}&section=packets`);
+  const { jobId } = await params;
+  redirect(`/jobs/${jobId}/workflow?section=packets`);
 }

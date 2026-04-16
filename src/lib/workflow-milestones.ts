@@ -44,6 +44,9 @@ type WorkflowMilestoneJob = {
   jobStartedAt?: string | Date | null;
   sentToAdminAt?: string | Date | null;
   sentToAdminBy?: string | null;
+  finalDecisionAt?: string | Date | null;
+  finalDecisionBy?: string | null;
+  finalDecisionStatus?: string | null;
   adminDecisionAt?: string | Date | null;
   adminDecisionBy?: string | null;
   adminDecisionStatus?: string | null;
@@ -52,6 +55,7 @@ type WorkflowMilestoneJob = {
   handedOverToRndBy?: string | null;
   handedOverToRndTo?: string | null;
   lots?: WorkflowMilestoneLot[];
+  samples?: Array<NonNullable<WorkflowMilestoneLot["sample"]>>;
 };
 
 function toDate(value: string | Date | null | undefined) {
@@ -118,16 +122,13 @@ export function computeJobWorkflowMilestoneUpdate(
   const lotOutcomes = lots.map((lot) => lot.inspection?.decisionOutcome ?? mapDecisionOutcome(lot.inspection?.decisionStatus)).filter(
     (outcome): outcome is AdminDecisionOutcome => Boolean(outcome),
   );
-  const allLotsDecided = lots.length > 0 && lotOutcomes.length === lots.length;
-  const latestDecisionLot =
-    allLotsDecided
-      ? [...lots]
-          .filter((lot) => lot.inspection?.decisionAt)
-          .sort(
-            (left, right) =>
-              Number(new Date(right.inspection?.decisionAt ?? 0)) - Number(new Date(left.inspection?.decisionAt ?? 0)),
-          )[0] ?? null
-      : null;
+  const jobDecisionOutcome = mapDecisionOutcome(job.finalDecisionStatus);
+  const allLotsDecided = Boolean(job.finalDecisionStatus) || (lots.length > 0 && lotOutcomes.length === lots.length);
+  const jobSample = job.samples?.[0] ?? lots.map((lot) => lot.sample).find(Boolean) ?? null;
+  const allPackets = jobSample?.packets ?? [];
+  const sealDone = Boolean(jobSample?.sealLabel?.sealNo);
+  const homogeneousDone = Boolean(jobSample?.homogeneousProofDone || jobSample?.homogenizedAt);
+  const packetsReady = allPackets.length > 0 && allPackets.every((packet) => Boolean(packet.packetWeight && packet.packetUnit));
 
   const allLotsOperationsComplete =
     lots.length > 0 &&
@@ -141,17 +142,12 @@ export function computeJobWorkflowMilestoneUpdate(
       const requiredImagesDone = requiredCategories.every((category) => {
         return capturedCategories.has(category);
       });
-      const decisionOutcome = lot.inspection?.decisionOutcome ?? mapDecisionOutcome(lot.inspection?.decisionStatus);
-      const sample = lot.sample;
-      const packets = sample?.packets ?? [];
-      const sealDone = Boolean(sample?.sealLabel?.sealNo || lot.sealNumber);
-      const homogeneousDone = Boolean(sample?.homogeneousProofDone || sample?.homogenizedAt);
-      const packetsReady = packets.length > 0 && packets.every((packet) => Boolean(packet.packetWeight && packet.packetUnit));
+      const decisionOutcome = jobDecisionOutcome ?? lot.inspection?.decisionOutcome ?? mapDecisionOutcome(lot.inspection?.decisionStatus);
 
-      return requiredImagesDone && decisionOutcome === "PASS" && Boolean(sample?.id) && homogeneousDone && sealDone && packetsReady;
+      return requiredImagesDone && decisionOutcome === "PASS";
     });
 
-  const allPackets = lots.flatMap((lot) => lot.sample?.packets ?? []);
+  const operationsComplete = allLotsOperationsComplete && Boolean(jobSample?.id) && homogeneousDone && sealDone && packetsReady;
   const allPacketsSubmitted =
     allPackets.length > 0 && allPackets.every((packet) => Boolean(packet.submittedToRndAt));
   const latestSubmittedPacket =
@@ -174,11 +170,11 @@ export function computeJobWorkflowMilestoneUpdate(
     updateData.sentToAdminBy = latestSubmittedLot.inspection.sentToAdminBy ?? null;
   }
   if (allLotsDecided) {
-    updateData.adminDecisionAt = latestDate(lots.map((lot) => lot.inspection?.decisionAt));
-    updateData.adminDecisionBy = latestDecisionLot?.inspection?.decisionBy ?? null;
-    updateData.adminDecisionStatus = getDecisionRollup(lotOutcomes);
+    updateData.adminDecisionAt = toDate(job.finalDecisionAt) ?? latestDate(lots.map((lot) => lot.inspection?.decisionAt));
+    updateData.adminDecisionBy = job.finalDecisionBy ?? null;
+    updateData.adminDecisionStatus = jobDecisionOutcome ?? getDecisionRollup(lotOutcomes);
   }
-  if (!job.operationsCompletedAt && allLotsOperationsComplete) {
+  if (!job.operationsCompletedAt && operationsComplete) {
     updateData.operationsCompletedAt = new Date();
   }
   if (!job.handedOverToRndAt && latestSubmittedPacket?.submittedToRndAt) {
@@ -213,6 +209,9 @@ export async function recomputeJobWorkflowMilestones(
         jobStartedAt: true,
         sentToAdminAt: true,
         sentToAdminBy: true,
+        finalDecisionAt: true,
+        finalDecisionBy: true,
+        finalDecisionStatus: true,
         adminDecisionAt: true,
         adminDecisionBy: true,
         adminDecisionStatus: true,
@@ -261,6 +260,29 @@ export async function recomputeJobWorkflowMilestones(
                     submittedToRndBy: true,
                   },
                 },
+              },
+            },
+          },
+        },
+        samples: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            homogeneousProofDone: true,
+            homogenizedAt: true,
+            sealLabel: {
+              select: {
+                sealNo: true,
+              },
+            },
+            packets: {
+              select: {
+                id: true,
+                packetWeight: true,
+                packetUnit: true,
+                submittedToRndAt: true,
+                submittedToRndBy: true,
               },
             },
           },

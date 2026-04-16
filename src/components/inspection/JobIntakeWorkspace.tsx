@@ -575,7 +575,7 @@ export function JobIntakeWorkspace({
                             { label: "Sample", value: selectedLot.sample?.sampleCode || "Pending" },
                             { label: "Packet", value: selectedLot.sample?.packets?.[0]?.packetCode || "Pending" },
                             { label: "Documents", value: `${job.reportSnapshots?.length ?? 0}` },
-                            { label: "Traceability", value: "Open", href: `/traceability/lot/${selectedLot.id}` },
+                            { label: "Lot Workflow", value: "Open", href: lotHref(job.id, selectedLot.id) },
                           ]}
                         />
                       ) : (
@@ -700,7 +700,7 @@ export function JobIntakeWorkspace({
                     { label: "Current Step", value: presentation?.label ?? job.status },
                     { label: "Sample", value: selectedLot.sample?.sampleCode || "Not Available" },
                     { label: "Packet", value: selectedLot.sample?.packets?.[0]?.packetCode || "Not Available" },
-                    { label: "Traceability", value: "Open", href: `/traceability/lot/${selectedLot.id}` },
+                    { label: "Lot Workflow", value: "Open", href: lotHref(job.id, selectedLot.id) },
                   ]}
                 />
               ) : (

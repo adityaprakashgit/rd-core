@@ -29,32 +29,9 @@ type ReportValidationJob = {
     bags: Array<{
       netWeight: number | null;
     }>;
-    sample?: {
-      id: string;
-      sampleStatus: string;
-      samplingDate?: string | Date | null;
-      media?: Array<{
-        id: string;
-        mediaType: string;
-        fileUrl: string;
-        capturedAt: string | Date;
-      }>;
-      sealLabel?: {
-        sealNo?: string | null;
-        labelText?: string | null;
-        sealedAt?: string | Date | null;
-        labeledAt?: string | Date | null;
-      } | null;
-      events?: Array<{
-        id: string;
-        eventType: string;
-        eventTime: string | Date;
-      }>;
-      packets?: Array<{
-        id: string;
-      }>;
-    } | null;
+    sample?: ReportValidationSample | null;
   }>;
+  samples?: ReportValidationSample[];
   experiments: Array<{
     trials: Array<{
       trialNumber: number;
@@ -63,6 +40,50 @@ type ReportValidationJob = {
         value: unknown;
       }>;
     }>;
+  }>;
+  rndJobs?: Array<{
+    rndJobNumber: string;
+    status: string;
+    resultPrecedence?: string | null;
+    readings: Array<{
+      parameter: string;
+      value: unknown;
+    }>;
+  }>;
+};
+
+type ReportValidationSample = {
+  id: string;
+  lotId?: string | null;
+  sampleStatus: string;
+  sampleType?: string | null;
+  samplingMethod?: string | null;
+  samplingDate?: string | Date | null;
+  sampleQuantity?: number | null;
+  sampleUnit?: string | null;
+  containerType?: string | null;
+  homogeneousProofDone?: boolean | null;
+  homogenizedAt?: string | Date | null;
+  readyForPacketingAt?: string | Date | null;
+  media?: Array<{
+    id: string;
+    mediaType: string;
+    fileUrl: string;
+    capturedAt: string | Date;
+  }>;
+  sealLabel?: {
+    sealNo?: string | null;
+    labelText?: string | null;
+    sealedAt?: string | Date | null;
+    labeledAt?: string | Date | null;
+  } | null;
+  events?: Array<{
+    id: string;
+    eventType: string;
+    eventTime: string | Date;
+  }>;
+  packets?: Array<{
+    id: string;
   }>;
 };
 
@@ -88,6 +109,12 @@ export function buildReportValidation(job: ReportValidationJob) {
 
   const elementTotals: Record<string, { sum: number; count: number }> = {};
   const allTrials = job.experiments.flatMap((experiment) => experiment.trials);
+  const activeRndJobs = (job.rndJobs ?? []).filter(
+    (rndJob) =>
+      rndJob.resultPrecedence === "ACTIVE" &&
+      ["APPROVED", "COMPLETED"].includes(String(rndJob.status)),
+  );
+  const allRndReadings = activeRndJobs.flatMap((rndJob) => rndJob.readings);
 
   allTrials.forEach((trial) => {
     trial.measurements.forEach((measurement) => {
@@ -103,6 +130,20 @@ export function buildReportValidation(job: ReportValidationJob) {
       elementTotals[element].sum += Number(measurement.value) || 0;
       elementTotals[element].count += 1;
     });
+  });
+
+  allRndReadings.forEach((reading) => {
+    const element = reading.parameter.toUpperCase().trim();
+    if (!element) {
+      return;
+    }
+
+    if (!elementTotals[element]) {
+      elementTotals[element] = { sum: 0, count: 0 };
+    }
+
+    elementTotals[element].sum += Number(reading.value) || 0;
+    elementTotals[element].count += 1;
   });
 
   const averageComposition = Object.entries(elementTotals).map(([element, data]) => ({
@@ -130,34 +171,25 @@ export function buildReportValidation(job: ReportValidationJob) {
       validationErrors.push(`Lot ${lot.lotNumber}: register bag rows and weights.`);
     }
 
-    const sample = lot.sample as SampleRecord | null | undefined;
-    if (sample) {
-      if (deriveSampleStatus(sample) !== "READY_FOR_PACKETING") {
-        validationErrors.push(`Lot ${lot.lotNumber}: finish sample preparation and mark it ready.`);
-      }
-    } else {
-      validationErrors.push(`Lot ${lot.lotNumber}: create and complete managed sample preparation.`);
-    }
   });
 
-  const managedReadySamples = job.lots
-    .map((lot) => lot.sample as SampleRecord | null | undefined)
-    .filter((sample): sample is SampleRecord => Boolean(sample) && deriveSampleStatus(sample as SampleRecord) === "READY_FOR_PACKETING");
+  const canonicalSample =
+    (job.samples ?? []).find((sample) => !sample.lotId) ??
+    (job.samples ?? [])[0] ??
+    job.lots.map((lot) => lot.sample as SampleRecord | null | undefined).find(Boolean) ??
+    null;
 
-  const homogeneousSampleCount = managedReadySamples.length;
-
-  if (homogeneousSampleCount === 0) {
-    validationErrors.push("Finalize the homogeneous sample.");
+  if (!canonicalSample || deriveSampleStatus(canonicalSample as SampleRecord) !== "READY_FOR_PACKETING") {
+    validationErrors.push("Finalize the job-level homogeneous sample.");
   }
 
-  const managedPacketCount = managedReadySamples.reduce((sum, sample) => sum + (sample.packets?.length ?? 0), 0);
-  const packetCount = managedPacketCount;
+  const packetCount = canonicalSample?.packets?.length ?? 0;
   if (packetCount === 0) {
-    validationErrors.push("Generate at least one packet.");
+    validationErrors.push("Generate at least one packet from the job-level homogeneous sample.");
   }
 
-  if (allTrials.length === 0) {
-    validationErrors.push("Create at least one trial.");
+  if (allTrials.length === 0 && activeRndJobs.length === 0) {
+    validationErrors.push("Create at least one R&D test attempt.");
   }
 
   allTrials.forEach((trial) => {
@@ -167,7 +199,7 @@ export function buildReportValidation(job: ReportValidationJob) {
   });
 
   if (Object.keys(elementTotals).length === 0) {
-    validationErrors.push("Record lab measurements for the sample result.");
+    validationErrors.push("Record lab measurements for the job-level sample result.");
   }
 
   return {

@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { deriveSampleStatus } from "@/lib/sample-management";
-import type { SampleRecord } from "@/types/inspection";
+import { buildSampleCode } from "@/lib/sample-management";
+
+const sampleInclude = {
+  media: true,
+  sealLabel: true,
+  events: true,
+} as const;
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,13 +34,7 @@ export async function POST(req: NextRequest) {
       include: {
         lots: {
           include: {
-            sample: {
-              include: {
-                media: true,
-                sealLabel: true,
-                events: true,
-              },
-            },
+            inspection: true,
           }
         }
       }
@@ -63,27 +62,63 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validation #3: All lots must have a sample ready for packeting.
-    const incompleteLots = job.lots.filter(lot => {
-      const managedSample = lot.sample as SampleRecord | null;
-      return !managedSample || deriveSampleStatus(managedSample) !== "READY_FOR_PACKETING";
-    });
+    const incompleteLots = job.lots.filter(
+      (lot) =>
+        lot.inspection?.inspectionStatus !== "COMPLETED" ||
+        lot.inspection?.decisionStatus !== "READY_FOR_SAMPLING",
+    );
 
     if (incompleteLots.length > 0) {
       return NextResponse.json(
         { 
           error: "Workflow Error", 
-          details: `Operations incomplete. ${incompleteLots.length} lot(s) are missing managed sample readiness.`
+          details: `All lots must pass inspection before creating the job-level homogeneous sample. Blocking lots: ${incompleteLots.map((lot) => lot.lotNumber).join(", ")}.`
         },
         { status: 400 }
       );
     }
 
-    const sample = await prisma.homogeneousSample.create({
-      data: {
-        jobId,
-        photoUrl: photoUrl || null,
+    const sample = await prisma.$transaction(async (tx) => {
+      const existing = await tx.sample.findFirst({
+        where: { jobId },
+        include: sampleInclude,
+      });
+      if (existing) {
+        return existing;
       }
+
+      const created = await tx.sample.create({
+        data: {
+          companyId: currentUser.companyId,
+          jobId,
+          lotId: null,
+          inspectionId: null,
+          sampleCode: buildSampleCode(job.inspectionSerialNumber, "HOMO"),
+          sampleStatus: photoUrl ? "SAMPLING_IN_PROGRESS" : "CREATED",
+          sampleType: "HOMOGENEOUS",
+          samplingMethod: "SCOOPS_FROM_ALL_LOTS",
+          samplingDate: new Date(),
+          homogeneousProofDone: Boolean(photoUrl),
+          homogenizedAt: photoUrl ? new Date() : null,
+          remarks: "Job-level homogeneous sample created from all passed lots.",
+          createdById: currentUser.id,
+          ...(photoUrl
+            ? {
+                media: {
+                  create: {
+                    mediaType: "HOMOGENIZED_SAMPLE",
+                    fileUrl: photoUrl,
+                    capturedById: currentUser.id,
+                    remarks: "Migrated homogeneous sample photo.",
+                  },
+                },
+              }
+            : {}),
+        },
+        include: sampleInclude,
+      });
+
+      return created;
     });
 
     return NextResponse.json(sample);
@@ -95,7 +130,7 @@ export async function POST(req: NextRequest) {
 
     if (err && typeof err === "object" && "code" in err && String((err as { code?: unknown }).code) === "P2002") {
       return NextResponse.json(
-        { error: "Conflict Action", details: "A homogeneous sample has already been created for this job." },
+        { error: "Conflict Action", details: "A job-level homogeneous sample has already been created for this job." },
         { status: 409 }
       );
     }
@@ -124,20 +159,19 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const sample = await prisma.homogeneousSample.findFirst({
-      where: { jobId }
+    const job = await prisma.inspectionJob.findUnique({
+      where: { id: jobId },
+      select: { companyId: true },
     });
 
-    if (sample) {
-      const job = await prisma.inspectionJob.findUnique({
-        where: { id: sample.jobId },
-        select: { companyId: true },
-      });
-
-      if (!job || job.companyId !== currentUser.companyId) {
-        return NextResponse.json({ error: "Forbidden", details: "Cross-company access is not allowed." }, { status: 403 });
-      }
+    if (!job || job.companyId !== currentUser.companyId) {
+      return NextResponse.json({ error: "Forbidden", details: "Cross-company access is not allowed." }, { status: 403 });
     }
+
+    const sample = await prisma.sample.findFirst({
+      where: { jobId },
+      include: sampleInclude,
+    });
 
     return NextResponse.json(sample);
   } catch (err: unknown) {

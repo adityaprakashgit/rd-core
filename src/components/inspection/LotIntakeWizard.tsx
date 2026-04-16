@@ -422,7 +422,7 @@ export function LotIntakeWizard({
                     <Box>
                       <Heading size="md">Lot basics</Heading>
                       <Text color="text.secondary" fontSize="sm" mt={1}>
-                        Keep typing to the minimum needed to start traceability.
+                        Keep typing to the minimum needed to start inspection evidence.
                       </Text>
                     </Box>
                   </HStack>
@@ -492,7 +492,7 @@ export function LotIntakeWizard({
                     <Camera size={20} />
                   </Box>
                   <Box>
-                    <Heading size="md">Capture traceability photos</Heading>
+                    <Heading size="md">Capture inspection evidence photos</Heading>
                     <Text color="text.secondary" fontSize="sm" mt={1}>
                       Think social story flow: capture, confirm, continue.
                     </Text>

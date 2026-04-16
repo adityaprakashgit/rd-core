@@ -68,7 +68,7 @@ async function authedFetch<T = unknown>(
   url: string,
   init?: RequestInit,
 ): Promise<ApiResult<T>> {
-  return await page.evaluate(
+  const result = await page.evaluate(
     async ({ requestUrl, requestInit }) => {
       try {
         const response = await fetch(requestUrl, requestInit);
@@ -93,6 +93,7 @@ async function authedFetch<T = unknown>(
     },
     { requestUrl: url, requestInit: init },
   );
+  return result as ApiResult<T>;
 }
 
 async function attachDiagnostics(testInfo: TestInfo, diagnostics: BrowserDiagnostics): Promise<void> {

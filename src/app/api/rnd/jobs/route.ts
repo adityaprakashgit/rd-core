@@ -40,7 +40,6 @@ export async function GET(request: NextRequest) {
     const bucket = qp.get("bucket");
     const status = qp.get("status");
     const priority = qp.get("priority");
-    const lotNumber = qp.get("lotNumber");
     const parentJobNumber = qp.get("parentJobNumber");
     const packetId = qp.get("packetId");
     const sampleId = qp.get("sampleId");
@@ -63,13 +62,6 @@ export async function GET(request: NextRequest) {
               receivedAt: {
                 ...(dateFrom ? { gte: dateFrom } : {}),
                 ...(dateTo ? { lte: dateTo } : {}),
-              },
-            }
-          : {}),
-        ...(lotNumber
-          ? {
-              lot: {
-                lotNumber: { contains: lotNumber, mode: "insensitive" },
               },
             }
           : {}),
@@ -187,7 +179,6 @@ export async function POST(request: NextRequest) {
         select: {
           id: true,
           jobId: true,
-          lotId: true,
           sampleId: true,
           packetUnit: true,
           packetStatus: true,
@@ -228,7 +219,7 @@ export async function POST(request: NextRequest) {
           rndJobNumber,
           companyId: currentUser.companyId,
           parentJobId: previous.parentJobId,
-          lotId: packet.lotId,
+          lotId: null,
           sampleId: packet.sampleId,
           packetId: packet.id,
           previousRndJobId: previous.id,

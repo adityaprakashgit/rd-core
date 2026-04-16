@@ -13,6 +13,7 @@ import {
   Button,
   Checkbox,
   FormControl,
+  FormHelperText,
   FormLabel,
   HStack,
   IconButton,
@@ -84,7 +85,7 @@ type LotRegistrySummary = {
   missingDocuments: number;
   lastUpdated: string;
   actions: {
-    traceabilityUrl: string;
+    workflowUrl: string;
   };
   groups: {
     inspectionUploads: LotDocumentGroup;
@@ -105,6 +106,10 @@ type JobRegistrySummary = {
   lastUpdated: string;
   actions: {
     reportsUrl: string;
+  };
+  groups: {
+    testReports: LotDocumentGroup;
+    coa: LotDocumentGroup;
   };
   lots: LotRegistrySummary[];
 };
@@ -160,17 +165,25 @@ function GroupActionMenu({
   group,
   onShare,
   onPrint,
+  reportsWorkspaceUrl,
 }: {
   group: LotDocumentGroup;
   onShare: (url: string) => void;
   onPrint: (url: string) => void;
+  reportsWorkspaceUrl?: string;
 }) {
   const hasUrl = isUrlAvailable(group.linkedActionUrl);
+  const canOpenReportsWorkspace = Boolean(
+    reportsWorkspaceUrl &&
+      (group.key === "testReports" || group.key === "coa" || group.key === "packingList"),
+  );
   const url = group.linkedActionUrl ?? "";
+  const statusDisplay = group.status === "Missing" && group.count === 0 ? "Not Generated" : group.status;
+  const downloadLabel = group.key === "packingList" ? "Download Packing List PDF" : "Download Report PDF";
 
   return (
     <HStack spacing={2} justify="space-between" align="center">
-      <WorkflowStateChip status={group.status} />
+      <WorkflowStateChip status={statusDisplay} />
       <Menu>
         <MenuButton
           as={IconButton}
@@ -178,20 +191,28 @@ function GroupActionMenu({
           size="xs"
           variant="ghost"
           icon={<MoreHorizontal size={14} />}
-          isDisabled={!hasUrl}
+          isDisabled={!hasUrl && !canOpenReportsWorkspace}
         />
         <MenuList>
           <MenuItem as="a" href={url} target="_blank" rel="noreferrer" isDisabled={!hasUrl} icon={<ExternalLink size={14} />}>
-            View
+            View PDF
           </MenuItem>
           <MenuItem as="a" href={url} target="_blank" rel="noreferrer" isDisabled={!hasUrl} icon={<Download size={14} />}>
-            Download PDF
+            {downloadLabel}
           </MenuItem>
           <MenuItem onClick={() => onShare(url)} isDisabled={!hasUrl} icon={<Share2 size={14} />}>
-            Share
+            Share PDF
           </MenuItem>
           <MenuItem onClick={() => onPrint(url)} isDisabled={!hasUrl} icon={<Printer size={14} />}>
-            Print
+            Print PDF
+          </MenuItem>
+          <MenuItem
+            as="a"
+            href={reportsWorkspaceUrl ?? "#"}
+            isDisabled={!canOpenReportsWorkspace}
+            icon={<ExternalLink size={14} />}
+          >
+            Open Reports Workspace
           </MenuItem>
         </MenuList>
       </Menu>
@@ -322,10 +343,13 @@ export default function DocumentRegistryPage() {
       <VStack align="stretch" spacing={5}>
         <PageIdentityBar
           title="Document Registry"
-          subtitle="Job-wise document registry with lot-level traceability and grouped actions"
+          subtitle="Job-wise document registry with lot inspection context and grouped document actions"
           breadcrumbs={[{ label: "Documents", href: "/documents" }]}
           status={<Badge colorScheme="blue">{jobs.length} Jobs</Badge>}
         />
+        <Text fontSize="sm" color="text.secondary" mt={-3}>
+          Missing means not generated yet for this lot/job. Report settings or templates do not create PDF artifacts automatically.
+        </Text>
 
         <PageActionBar
           secondaryActions={
@@ -443,6 +467,9 @@ export default function DocumentRegistryPage() {
                   <option value="INSPECTION_UPLOAD">Inspection Uploads</option>
                   <option value="PACKET_DOCUMENT">Dispatch Documents</option>
                 </Select>
+                <FormHelperText>
+                  Packing List maps to dispatch documents, and Dispatch Documents maps to packet-level dispatch files.
+                </FormHelperText>
               </FormControl>
               <FormControl>
                 <FormLabel>Date From</FormLabel>
@@ -477,6 +504,8 @@ export default function DocumentRegistryPage() {
                   <Th isNumeric>Lot Count</Th>
                   <Th isNumeric>Document Count</Th>
                   <Th isNumeric>Missing Documents</Th>
+                  <Th>Test Report</Th>
+                  <Th>COA</Th>
                   <Th>Last Updated</Th>
                   <Th textAlign="right">Action</Th>
                 </Tr>
@@ -484,7 +513,7 @@ export default function DocumentRegistryPage() {
               <Tbody>
                 {loading ? (
                   <Tr>
-                    <Td colSpan={8}>
+                    <Td colSpan={10}>
                       <Text py={4} color="text.secondary" textAlign="center">
                         Loading documents...
                       </Text>
@@ -494,7 +523,7 @@ export default function DocumentRegistryPage() {
 
                 {!loading && jobs.length === 0 ? (
                   <Tr>
-                    <Td colSpan={8}>
+                    <Td colSpan={10}>
                       <Text py={4} color="text.secondary" textAlign="center">
                         No jobs found for current filters.
                       </Text>
@@ -522,11 +551,27 @@ export default function DocumentRegistryPage() {
                             <Td isNumeric>{job.lotCount}</Td>
                             <Td isNumeric>{job.documentCount}</Td>
                             <Td isNumeric>{job.missingDocuments}</Td>
+                            <Td>
+                              <GroupActionMenu
+                                group={job.groups.testReports}
+                                onShare={handleShare}
+                                onPrint={handlePrint}
+                                reportsWorkspaceUrl={job.actions.reportsUrl}
+                              />
+                            </Td>
+                            <Td>
+                              <GroupActionMenu
+                                group={job.groups.coa}
+                                onShare={handleShare}
+                                onPrint={handlePrint}
+                                reportsWorkspaceUrl={job.actions.reportsUrl}
+                              />
+                            </Td>
                             <Td>{formatDate(job.lastUpdated)}</Td>
                             <Td>
                               <HStack justify="flex-end" spacing={2}>
                                 <Button size="xs" variant="ghost" as="a" href={job.actions.reportsUrl}>
-                                  Open reports
+                                  Open Reports Workspace
                                 </Button>
                                 <Button size="xs" variant="outline" onClick={() => toggleExpand(job.jobId)}>
                                   {expanded ? "Collapse" : "Expand"}
@@ -537,15 +582,13 @@ export default function DocumentRegistryPage() {
 
                           {expanded ? (
                             <Tr key={`${job.jobId}-lots`}>
-                              <Td colSpan={8} px={0}>
+                              <Td colSpan={10} px={0}>
                                 <TableContainer borderTopWidth="1px" borderColor="border.default">
                                   <Table size="sm" variant="simple">
                                     <Thead>
                                       <Tr>
                                         <Th>Lot Number</Th>
                                         <Th isNumeric>Packet Count</Th>
-                                        <Th>Test Report</Th>
-                                        <Th>COA</Th>
                                         <Th>Packing List</Th>
                                         <Th>Inspection Uploads</Th>
                                         <Th>Dispatch Documents</Th>
@@ -558,13 +601,12 @@ export default function DocumentRegistryPage() {
                                           <Td fontWeight="medium">{lot.lotNumber}</Td>
                                           <Td isNumeric>{lot.packetCount}</Td>
                                           <Td>
-                                            <GroupActionMenu group={lot.groups.testReports} onShare={handleShare} onPrint={handlePrint} />
-                                          </Td>
-                                          <Td>
-                                            <GroupActionMenu group={lot.groups.coa} onShare={handleShare} onPrint={handlePrint} />
-                                          </Td>
-                                          <Td>
-                                            <GroupActionMenu group={lot.groups.packingList} onShare={handleShare} onPrint={handlePrint} />
+                                            <GroupActionMenu
+                                              group={lot.groups.packingList}
+                                              onShare={handleShare}
+                                              onPrint={handlePrint}
+                                              reportsWorkspaceUrl={job.actions.reportsUrl}
+                                            />
                                           </Td>
                                           <Td>
                                             <GroupActionMenu group={lot.groups.inspectionUploads} onShare={handleShare} onPrint={handlePrint} />
@@ -574,8 +616,8 @@ export default function DocumentRegistryPage() {
                                           </Td>
                                           <Td>
                                             <HStack justify="flex-end" spacing={2}>
-                                              <Button size="xs" variant="ghost" as="a" href={lot.actions.traceabilityUrl}>
-                                                Open Traceability
+                                              <Button size="xs" variant="ghost" as="a" href={lot.actions.workflowUrl}>
+                                                Open Lot Workflow
                                               </Button>
                                             </HStack>
                                           </Td>
@@ -632,6 +674,24 @@ export default function DocumentRegistryPage() {
                         <Text fontSize="xs" color="text.muted">Missing: {job.missingDocuments}</Text>
                         <Text fontSize="xs" color="text.muted">Updated: {formatDate(job.lastUpdated)}</Text>
                       </HStack>
+                      <HStack justify="space-between">
+                        <Text fontSize="sm" color="text.secondary">Test Report</Text>
+                        <GroupActionMenu
+                          group={job.groups.testReports}
+                          onShare={handleShare}
+                          onPrint={handlePrint}
+                          reportsWorkspaceUrl={job.actions.reportsUrl}
+                        />
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text fontSize="sm" color="text.secondary">COA</Text>
+                        <GroupActionMenu
+                          group={job.groups.coa}
+                          onShare={handleShare}
+                          onPrint={handlePrint}
+                          reportsWorkspaceUrl={job.actions.reportsUrl}
+                        />
+                      </HStack>
                       <Button size="sm" onClick={() => setMobileDrawerJobId(job.jobId)}>
                         Open Lots
                       </Button>
@@ -673,24 +733,21 @@ export default function DocumentRegistryPage() {
                       <GroupActionMenu group={lot.groups.inspectionUploads} onShare={handleShare} onPrint={handlePrint} />
                     </HStack>
                     <HStack justify="space-between">
-                      <Text fontSize="sm" color="text.secondary">Test Reports</Text>
-                      <GroupActionMenu group={lot.groups.testReports} onShare={handleShare} onPrint={handlePrint} />
-                    </HStack>
-                    <HStack justify="space-between">
-                      <Text fontSize="sm" color="text.secondary">COA</Text>
-                      <GroupActionMenu group={lot.groups.coa} onShare={handleShare} onPrint={handlePrint} />
-                    </HStack>
-                    <HStack justify="space-between">
                       <Text fontSize="sm" color="text.secondary">Packing List</Text>
-                      <GroupActionMenu group={lot.groups.packingList} onShare={handleShare} onPrint={handlePrint} />
+                      <GroupActionMenu
+                        group={lot.groups.packingList}
+                        onShare={handleShare}
+                        onPrint={handlePrint}
+                        reportsWorkspaceUrl={mobileDrawerJob?.actions.reportsUrl}
+                      />
                     </HStack>
                     <HStack justify="space-between">
                       <Text fontSize="sm" color="text.secondary">Dispatch Documents</Text>
                       <GroupActionMenu group={lot.groups.dispatchDocuments} onShare={handleShare} onPrint={handlePrint} />
                     </HStack>
 
-                    <Button size="sm" variant="ghost" as="a" href={lot.actions.traceabilityUrl}>
-                      Open Traceability
+                    <Button size="sm" variant="ghost" as="a" href={lot.actions.workflowUrl}>
+                      Open Lot Workflow
                     </Button>
                   </VStack>
                 </Box>

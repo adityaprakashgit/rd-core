@@ -14,7 +14,6 @@ type RndQueueRow = {
   id: string;
   rndJobNumber: string;
   parentJobNumber: string;
-  lotNumber: string;
   sampleId: string;
   packetId: string;
   packetWeight: string;
@@ -71,7 +70,6 @@ export default function RndQueuePage() {
         id: String(row.id ?? ""),
         rndJobNumber: String(row.rndJobNumber ?? "-"),
         parentJobNumber: String((row.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-"),
-        lotNumber: String((row.lot as { lotNumber?: string } | null)?.lotNumber ?? "-"),
         sampleId: String((row.sample as { sampleCode?: string } | null)?.sampleCode ?? "-"),
         packetId: String((row.packet as { packetCode?: string } | null)?.packetCode ?? "-"),
         packetWeight: (() => {
@@ -105,7 +103,6 @@ export default function RndQueuePage() {
       return [
         row.rndJobNumber,
         row.parentJobNumber,
-        row.lotNumber,
         row.sampleId,
         row.packetId,
         row.packetUse,
@@ -165,7 +162,7 @@ export default function RndQueuePage() {
               size="sm"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search lot, sample, packet, assignee"
+              placeholder="Search job, sample, packet, test, assignee"
               maxW={{ base: "full", md: "320px" }}
             />
           }
@@ -189,7 +186,6 @@ export default function RndQueuePage() {
                 columns={[
                   { id: "rnd", header: "R&D Job Number", render: (row) => row.rndJobNumber },
                   { id: "parent", header: "Parent Job Number", render: (row) => row.parentJobNumber },
-                  { id: "lot", header: "Lot Number", render: (row) => row.lotNumber },
                   { id: "sample", header: "Sample ID", render: (row) => row.sampleId },
                   { id: "packet", header: "Packet ID", render: (row) => row.packetId },
                   { id: "weight", header: "Packet Weight", render: (row) => row.packetWeight },

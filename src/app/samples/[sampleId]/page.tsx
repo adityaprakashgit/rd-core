@@ -7,7 +7,7 @@ export default function SampleDetailPage({ params }: { params: { sampleId: strin
     <RecordRouteRedirect
       endpoint={`/api/samples/${params.sampleId}`}
       title="Sample detail"
-      buildHref={(payload) => `/jobs/${payload.jobId}/workflow?lotId=${payload.lotId}&section=sampling`}
+      buildHref={(payload) => `/jobs/${payload.jobId}/workflow?section=sampling`}
     />
   );
 }

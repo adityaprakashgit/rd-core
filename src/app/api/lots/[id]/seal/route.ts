@@ -1,17 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
-import { getEvidenceCategoryLabel } from "@/lib/evidence-definition";
-import {
-  getRequiredProofFailureCode,
-  resolveEvidenceCategoriesForLot,
-  resolveMissingRequiredEvidenceCategories,
-} from "@/lib/image-proof-policy";
-import { buildModuleWorkflowSettingsCreate, toModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
+import { resolveEvidenceCategoriesForLot } from "@/lib/image-proof-policy";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, assertCompanyScope, AuthorizationError } from "@/lib/rbac";
-import { generateUniqueSealNumber, isValidSealNumber } from "@/lib/traceability";
+import { generateUniqueSealNumber, isValidSealNumber } from "@/lib/inspection-documents";
 import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import { evaluateSealAssignmentPrerequisites, getSealAssignmentPolicy } from "@/lib/seal-policy";
 
@@ -134,27 +128,7 @@ export async function POST(request: NextRequest, context: LotSealRouteContext) {
       return jsonError("Validation Error", prerequisiteBlock.details, prerequisiteBlock.code, prerequisiteBlock.status);
     }
 
-    if (sealPolicy === "EVIDENCE_READY") {
-      const settings = await prisma.moduleWorkflowSettings.upsert({
-        where: { companyId: currentUser.companyId },
-        update: {},
-        create: buildModuleWorkflowSettingsCreate(currentUser.companyId),
-      });
-      const workflowPolicy = toModuleWorkflowPolicy(settings);
-      const missingRequired = resolveMissingRequiredEvidenceCategories(
-        workflowPolicy.images.requiredImageCategories,
-        resolvedCategories,
-      );
-      if (missingRequired.length > 0) {
-        const missingLabels = missingRequired.map((category) => getEvidenceCategoryLabel(category));
-        return jsonError(
-          "Validation Error",
-          `Upload required proof before seal assignment: ${missingLabels.join(", ")}.`,
-          getRequiredProofFailureCode(missingRequired),
-          422,
-        );
-      }
-    }
+    // Seal assignment is pre-approval in this flow; bag proof is enforced by seal policy prerequisite check.
 
     const useAuto = payload.auto === true;
     const manualSeal = typeof payload.sealNumber === "string" ? payload.sealNumber.trim() : "";

@@ -257,12 +257,12 @@ export function InspectionListWorkspace({
                   },
                 },
                 {
-                  id: "open-traceability",
-                  label: "Open Traceability",
+                  id: "open-lot-workflow",
+                  label: "Open Lot Workflow",
                   onClick: (row) => {
                     const lot = row.lots?.[0];
                     if (lot) {
-                      router.push(`/traceability/lot/${lot.id}`);
+                      router.push(lotHref ? lotHref(row, lot.id) : `${detailHref(row)}/lot/${lot.id}`);
                     }
                   },
                   isDisabled: (row) => !(row.lots?.[0]?.id),

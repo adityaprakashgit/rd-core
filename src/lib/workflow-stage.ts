@@ -1,4 +1,4 @@
-import type { InspectionJob, InspectionLot, SampleRecord, Sampling } from "@/types/inspection";
+import type { InspectionJob, InspectionLot, SampleRecord } from "@/types/inspection";
 import type { WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import { isLotDetailCaptured, isLotReadyForNextStage } from "@/lib/intake-workflow";
 import { deriveSampleStatus } from "@/lib/sample-management";
@@ -41,14 +41,6 @@ function buildWorkflowPresentation(input: {
   };
 }
 
-export function getSamplingRecord(lot: InspectionLot | null | undefined): Sampling | null {
-  const samplingValue = lot?.sampling as Sampling | Sampling[] | null | undefined;
-  if (!samplingValue) {
-    return null;
-  }
-  return Array.isArray(samplingValue) ? samplingValue[0] ?? null : samplingValue;
-}
-
 export function getSampleRecord(lot: InspectionLot | null | undefined): SampleRecord | null {
   return lot?.sample ?? null;
 }
@@ -58,11 +50,9 @@ export function isSamplingComplete(lot: InspectionLot | null | undefined): boole
   if (sample && deriveSampleStatus(sample) === "READY_FOR_PACKETING") {
     return true;
   }
-  const sampling = getSamplingRecord(lot);
   return (
     lot?.status === "COMPLETED" ||
-    isLotReadyForNextStage(lot) ||
-    Boolean(sampling?.beforePhotoUrl && sampling?.duringPhotoUrl && sampling?.afterPhotoUrl)
+    isLotReadyForNextStage(lot)
   );
 }
 
@@ -75,7 +65,7 @@ function hasInspectionStarted(lot: InspectionLot | null | undefined): boolean {
     return true;
   }
 
-  return isLotDetailCaptured(lot) || Boolean(getSamplingRecord(lot)) || Boolean(getSampleRecord(lot));
+  return isLotDetailCaptured(lot) || Boolean(getSampleRecord(lot));
 }
 
 export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresentation {

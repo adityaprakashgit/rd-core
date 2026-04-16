@@ -5,7 +5,7 @@ import { authorize, AuthorizationError } from "@/lib/rbac";
 import ExcelJS from "exceljs";
 import { readFile } from "fs/promises";
 import path from "path";
-import { renderHtmlToPdf } from "@/lib/traceability";
+import { renderHtmlToPdf } from "@/lib/inspection-documents";
 import { buildReportValidation } from "@/lib/report-validation";
 import {
   getReportDocumentTypeLabel,
@@ -487,14 +487,25 @@ export async function POST(req: NextRequest) {
         lots: {
           include: {
             bags: true,
-            sample: {
-              include: {
-                media: true,
-                sealLabel: true,
-                events: true,
-                packets: true,
-              },
-            },
+          },
+        },
+        samples: {
+          include: {
+            media: true,
+            sealLabel: true,
+            events: true,
+            packets: true,
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        rndJobs: {
+          where: {
+            resultPrecedence: "ACTIVE",
+            status: { in: ["APPROVED", "COMPLETED"] },
+          },
+          orderBy: { reviewedAt: "desc" },
+          include: {
+            readings: true,
           },
         },
         experiments: {
@@ -637,43 +648,42 @@ export async function POST(req: NextRequest) {
         ? await toDataUrl(reportPreferences.branding.logoUrl)
         : null;
 
-      const trialRows = job.experiments.flatMap((experiment) =>
+      const legacyTrialRows = job.experiments.flatMap((experiment) =>
         experiment.trials.map((trial) => {
-          const lot = job.lots.find((entry) => entry.id === trial.lotId);
           const keyValues = trial.measurements
             .slice(0, 5)
             .map((measurement) => `${measurement.element}:${Number(measurement.value).toFixed(3)}`)
             .join(", ");
-          return `Trial ${trial.trialNumber} (${lot?.lotNumber ?? "N/A"}) -> ${keyValues || "No measurements"}`;
+          return `Trial ${trial.trialNumber} -> ${keyValues || "No measurements"}`;
         })
       );
+      const rndTrialRows = job.rndJobs.map((rndJob) => {
+        const keyValues = rndJob.readings
+          .slice(0, 5)
+          .map((reading) => `${reading.parameter}:${Number(reading.value).toFixed(3)}`)
+          .join(", ");
+        return `${rndJob.rndJobNumber} -> ${keyValues || "No readings"}`;
+      });
+      const trialRows = rndTrialRows.length > 0 ? rndTrialRows : legacyTrialRows;
 
       const allTrials = job.experiments.flatMap((experiment) => experiment.trials);
-      const sampleRecords = job.lots
-        .map((lot) => ({ lot, sample: lot.sample }))
-        .filter(
-          (
-            entry,
-          ): entry is typeof entry & {
-            sample: NonNullable<typeof entry.sample>;
-          } => Boolean(entry.sample)
-        );
-      const managedPacketCount = sampleRecords.reduce((sum, entry) => sum + (entry.sample.packets?.length ?? 0), 0);
-      const sampleCodes = sampleRecords.map((entry) => entry.sample.sampleCode).filter(Boolean);
+      const sampleRecords = job.samples;
+      const managedPacketCount = sampleRecords.reduce((sum, sample) => sum + (sample.packets?.length ?? 0), 0);
+      const sampleCodes = sampleRecords.map((sample) => sample.sampleCode).filter(Boolean);
       const samplingMethods = Array.from(
-        new Set(sampleRecords.map((entry) => entry.sample.samplingMethod?.trim()).filter(Boolean))
+        new Set(sampleRecords.map((sample) => sample.samplingMethod?.trim()).filter(Boolean))
       );
       const sampleDates = sampleRecords
-        .map((entry) => entry.sample.samplingDate)
+        .map((sample) => sample.samplingDate)
         .filter((value) => value != null);
 
       const operationNotes = [
         `Total lots reviewed: ${job.lots.length}. Total recorded bags: ${totalBags}.`,
         `All lots were verified against sealed identity and weight records for ${documentTypeLabel.toLowerCase()} dispatch.`,
         sampleRecords.length > 0
-          ? `Managed samples finalized: ${sampleRecords.length}. Packetized units recorded: ${managedPacketCount}.`
-          : "Managed sample records are pending completion.",
-        trialRows.length > 0 ? `Sampling instances recorded: ${trialRows.length}.` : "Sampling instances are pending entry.",
+          ? `Job-level homogeneous sample finalized. Packetized units recorded: ${managedPacketCount}.`
+          : "Job-level homogeneous sample is pending completion.",
+        trialRows.length > 0 ? `R&D test attempts recorded: ${trialRows.length}.` : "R&D test attempts are pending entry.",
       ];
 
       const methodologyNotes = [
@@ -702,7 +712,7 @@ export async function POST(req: NextRequest) {
       ];
 
       const sampleRows = [
-        { label: "Managed Sample Records", value: String(sampleRecords.length) },
+        { label: "Homogeneous Sample Records", value: String(sampleRecords.length) },
         { label: "Sample Codes", value: sampleCodes.length > 0 ? sampleCodes.join(", ") : "N/A" },
         { label: "Sampling Method", value: samplingMethods.length > 0 ? samplingMethods.join(", ") : "N/A" },
         {
@@ -713,29 +723,28 @@ export async function POST(req: NextRequest) {
               : "N/A",
         },
         { label: "Ready Packets", value: String(managedPacketCount) },
-        { label: "Trials Recorded", value: String(allTrials.length) },
+        { label: "R&D Attempts Recorded", value: String(Math.max(allTrials.length, job.rndJobs.length)) },
       ];
 
+      const jobSample = sampleRecords[0] ?? null;
       const lotRegisterRows = job.lots.map((lot) => {
-        const sample = lot.sample;
-        const lotTrials = allTrials.filter((trial) => trial.lotId === lot.id);
         const lotNetWeight =
           typeof lot.netWeightKg === "number"
             ? lot.netWeightKg
             : typeof lot.netWeight === "number"
               ? lot.netWeight
               : lot.bags.reduce((sum, bag) => sum + (bag.netWeight || 0), 0);
-        const lotStatus = sample?.sampleStatus
-          ? sample.sampleStatus.replace(/_/g, " ")
+        const lotStatus = jobSample?.sampleStatus
+          ? jobSample.sampleStatus.replace(/_/g, " ")
           : "PENDING";
 
         return {
           lotNumber: lot.lotNumber,
           bags: String(lot.totalBags || lot.bags.length || 0),
           netWeight: `${Number(lotNetWeight || 0).toFixed(2)} KG`,
-          sampleCode: sample?.sampleCode ?? "N/A",
-          packets: String(sample?.packets?.length ?? 0),
-          trials: String(lotTrials.length),
+          sampleCode: jobSample?.sampleCode ?? "N/A",
+          packets: String(jobSample?.packets?.length ?? 0),
+          trials: String(Math.max(allTrials.length, job.rndJobs.length)),
           status: lotStatus,
         };
       });
@@ -749,8 +758,8 @@ export async function POST(req: NextRequest) {
             }))
           : [{ element: "N/A", average: "N/A", observations: "No analytical measurements recorded." }];
 
-      const managedHomogeneousMedia = job.lots
-        .flatMap((lot) => lot.sample?.media ?? [])
+      const managedHomogeneousMedia = sampleRecords
+        .flatMap((sample) => sample.media ?? [])
         .find((media) => media.mediaType === "HOMOGENIZED_SAMPLE" && media.fileUrl);
       const homogeneousSample = managedHomogeneousMedia?.fileUrl
         ? await toDataUrl(managedHomogeneousMedia.fileUrl)

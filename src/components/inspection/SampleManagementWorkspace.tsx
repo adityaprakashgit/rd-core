@@ -52,6 +52,7 @@ import {
 import { SAMPLE_EVIDENCE_ITEMS } from "@/lib/evidence-definition";
 import { logSaveUxEvent } from "@/lib/ui-save-debug";
 import type { LotInspectionRecord, SampleMediaType, SampleRecord } from "@/types/inspection";
+import type { SampleStartRequest, SampleUpdateRequest } from "@/types/workflow-api";
 
 type InspectionExecutionPayload = {
   lot: {
@@ -139,8 +140,8 @@ export function SampleManagementWorkspace({
     setSurfaceError(null);
     try {
       const [executionRes, sampleRes] = await Promise.all([
-        fetch(`/api/inspection/execution?lotId=${lotId}`),
-        fetch(`/api/inspection/sample-management?lotId=${lotId}`),
+        fetch(`/api/inspection/execution?lotId=${lotId}&jobId=${jobId}`),
+        fetch(`/api/inspection/sample-management?jobId=${jobId}`),
       ]);
 
       if (!executionRes.ok || !sampleRes.ok) {
@@ -164,7 +165,7 @@ export function SampleManagementWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [lotId]);
+  }, [jobId, lotId]);
 
   useEffect(() => {
     void fetchData();
@@ -200,10 +201,15 @@ export function SampleManagementWorkspace({
 
   const updateSample = useCallback(
     async (body: Record<string, unknown>) => {
+      const payload: SampleUpdateRequest = {
+        jobId,
+        caller: "SampleManagementWorkspace",
+        ...body,
+      };
       const res = await fetch("/api/inspection/sample-management", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lotId, ...body }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -215,7 +221,7 @@ export function SampleManagementWorkspace({
       setSample(updated);
       return updated;
     },
-    [lotId],
+    [jobId],
   );
 
   const handleStartSampling = useCallback(async () => {
@@ -225,7 +231,10 @@ export function SampleManagementWorkspace({
       const res = await fetch("/api/inspection/sample-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lotId }),
+        body: JSON.stringify({
+          jobId,
+          caller: "SampleManagementWorkspace",
+        } satisfies SampleStartRequest),
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => null)) as { details?: string } | null;
@@ -246,7 +255,7 @@ export function SampleManagementWorkspace({
     } finally {
       setStarting(false);
     }
-  }, [lotId, toast]);
+  }, [jobId, toast]);
 
   const handleSaveDetails = useCallback(async () => {
     setSavingDetails(true);
@@ -558,7 +567,7 @@ export function SampleManagementWorkspace({
         ) : null}
 
         <ProcessFlowLayout
-          contextLabel="Traceability"
+          contextLabel="Evidence"
           tracker={<WorkflowStepTracker title="Sample progress" steps={workflowSteps} compact />}
           mobileActions={mobilePrimaryAction}
           activeStep={
@@ -572,7 +581,7 @@ export function SampleManagementWorkspace({
                     Start sampling
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2}>
-                    Create the official sample record. One active sample per lot is enforced in MVP.
+                    Create the official job-level homogeneous sample record.
                   </Text>
                   {sample ? (
                     <HStack mt={5} spacing={3} p={4} bg="bg.rail" borderRadius="lg" border="1px solid" borderColor="border.default">
@@ -582,7 +591,7 @@ export function SampleManagementWorkspace({
                           Sampling started
                         </Text>
                         <Text fontSize="sm" color="text.secondary">
-                          Official sample record exists for this lot.
+                          Official job-level homogeneous sample record exists.
                         </Text>
                       </Box>
                     </HStack>
@@ -608,7 +617,7 @@ export function SampleManagementWorkspace({
                     Sample details
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2} mb={5}>
-                    Keep this short and guided. These fields drive readiness and traceability.
+                    Keep this short and guided. These fields drive readiness and evidence lineage.
                   </Text>
 
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
@@ -801,7 +810,7 @@ export function SampleManagementWorkspace({
                     Complete
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2} mb={5}>
-                    Readiness requires sample details, homogenized sample proof, homogeneous confirmation, and seal traceability.
+                    Readiness requires sample details, homogenized sample proof, homogeneous confirmation, and seal evidence.
                   </Text>
                   <VStack align="stretch" spacing={2}>
                     {(readiness.missing.length > 0 ? readiness.missing : ["Ready for packet generation"]).map((item) => (
@@ -896,7 +905,7 @@ export function SampleManagementWorkspace({
                         </Box>
                       ))}
                     {Object.keys(mediaMap).length === 0 ? (
-                      <EmptyWorkState title="No sample media yet" description="Capture sample proof to build the traceability gallery." />
+                      <EmptyWorkState title="No sample media yet" description="Capture sample proof to build the evidence gallery." />
                     ) : null}
                   </VStack>
                 </CardBody>

@@ -253,7 +253,7 @@ async function fetchPacketsByJob(tx: PrismaLike, jobId: string) {
   return tx.packet.findMany({
     where: { jobId },
     include: packetInclude,
-    orderBy: [{ lot: { lotNumber: "asc" } }, { packetNo: "asc" }],
+    orderBy: [{ packetNo: "asc" }],
   });
 }
 
@@ -391,7 +391,7 @@ export async function POST(request: NextRequest) {
 
         const packetCode = await buildUniquePacketCode(tx, {
           inspectionSerialNumber: sample.job.inspectionSerialNumber,
-          lotNumber: sample.lot.lotNumber,
+          lotNumber: sample.sampleCode || "HOMO",
           packetNo: plan.packetNo,
           prefix: workflowPolicy.workflow.autoPacketIdGeneration
             ? workflowPolicy.workflow.packetIdPrefix
@@ -418,7 +418,7 @@ export async function POST(request: NextRequest) {
           data: {
             companyId: sample.companyId,
             jobId: sample.jobId,
-            lotId: sample.lotId,
+            lotId: null,
             sampleId: sample.id,
             packetCode,
             packetNo: plan.packetNo,
@@ -458,7 +458,7 @@ export async function POST(request: NextRequest) {
         action: "PACKETS_GENERATED",
         metadata: {
           sampleId: sample.id,
-          lotId: sample.lotId,
+          lineage: "JOB_LEVEL_HOMOGENEOUS_SAMPLE",
           count: createdPackets.length,
           packetCodes: createdPackets.map((packet) => packet.packetCode),
         },
@@ -865,7 +865,7 @@ export async function PATCH(request: NextRequest) {
               rndJobNumber,
               companyId: currentUser.companyId,
               parentJobId: refreshed.jobId ?? currentPacket.jobId,
-              lotId: refreshed.lotId ?? currentPacket.lotId,
+              lotId: null,
               sampleId: refreshed.sampleId ?? currentPacket.sampleId,
               packetId: refreshed.id,
               status: "CREATED",
@@ -1136,7 +1136,7 @@ export async function DELETE(request: NextRequest) {
           packetId: packet.id,
           packetCode: packet.packetCode,
           sampleId: packet.sampleId,
-          lotId: packet.lotId,
+          lineage: "JOB_LEVEL_HOMOGENEOUS_SAMPLE",
         },
       });
     });

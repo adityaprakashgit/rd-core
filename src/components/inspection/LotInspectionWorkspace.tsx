@@ -235,7 +235,7 @@ export function LotInspectionWorkspace({
     setSurfaceError(null);
 
     try {
-      const inspectionRes = await fetch(`/api/inspection/execution?lotId=${lotId}`);
+      const inspectionRes = await fetch(`/api/inspection/execution?lotId=${lotId}&jobId=${jobId}`);
 
       if (!inspectionRes.ok) {
         const errorPayload = await inspectionRes.json().catch(() => null);
@@ -373,7 +373,7 @@ export function LotInspectionWorkspace({
       const response = await fetch("/api/inspection/execution", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lotId }),
+        body: JSON.stringify({ jobId, lotId, caller: "LotInspectionWorkspace" }),
       });
 
       if (!response.ok) {
@@ -407,7 +407,9 @@ export function LotInspectionWorkspace({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          jobId,
           lotId,
+          caller: "LotInspectionWorkspace",
           responses: checklistItems.map((item) => ({
             checklistItemMasterId: item.id,
             responseValue: responseDrafts[item.id]?.responseValue ?? "",
