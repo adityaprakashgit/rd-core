@@ -8,6 +8,8 @@
     "packet:health": "node src/scripts/packet-api-health-check.mjs",
     "repair:sample-seal:dry-run": "node src/scripts/repair-sample-seal-evidence.mjs",
     "repair:sample-seal:execute": "node src/scripts/repair-sample-seal-evidence.mjs --execute",
+    "repair:rnd-report-linkage:dry-run": "node src/scripts/repair-rnd-report-linkage.mjs",
+    "repair:rnd-report-linkage:execute": "node src/scripts/repair-rnd-report-linkage.mjs --execute",
     "db:check": "prisma migrate status",
     "db:prepare": "npm run db:check && prisma generate",
     "predev": "node src/scripts/db-recovery.mjs predev && npm run db:prepare",

@@ -254,7 +254,7 @@ function buildDocumentRows(input: {
         packetCode: null,
         status: reportStatus,
         generatedAt: snapshot.createdAt.toISOString(),
-        linkedActionUrl: `/api/report/${snapshot.id}`,
+        linkedActionUrl: `/api/report/export?snapshotId=${snapshot.id}&format=pdf&documentType=EXPORT`,
         source: "REPORT_SNAPSHOT",
       });
 
@@ -270,7 +270,7 @@ function buildDocumentRows(input: {
         packetCode: null,
         status: coaStatus,
         generatedAt: snapshot.createdAt.toISOString(),
-        linkedActionUrl: `/api/report/${snapshot.id}`,
+        linkedActionUrl: `/api/report/export?snapshotId=${snapshot.id}&format=pdf&documentType=COA`,
         source: "REPORT_SNAPSHOT",
       });
     }

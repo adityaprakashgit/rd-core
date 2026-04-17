@@ -41,7 +41,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       ? derivePacketUsageBalance(job.packetUsageLedgerEntries, Number.isFinite(packetSeed) ? packetSeed : 0)
       : defaultPacketUsageBalance();
 
-    const [assigneeOptions, approverOptions, suggestedAssigneeId, reportLinkage] = await Promise.all([
+    const [assigneeOptions, approverOptions, suggestedAssigneeId, reportLinkage, reportSnapshots] = await Promise.all([
       searchRndUsers({
         prismaClient: prisma,
         companyId: currentUser.companyId,
@@ -67,7 +67,24 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         parentJobId: job.parentJobId,
         sampleId: job.sampleId,
       }),
+      prisma.reportSnapshot.findMany({
+        where: { jobId: job.parentJobId },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          createdAt: true,
+        },
+      }),
     ]);
+
+    const fallbackSnapshot = reportSnapshots[0] ?? null;
+    const fallbackReportUrl = fallbackSnapshot
+      ? `/api/report/export?snapshotId=${fallbackSnapshot.id}&format=pdf&documentType=EXPORT`
+      : null;
+    const fallbackCoaUrl = fallbackSnapshot
+      ? `/api/report/export?snapshotId=${fallbackSnapshot.id}&format=pdf&documentType=COA`
+      : null;
 
     return NextResponse.json({
       job,
@@ -87,8 +104,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         supersededResults: reportLinkage.supersededResults,
         activeReport: reportLinkage.activeReport,
         previousReports: reportLinkage.previousReports,
-        defaultReportUrl: reportLinkage.defaultReportUrl,
-        defaultCoaUrl: reportLinkage.defaultCoaUrl,
+        defaultReportUrl: reportLinkage.defaultReportUrl ?? fallbackReportUrl,
+        defaultCoaUrl: reportLinkage.defaultCoaUrl ?? fallbackCoaUrl,
       },
     });
   } catch (error: unknown) {

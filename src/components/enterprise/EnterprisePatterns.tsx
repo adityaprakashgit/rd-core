@@ -8,6 +8,9 @@ import {
   AlertTitle,
   Badge,
   Box,
+  Card,
+  CardBody,
+  type BoxProps,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -21,6 +24,7 @@ import {
   DrawerOverlay,
   Heading,
   HStack,
+  SimpleGrid,
   Stack,
   Tab,
   TabList,
@@ -34,6 +38,66 @@ import {
 type Crumb = {
   label: string;
   href?: string;
+};
+
+export const enterpriseModalContentProps = {
+  borderWidth: "1px",
+  borderColor: "border.default",
+  borderRadius: "lg" as const,
+  overflow: "hidden" as const,
+  maxH: "calc(100dvh - 2rem)",
+  display: "flex" as const,
+  flexDirection: "column" as const,
+};
+
+export const enterpriseModalHeaderProps = {
+  pb: 3,
+};
+
+export const enterpriseModalBodyProps = {
+  py: 4,
+  overflowY: "auto" as const,
+};
+
+export const enterpriseModalFooterProps = {
+  borderTopWidth: "1px",
+  borderColor: "border.default",
+  pt: 3,
+};
+
+export const enterpriseDrawerContentProps = {
+  borderWidth: "1px",
+  borderColor: "border.default",
+  borderRadius: "lg" as const,
+  overflow: "hidden" as const,
+  maxH: "calc(100dvh - 2rem)",
+  display: "flex" as const,
+  flexDirection: "column" as const,
+};
+
+export const enterpriseDrawerHeaderProps = {
+  pt: 4,
+  pb: 3,
+  borderBottomWidth: "1px",
+  borderColor: "border.default",
+};
+
+export const enterpriseDrawerBodyProps = {
+  pb: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
+  overflowY: "auto" as const,
+};
+
+export const enterpriseDrawerFooterProps = {
+  borderTopWidth: "1px",
+  borderColor: "border.default",
+  pt: 3,
+};
+
+const enterpriseStateSurfaceProps = {
+  borderWidth: "1px",
+  borderColor: "border.default",
+  borderRadius: "lg" as const,
+  bg: "bg.surface",
 };
 
 export function PageIdentityBar({
@@ -141,13 +205,15 @@ export function FilterSearchStrip({
   );
 }
 
-export function EnterpriseStickyTable({ children }: { children: ReactNode }) {
+export function EnterpriseStickyTable({ children, ...props }: BoxProps & { children: ReactNode }) {
   return (
     <Box
+      {...props}
       borderWidth="1px"
       borderColor="border.default"
       borderRadius="lg"
-      overflow="hidden"
+      overflowX="auto"
+      overflowY="hidden"
       bg="bg.surface"
       sx={{
         "& table": { fontSize: "sm" },
@@ -171,6 +237,71 @@ type DetailTab = {
   label: string;
   content: ReactNode;
 };
+
+export function EnterpriseSummaryStrip({
+  items,
+}: {
+  items: Array<{
+    label: string;
+    value: ReactNode;
+    tone?: "default" | "success" | "warning" | "danger";
+  }>;
+}) {
+  return (
+    <SimpleGrid columns={{ base: 1, sm: Math.min(items.length, 2), xl: Math.min(items.length, 4) }} spacing={2.5}>
+      {items.map((item) => {
+        const toneColor =
+          item.tone === "success"
+            ? "green"
+            : item.tone === "warning"
+              ? "orange"
+              : item.tone === "danger"
+                ? "red"
+                : "gray";
+        return (
+          <Box key={item.label} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" px={3} py={2.5}>
+            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+              {item.label}
+            </Text>
+            <Text mt={1} fontSize="sm" fontWeight="semibold" color={`${toneColor}.700`}>
+              {item.value}
+            </Text>
+          </Box>
+        );
+      })}
+    </SimpleGrid>
+  );
+}
+
+export function EnterpriseRailPanel({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card variant="outline" borderRadius="lg">
+      <CardBody p={4}>
+        <Stack spacing={2.5}>
+          <Box>
+            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
+              {title}
+            </Text>
+            {description ? (
+              <Text fontSize="sm" color="text.secondary" mt={1}>
+                {description}
+              </Text>
+            ) : null}
+          </Box>
+          {children}
+        </Stack>
+      </CardBody>
+    </Card>
+  );
+}
 
 export function DetailTabsLayout({
   tabs,
@@ -240,15 +371,15 @@ export function QuickEditDrawer({
   isSaving?: boolean;
   isSaveDisabled?: boolean;
   saveLabel?: string;
-}) {
+  }) {
   return (
     <Drawer isOpen={isOpen} placement="right" onClose={onClose} size="md">
       <DrawerOverlay />
-      <DrawerContent>
+      <DrawerContent {...enterpriseDrawerContentProps}>
         <DrawerCloseButton />
-        <DrawerHeader pb={3}>{title}</DrawerHeader>
-        <DrawerBody>{children}</DrawerBody>
-        <DrawerFooter borderTopWidth="1px" borderColor="border.default">
+        <DrawerHeader {...enterpriseDrawerHeaderProps}>{title}</DrawerHeader>
+        <DrawerBody {...enterpriseDrawerBodyProps}>{children}</DrawerBody>
+        <DrawerFooter {...enterpriseDrawerFooterProps}>
           <HStack spacing={2}>
             <Button variant="outline" onClick={onClose}>
               Cancel
@@ -291,11 +422,8 @@ export function LinkedRecordsPanel({
   items: Array<{ label: string; value: string; href?: string; tone?: string }>;
 }) {
   return (
-    <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
-      <VStack align="stretch" spacing={2.5}>
-        <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-          Linked Records
-        </Text>
+    <EnterpriseRailPanel title="Linked Records">
+      <VStack align="stretch" spacing={2}>
         {items.length === 0 ? (
           <Text color="text.secondary" fontSize="sm">
             No linked records available.
@@ -316,10 +444,10 @@ export function LinkedRecordsPanel({
                 </Badge>
               )}
             </HStack>
-          ))
+            ))
         )}
       </VStack>
-    </Box>
+    </EnterpriseRailPanel>
   );
 }
 
@@ -329,31 +457,33 @@ export function HistoryTimeline({
   events: Array<{ id: string; title: string; subtitle?: string; at?: string }>;
 }) {
   return (
-    <VStack align="stretch" spacing={2.5}>
-      {events.length === 0 ? (
-        <EnterpriseEmptyState title="No history yet" description="History entries will appear as actions are completed." />
-      ) : (
-        events.map((event) => (
-          <Box key={event.id} borderLeftWidth="2px" borderColor="border.default" pl={2.5} py={0.5}>
-            <HStack justify="space-between" align="start">
-              <Text fontWeight="semibold" fontSize="sm" color="text.primary">
-                {event.title}
-              </Text>
-              {event.at ? (
+    <EnterpriseRailPanel title="History">
+      <VStack align="stretch" spacing={2}>
+        {events.length === 0 ? (
+          <EnterpriseEmptyState title="No history yet" description="History entries will appear as actions are completed." />
+        ) : (
+          events.map((event) => (
+            <Box key={event.id} borderLeftWidth="2px" borderColor="border.default" pl={2.5} py={0.5}>
+              <HStack justify="space-between" align="start">
+                <Text fontWeight="semibold" fontSize="sm" color="text.primary">
+                  {event.title}
+                </Text>
+                {event.at ? (
+                  <Text fontSize="xs" color="text.secondary">
+                    {event.at}
+                  </Text>
+                ) : null}
+              </HStack>
+              {event.subtitle ? (
                 <Text fontSize="xs" color="text.secondary">
-                  {event.at}
+                  {event.subtitle}
                 </Text>
               ) : null}
-            </HStack>
-            {event.subtitle ? (
-              <Text fontSize="xs" color="text.secondary">
-                {event.subtitle}
-              </Text>
-            ) : null}
-          </Box>
-        ))
-      )}
-    </VStack>
+            </Box>
+          ))
+        )}
+      </VStack>
+    </EnterpriseRailPanel>
   );
 }
 
@@ -367,7 +497,7 @@ export function EnterpriseEmptyState({
   action?: ReactNode;
 }) {
   return (
-    <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
+    <Box {...enterpriseStateSurfaceProps} p={4}>
       <VStack align="start" spacing={2}>
         <Heading size="sm">{title}</Heading>
         <Text color="text.secondary" fontSize="sm">

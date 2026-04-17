@@ -21,7 +21,6 @@ import {
   Input,
   List,
   ListItem,
-  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -32,6 +31,7 @@ import {
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
 import { FilterRail } from "@/components/enterprise/PageTemplates";
+import { FilterSearchStrip, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 
 type ClientMasterOption = {
@@ -190,7 +190,6 @@ type MasterRegistryShellProps = {
   disableCreate: boolean;
   disableActions: boolean;
   loading: boolean;
-  kpis: Array<{ label: string; value: number }>;
   children: ReactNode;
 };
 
@@ -205,76 +204,50 @@ function MasterRegistryShell({
   disableCreate,
   disableActions,
   loading,
-  kpis,
   children,
 }: MasterRegistryShellProps) {
   return (
-    <VStack align="stretch" spacing={5}>
-      <Box>
-        <HStack spacing={2} flexWrap="wrap">
-          <Badge colorScheme="teal" variant="subtle" borderRadius="full" px={2.5} py={1}>
-            MASTER REGISTRY
-          </Badge>
-          <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={2.5} py={1}>
-            ENTERPRISE CONTROL
-          </Badge>
-        </HStack>
-        <Heading size="lg" color="text.primary" mt={2}>
-          Masters
-        </Heading>
-      </Box>
+    <VStack align="stretch" spacing={4}>
+      <PageIdentityBar
+        title="Masters"
+        subtitle="Client, transporter, item, and warehouse registry"
+        status={<Badge variant="subtle">{activeRecordCount} visible</Badge>}
+      />
 
-      <SimpleGrid columns={{ base: 2, md: 3, xl: 5 }} spacing={2}>
-        {kpis.map((item) => (
-          <Box key={item.label} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
-              <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
-                {item.label}
-              </Text>
-              <Text fontSize="lg" fontWeight="semibold" color="text.primary" mt={1}>
-                {item.value}
-              </Text>
-          </Box>
-        ))}
-      </SimpleGrid>
+      <PageActionBar
+        primaryAction={
+          <Button colorScheme="teal" size="sm" onClick={onOpenCreate} isDisabled={disableCreate || disableActions}>
+            {activeTab === "INACTIVE" ? "Create disabled" : `New ${TAB_SINGULAR_LABELS[activeTab]}`}
+          </Button>
+        }
+        secondaryActions={
+          <HStack spacing={2}>
+            <Button variant="outline" size="sm" onClick={() => void onRefresh()} isLoading={loading} isDisabled={disableActions}>
+              Refresh
+            </Button>
+          </HStack>
+        }
+      />
 
-      <Box position="sticky" top={{ base: "72px", lg: "84px" }} zIndex={10}>
-        <Card variant="outline" borderRadius="xl">
-          <CardBody>
-            <VStack align="stretch" spacing={4}>
-              <MasterTypeTabs activeTab={activeTab} onChange={onTabChange} />
-              <Stack direction={{ base: "column", lg: "row" }} spacing={3} justify="space-between">
-                <Input
-                  maxW={{ base: "full", lg: "xl" }}
-                  borderRadius="lg"
-                  placeholder="Search names, addresses, phone numbers, GST, UOM..."
-                  value={masterSearch}
-                  onChange={(event) => onMasterSearchChange(event.target.value)}
-                />
-                <HStack spacing={2} flexWrap="wrap" justify={{ base: "flex-start", lg: "flex-end" }}>
-                  <Badge colorScheme="brand" variant="subtle" borderRadius="full" px={3} py={1}>
-                    {activeRecordCount} visible
-                  </Badge>
-                  <Button variant="outline" size="sm" onClick={() => void onRefresh()} isLoading={loading} isDisabled={disableActions}>
-                    Refresh
-                  </Button>
-                  <Button
-                    colorScheme="teal"
-                    size="sm"
-                    onClick={onOpenCreate}
-                    isDisabled={disableCreate || disableActions}
-                  >
-                    {activeTab === "INACTIVE" ? "Create disabled" : `New ${TAB_SINGULAR_LABELS[activeTab]}`}
-                  </Button>
-                </HStack>
-              </Stack>
-            </VStack>
-          </CardBody>
-        </Card>
-      </Box>
+      <FilterSearchStrip
+        filters={<MasterTypeTabs activeTab={activeTab} onChange={onTabChange} />}
+        search={
+          <Input
+            maxW={{ base: "full", lg: "xl" }}
+            borderRadius="lg"
+            placeholder="Search names, addresses, phone numbers, GST, UOM..."
+            value={masterSearch}
+            onChange={(event) => onMasterSearchChange(event.target.value)}
+          />
+        }
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => onMasterSearchChange("")} isDisabled={disableActions || masterSearch.length === 0}>
+            Clear
+          </Button>
+        }
+      />
 
-      <Card variant="outline" borderRadius="xl">
-        <CardBody>{children}</CardBody>
-      </Card>
+      {children}
     </VStack>
   );
 }
@@ -1219,16 +1192,6 @@ export default function MasterPage() {
         disableCreate={activeTab === "INACTIVE"}
         disableActions={Boolean(actionBusyKey)}
         loading={masterDataLoading}
-        kpis={[
-          { label: "Active clients", value: clients.length },
-          { label: "Active transporters", value: transporters.length },
-          { label: "Active items", value: items.length },
-          { label: "Active warehouses", value: warehouses.length },
-          {
-            label: "Inactive records",
-            value: inactiveClients.length + inactiveTransporters.length + inactiveItems.length + inactiveWarehouses.length,
-          },
-        ]}
       >
         {tableContent}
       </MasterRegistryShell>

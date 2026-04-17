@@ -66,9 +66,12 @@ export function hasHomogenizedSample(sample: SampleRecord | null | undefined) {
 }
 
 export function hasSealAndLabel(sample: SampleRecord | null | undefined) {
+  const mediaMap = mapSampleMediaByType(sample?.media);
+  const hasPhoto = Boolean(mediaMap["SEALED_SAMPLE"]?.fileUrl);
   return Boolean(
     sample?.sealLabel?.sealNo &&
-      sample.sealLabel.sealedAt,
+      sample.sealLabel.sealedAt &&
+      hasPhoto,
   );
 }
 
@@ -91,6 +94,9 @@ export function getSampleReadiness(sample: SampleRecord | null | undefined) {
 
   const missingMedia = getRequiredMissingMedia(sample);
   for (const mediaType of missingMedia) {
+    // Already covered by hasSealAndLabel consolidated check
+    if (mediaType === "SEALED_SAMPLE") continue;
+
     const definition = SAMPLE_EVIDENCE_ITEMS.find((item) => item.mediaType === mediaType);
     if (definition?.readinessHint) {
       missing.push(definition.readinessHint);

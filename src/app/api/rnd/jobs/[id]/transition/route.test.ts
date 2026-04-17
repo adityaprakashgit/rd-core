@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   canTransitionMock: vi.fn(),
   getCurrentUserFromRequestMock: vi.fn(),
   recordAuditLogMock: vi.fn(),
+  generateAndLinkRndReportSnapshotMock: vi.fn(),
   rndJobFindFirstMock: vi.fn(),
   packetUsageLedgerAggregateMock: vi.fn(),
   rndJobReadingCountMock: vi.fn(),
@@ -31,6 +32,9 @@ vi.mock("@/lib/rnd-workflow", async () => {
 });
 vi.mock("@/lib/audit", () => ({
   recordAuditLog: mocks.recordAuditLogMock,
+}));
+vi.mock("@/lib/rnd-report-generation", () => ({
+  generateAndLinkRndReportSnapshot: mocks.generateAndLinkRndReportSnapshotMock,
 }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -72,6 +76,7 @@ describe("/api/rnd/jobs/[id]/transition", () => {
     });
     mocks.rndJobUpdateMock.mockResolvedValue({ id: "r1", status: "IN_TESTING" });
     mocks.recordAuditLogMock.mockResolvedValue(undefined);
+    mocks.generateAndLinkRndReportSnapshotMock.mockResolvedValue({ id: "snap-1" });
   });
 
   it("blocks testing transition when no allocation exists", async () => {
@@ -117,5 +122,35 @@ describe("/api/rnd/jobs/[id]/transition", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.rndJobUpdateMock).toHaveBeenCalled();
+  });
+
+  it("links a report snapshot when completing the R&D job", async () => {
+    mocks.rndJobFindFirstMock.mockResolvedValueOnce({
+      id: "r1",
+      parentJobId: "j1",
+      packetId: "p1",
+      previousRndJobId: "r-prev",
+      packetUse: "TESTING",
+      status: "APPROVED",
+      assignedToId: "u1",
+      approverUserId: "u2",
+    });
+    mocks.rndJobUpdateMock.mockResolvedValueOnce({ id: "r1", status: "COMPLETED" });
+
+    const response = await POST(
+      {
+        json: async () => ({ toStatus: "COMPLETED" }),
+      } as NextRequest,
+      { params: Promise.resolve({ id: "r1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.generateAndLinkRndReportSnapshotMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId: "c1",
+        rndJobId: "r1",
+      }),
+    );
   });
 });

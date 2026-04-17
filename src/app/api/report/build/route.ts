@@ -42,7 +42,6 @@ export async function POST(req: NextRequest) {
         lots: {
           include: {
             bags: true,
-            sampling: true,
           },
         },
         samples: {

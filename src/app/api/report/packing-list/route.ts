@@ -220,13 +220,7 @@ export async function POST(request: NextRequest) {
         bagPhotoUrl: true,
         samplingPhotoUrl: true,
         sealPhotoUrl: true,
-        sampling: {
-          select: {
-            beforePhotoUrl: true,
-            duringPhotoUrl: true,
-            afterPhotoUrl: true,
-          },
-        },
+
         inspection: {
           select: {
             mediaFiles: {

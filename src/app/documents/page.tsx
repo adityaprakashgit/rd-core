@@ -25,7 +25,6 @@ import {
   Select,
   Stack,
   Table,
-  TableContainer,
   Tbody,
   Td,
   Text,
@@ -48,6 +47,9 @@ import {
 import {
   EnterpriseEmptyState,
   EnterpriseStickyTable,
+  enterpriseDrawerBodyProps,
+  enterpriseDrawerContentProps,
+  enterpriseDrawerHeaderProps,
   FilterSearchStrip,
   PageActionBar,
   PageIdentityBar,
@@ -206,12 +208,7 @@ function GroupActionMenu({
           <MenuItem onClick={() => onPrint(url)} isDisabled={!hasUrl} icon={<Printer size={14} />}>
             Print PDF
           </MenuItem>
-          <MenuItem
-            as="a"
-            href={reportsWorkspaceUrl ?? "#"}
-            isDisabled={!canOpenReportsWorkspace}
-            icon={<ExternalLink size={14} />}
-          >
+          <MenuItem as="a" href={reportsWorkspaceUrl ?? "#"} isDisabled={!canOpenReportsWorkspace} icon={<ExternalLink size={14} />}>
             Open Reports Workspace
           </MenuItem>
         </MenuList>
@@ -340,16 +337,13 @@ export default function DocumentRegistryPage() {
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={5}>
+      <VStack align="stretch" spacing={4}>
         <PageIdentityBar
           title="Document Registry"
-          subtitle="Job-wise document registry with lot inspection context and grouped document actions"
+          subtitle="Job-wise document registry with lot inspection context, grouped document actions, and missing-document tracking"
           breadcrumbs={[{ label: "Documents", href: "/documents" }]}
           status={<Badge colorScheme="blue">{jobs.length} Jobs</Badge>}
         />
-        <Text fontSize="sm" color="text.secondary" mt={-3}>
-          Missing means not generated yet for this lot/job. Report settings or templates do not create PDF artifacts automatically.
-        </Text>
 
         <PageActionBar
           secondaryActions={
@@ -493,9 +487,8 @@ export default function DocumentRegistryPage() {
 
         {error ? <EnterpriseEmptyState title="Document registry unavailable" description={error} /> : null}
 
-        <EnterpriseStickyTable>
-          <TableContainer display={{ base: "none", md: "block" }}>
-            <Table size="sm">
+        <EnterpriseStickyTable display={{ base: "none", md: "block" }}>
+          <Table size="sm">
               <Thead>
                 <Tr>
                   <Th w="52px"> </Th>
@@ -582,8 +575,8 @@ export default function DocumentRegistryPage() {
 
                           {expanded ? (
                             <Tr key={`${job.jobId}-lots`}>
-                              <Td colSpan={10} px={0}>
-                                <TableContainer borderTopWidth="1px" borderColor="border.default">
+                            <Td colSpan={10} px={0}>
+                                <Box borderTopWidth="1px" borderColor="border.default" overflowX="auto">
                                   <Table size="sm" variant="simple">
                                     <Thead>
                                       <Tr>
@@ -625,7 +618,7 @@ export default function DocumentRegistryPage() {
                                       ))}
                                     </Tbody>
                                   </Table>
-                                </TableContainer>
+                                </Box>
                               </Td>
                             </Tr>
                           ) : null}
@@ -634,8 +627,7 @@ export default function DocumentRegistryPage() {
                     })
                   : null}
               </Tbody>
-            </Table>
-          </TableContainer>
+          </Table>
 
           <VStack display={{ base: "flex", md: "none" }} align="stretch" spacing={2} p={3}>
             {loading ? (
@@ -710,15 +702,15 @@ export default function DocumentRegistryPage() {
         size="full"
       >
         <DrawerOverlay />
-        <DrawerContent borderTopRadius="xl">
+        <DrawerContent {...enterpriseDrawerContentProps}>
           <DrawerCloseButton />
-          <DrawerHeader>
+          <DrawerHeader {...enterpriseDrawerHeaderProps}>
             <VStack align="start" spacing={0.5}>
               <Text fontSize="sm" color="text.secondary">Lots</Text>
               <Text>{mobileDrawerJob?.jobNumber}</Text>
             </VStack>
           </DrawerHeader>
-          <DrawerBody pb={6}>
+          <DrawerBody {...enterpriseDrawerBodyProps}>
             <VStack align="stretch" spacing={3}>
               {mobileDrawerJob?.lots.map((lot) => (
                 <Box key={lot.lotId} borderWidth="1px" borderColor="border.default" borderRadius="lg" p={3}>

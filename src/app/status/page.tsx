@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Box,
   Button,
   Center,
   HStack,
@@ -13,7 +12,9 @@ import {
 import { RefreshCw } from "lucide-react";
 
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import { InlineErrorState } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
+import { EnterpriseSummaryStrip } from "@/components/enterprise/EnterprisePatterns";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { FilterRail, RegistryPageTemplate } from "@/components/enterprise/PageTemplates";
 
@@ -133,25 +134,26 @@ export default function StatusPage() {
     <ControlTowerLayout>
       <RegistryPageTemplate
         summary={
-          <HStack justify="space-between" flexWrap="wrap" spacing={3}>
-            <VStack align="start" spacing={0.5}>
-              <Text fontSize="sm" color="text.secondary">
-                Last checked: {checkedAtText}
-              </Text>
-              <HStack spacing={2}>
-                <Text fontSize="sm" color="text.secondary">Overall Health:</Text>
-                <WorkflowStateChip status={status?.ok ? "SUCCESS" : "ERROR"} />
-              </HStack>
-            </VStack>
-            <Button
-              variant="outline"
-              leftIcon={<RefreshCw size={14} />}
-              onClick={() => void loadStatus(true)}
-              isLoading={refreshing}
-            >
-              Refresh Monitoring Snapshot
-            </Button>
-          </HStack>
+          <VStack align="stretch" spacing={3}>
+            <EnterpriseSummaryStrip
+              items={[
+                { label: "Last checked", value: checkedAtText },
+                { label: "Overall health", value: <WorkflowStateChip status={status?.ok ? "SUCCESS" : "ERROR"} /> },
+                { label: "API latency", value: `${status?.services.api.latencyMs ?? 0} ms` },
+                { label: "Database latency", value: `${status?.services.database.latencyMs ?? 0} ms` },
+              ]}
+            />
+            <HStack justify="end">
+              <Button
+                variant="outline"
+                leftIcon={<RefreshCw size={14} />}
+                onClick={() => void loadStatus(true)}
+                isLoading={refreshing}
+              >
+                Refresh Monitoring Snapshot
+              </Button>
+            </HStack>
+          </VStack>
         }
         filters={
           <FilterRail>
@@ -180,14 +182,18 @@ export default function StatusPage() {
               emptyLabel="No monitoring records available."
             />
             {status?.services.database.error ? (
-              <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
-                <Text fontSize="sm" color="status.error.text">{status.services.database.error}</Text>
-              </Box>
+              <InlineErrorState
+                title="Database check failed"
+                description={status.services.database.error}
+                onRetry={() => void loadStatus(true)}
+              />
             ) : null}
             {error ? (
-              <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={4}>
-                <Text fontSize="sm" color="status.error.text">{error}</Text>
-              </Box>
+              <InlineErrorState
+                title="Status check unavailable"
+                description={error}
+                onRetry={() => void loadStatus(true)}
+              />
             ) : null}
           </VStack>
         }

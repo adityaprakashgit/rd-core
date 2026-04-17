@@ -12,7 +12,6 @@ import {
   Spinner,
   Stack,
   Table,
-  TableContainer,
   Tbody,
   Td,
   Text,
@@ -25,7 +24,7 @@ import {
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import { InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
-import { DetailTabsLayout, LinkedRecordsPanel, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
+import { DetailTabsLayout, EnterpriseSummaryStrip, LinkedRecordsPanel, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { nextActionForStatus } from "@/lib/rnd-workflow";
@@ -34,6 +33,16 @@ function formatDate(value: string | Date | null | undefined) {
   if (!value) return "-";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString();
+}
+
+function extractSnapshotId(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    return new URL(value, "http://localhost").searchParams.get("snapshotId");
+  } catch {
+    const match = value.match(/[?&]snapshotId=([^&]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
 }
 
 const RND_JOB_SECTIONS = [
@@ -408,6 +417,28 @@ export default function RndJobDetailPage() {
     [fetchDetail, reviewNotes, rndJobId, toast],
   );
 
+  const onGenerateReport = useCallback(async () => {
+    if (!rndJobId) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/report/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: String(job?.parentJobId ?? ""), rndJobId }),
+      });
+      if (!response.ok) {
+        const p = (await response.json().catch(() => null)) as { details?: string } | null;
+        throw new Error(p?.details || "Report generation failed.");
+      }
+      await fetchDetail({ initial: false, syncSetupForm: false });
+      toast({ title: "Report generated", status: "success" });
+    } catch (error: unknown) {
+      toast({ title: "Generation failed", description: error instanceof Error ? error.message : "Failed to generate report.", status: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }, [fetchDetail, job?.parentJobId, rndJobId, toast]);
+
   const onCreateRetest = useCallback(async () => {
     if (!rndJobId) return;
     setBusy(true);
@@ -453,6 +484,10 @@ export default function RndJobDetailPage() {
   }
 
   const status = String(job.status ?? "CREATED");
+  const reportUrl = payload.reportLinkage?.defaultReportUrl ?? null;
+  const coaUrl = payload.reportLinkage?.defaultCoaUrl ?? null;
+  const reportSnapshotId =
+    payload.reportLinkage?.activeReport?.reportSnapshotId ?? extractSnapshotId(reportUrl) ?? null;
 
   const primaryStickyAction = (() => {
     if (status === "CREATED") return <Button isLoading={busy} onClick={() => void handleTransition("READY_FOR_TEST_SETUP")}>Accept Job</Button>;
@@ -470,17 +505,23 @@ export default function RndJobDetailPage() {
       label: "Overview",
       content: (
         <VStack align="stretch" spacing={3}>
-          <HStack justify="space-between" flexWrap="wrap">
-            <Text fontWeight="semibold">Quick Summary</Text>
+          <HStack justify="space-between" flexWrap="wrap" align="start">
+            <EnterpriseSummaryStrip
+              items={[
+                { label: "Parent Job Number", value: String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-") },
+                { label: "Sample ID", value: String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-") },
+                { label: "Packet ID", value: String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-") },
+                {
+                  label: "Packet Weight",
+                  value: (() => {
+                    const packet = job.packet as { packetWeight?: number | null; packetUnit?: string | null } | null;
+                    return packet?.packetWeight ? `${packet.packetWeight} ${packet.packetUnit ?? ""}`.trim() : "-";
+                  })(),
+                },
+              ]}
+            />
             <WorkflowBadge status={status} />
           </HStack>
-          <SimpleInfo label="Parent Job Number" value={String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-")} />
-          <SimpleInfo label="Sample ID" value={String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-")} />
-          <SimpleInfo label="Packet ID" value={String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-")} />
-          <SimpleInfo label="Packet Weight" value={(() => {
-            const packet = job.packet as { packetWeight?: number | null; packetUnit?: string | null } | null;
-            return packet?.packetWeight ? `${packet.packetWeight} ${packet.packetUnit ?? ""}`.trim() : "-";
-          })()} />
           <SimpleInfo label="Job Type" value={String(job.jobType ?? "-")} />
           <SimpleInfo label="Assigned User" value={String((job.assignedTo as { profile?: { displayName?: string } } | null)?.profile?.displayName ?? "Unassigned")} />
           <SimpleInfo label="Deadline" value={formatDate(String(job.deadline ?? ""))} />
@@ -640,7 +681,7 @@ export default function RndJobDetailPage() {
       label: "Readings / Values",
       content: (
         <VStack align="stretch" spacing={3}>
-          <TableContainer borderWidth="1px" borderColor="border.default" borderRadius="lg">
+          <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" overflowX="auto">
             <Table size="sm">
               <Thead>
                 <Tr>
@@ -661,7 +702,7 @@ export default function RndJobDetailPage() {
                 ))}
               </Tbody>
             </Table>
-          </TableContainer>
+          </Box>
 
           <Stack direction={{ base: "column", md: "row" }} spacing={3}>
             <Input placeholder="parameter" value={readingForm.parameter} onChange={(event) => setReadingForm((p) => ({ ...p, parameter: event.target.value }))} />
@@ -681,7 +722,7 @@ export default function RndJobDetailPage() {
       label: "Attachments",
       content: (
         <VStack align="stretch" spacing={3}>
-          <TableContainer borderWidth="1px" borderColor="border.default" borderRadius="lg">
+          <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" overflowX="auto">
             <Table size="sm">
               <Thead>
                 <Tr>
@@ -700,7 +741,7 @@ export default function RndJobDetailPage() {
                 ))}
               </Tbody>
             </Table>
-          </TableContainer>
+          </Box>
 
           <Stack direction={{ base: "column", md: "row" }} spacing={3}>
             <Input placeholder="file name" value={attachmentForm.fileName} onChange={(event) => setAttachmentForm((p) => ({ ...p, fileName: event.target.value }))} />
@@ -733,8 +774,8 @@ export default function RndJobDetailPage() {
       label: "Report Linkage",
       content: (
         <VStack align="stretch" spacing={3}>
-          <SimpleInfo label="Report Status" value={payload.reportLinkage?.activeReport ? "Active Report Available" : "Pending"} />
-          <SimpleInfo label="COA Status" value={payload.reportLinkage?.defaultCoaUrl ? "Ready" : "Pending"} />
+          <SimpleInfo label="Report Status" value={reportUrl ? "Active Report Available" : "Pending"} />
+          <SimpleInfo label="COA Status" value={coaUrl ? "Ready" : "Pending"} />
           <SimpleInfo
             label="Active Result"
             value={payload.reportLinkage?.activeResult?.rndJobNumber ?? (status === "APPROVED" || status === "COMPLETED" ? String(job.rndJobNumber ?? "-") : "-")}
@@ -745,47 +786,52 @@ export default function RndJobDetailPage() {
           />
           <SimpleInfo
             label="Active Report"
-            value={payload.reportLinkage?.activeReport?.reportSnapshotId ? `Snapshot ${payload.reportLinkage.activeReport.reportSnapshotId.slice(0, 8)}` : "-"}
+            value={reportSnapshotId ? `Snapshot ${reportSnapshotId.slice(0, 8)}` : "-"}
           />
           <SimpleInfo
             label="Previous Reports"
             value={String(payload.reportLinkage?.previousReports?.length ?? 0)}
           />
-          <SimpleInfo label="Default COA" value={payload.reportLinkage?.defaultCoaUrl ? "Active Report" : "-"} />
+          <SimpleInfo label="Default COA" value={coaUrl ? "Active Report" : "-"} />
           <HStack>
+            {(status === "APPROVED" || status === "COMPLETED") && (
+              <Button colorScheme="blue" onClick={() => void onGenerateReport()} isLoading={busy}>
+                {reportUrl ? "Regenerate Report" : "Generate Report"}
+              </Button>
+            )}
             <Button
               as="a"
-              href={payload.reportLinkage?.defaultReportUrl ?? "/reports"}
-              target={payload.reportLinkage?.defaultReportUrl ? "_blank" : undefined}
+              href={reportUrl ?? "/reports"}
+              target={reportUrl ? "_blank" : undefined}
               variant="outline"
-              isDisabled={!payload.reportLinkage?.defaultReportUrl}
+              isDisabled={!reportUrl}
             >
               View PDF
             </Button>
             <Button
               as="a"
-              href={payload.reportLinkage?.defaultReportUrl ?? "/reports"}
-              target={payload.reportLinkage?.defaultReportUrl ? "_blank" : undefined}
+              href={reportUrl ?? "/reports"}
+              target={reportUrl ? "_blank" : undefined}
               variant="outline"
-              isDisabled={!payload.reportLinkage?.defaultReportUrl}
+              isDisabled={!reportUrl}
             >
               Download Report PDF
             </Button>
             <Button
               as="a"
-              href={payload.reportLinkage?.defaultCoaUrl ?? "/documents"}
-              target={payload.reportLinkage?.defaultCoaUrl ? "_blank" : undefined}
+              href={coaUrl ?? "/documents"}
+              target={coaUrl ? "_blank" : undefined}
               variant="outline"
-              isDisabled={!payload.reportLinkage?.defaultCoaUrl}
+              isDisabled={!coaUrl}
             >
               View COA
             </Button>
             <Button
               as="a"
-              href={payload.reportLinkage?.defaultCoaUrl ?? "/documents"}
-              target={payload.reportLinkage?.defaultCoaUrl ? "_blank" : undefined}
+              href={coaUrl ?? "/documents"}
+              target={coaUrl ? "_blank" : undefined}
               variant="outline"
-              isDisabled={!payload.reportLinkage?.defaultCoaUrl}
+              isDisabled={!coaUrl}
             >
               Download COA PDF
             </Button>
@@ -932,7 +978,7 @@ export default function RndJobDetailPage() {
 
 function SimpleInfo({ label, value }: { label: string; value: string }) {
   return (
-    <HStack justify="space-between" borderWidth="1px" borderColor="border.default" borderRadius="md" px={3} py={2}>
+    <HStack justify="space-between" borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" px={3} py={2.5}>
       <Text fontSize="sm" color="text.secondary">{label}</Text>
       <Text fontSize="sm" fontWeight="medium">{value || "-"}</Text>
     </HStack>

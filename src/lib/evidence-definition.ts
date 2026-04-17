@@ -221,13 +221,6 @@ export const SAMPLE_EVIDENCE_ITEMS: ReadonlyArray<{
     note: "Optional visible sample identity and label text.",
   },
   {
-    mediaType: "SEALED_SAMPLE",
-    uploadCategory: "SEALED_BAG",
-    required: false,
-    title: "Sealed sample",
-    note: "Optional final sealed sample proof before packeting handoff.",
-  },
-  {
     mediaType: "SAMPLE_CONDITION",
     uploadCategory: "LOT_OVERVIEW",
     required: false,

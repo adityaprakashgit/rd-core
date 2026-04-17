@@ -24,6 +24,11 @@ import {
   mobileBottomSurfaceStyle,
 } from "@/lib/mobile-bottom-ui";
 import {
+  enterpriseDrawerBodyProps,
+  enterpriseDrawerContentProps,
+  enterpriseDrawerHeaderProps,
+} from "@/components/enterprise/EnterprisePatterns";
+import {
   getMobileMoreModules,
   getMobileTabDefinitions,
   isModuleActive,
@@ -111,8 +116,10 @@ export function MobileBottomNav({
 
       <Drawer isOpen={isOpen} placement="bottom" onClose={onClose}>
         <DrawerOverlay bg="blackAlpha.500" />
-        <DrawerContent borderTopRadius="xl" borderWidth="1px" borderColor="border.default">
-          <DrawerHeader borderBottomWidth="1px" borderColor="border.default" pt={4} pb={3}>
+        <DrawerContent
+          {...enterpriseDrawerContentProps}
+        >
+          <DrawerHeader {...enterpriseDrawerHeaderProps}>
             <Stack spacing={0.5}>
               <Text fontSize="lg" fontWeight="bold">
                 Workspace menu
@@ -122,7 +129,7 @@ export function MobileBottomNav({
               </Text>
             </Stack>
           </DrawerHeader>
-          <DrawerBody pb="calc(env(safe-area-inset-bottom, 0px) + 24px)">
+          <DrawerBody {...enterpriseDrawerBodyProps}>
             <Stack spacing={4} py={3}>
               <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
                 <HStack align="start" spacing={3}>

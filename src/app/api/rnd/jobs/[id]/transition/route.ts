@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { recordAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+import { generateAndLinkRndReportSnapshot, ReportGenerationError } from "@/lib/rnd-report-generation";
 import { AuthorizationError, authorize } from "@/lib/rbac";
 import { canMutateRndJob, canTransition } from "@/lib/rnd-workflow";
 import { getCurrentUserFromRequest } from "@/lib/session";
@@ -140,12 +141,20 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         },
       });
 
+      if (toStatus === RndJobStatus.COMPLETED) {
+        await generateAndLinkRndReportSnapshot(tx, {
+          companyId: currentUser.companyId,
+          rndJobId: rndJob.id,
+        });
+      }
+
       return next;
     });
 
     return NextResponse.json(updated);
   } catch (error: unknown) {
     if (error instanceof AuthorizationError) return jsonError("Forbidden", error.message, 403);
+    if (error instanceof ReportGenerationError) return jsonError("Workflow Error", error.message, error.status);
     const message = error instanceof Error ? error.message : "Failed to transition R&D job.";
     return jsonError("System Error", message, 500);
   }

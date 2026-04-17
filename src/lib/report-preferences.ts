@@ -5,6 +5,7 @@ export const REPORT_DOCUMENT_TYPES = [
   "DOMESTIC",
   "TRANSPORTATION",
   "INTERNAL",
+  "COA",
 ] as const;
 
 export type ReportDocumentType = (typeof REPORT_DOCUMENT_TYPES)[number];
@@ -30,6 +31,7 @@ const documentTypeLabelMap: Record<ReportDocumentType, string> = {
   DOMESTIC: "Domestic",
   TRANSPORTATION: "Transportation",
   INTERNAL: "Internal",
+  COA: "Certificate of Analysis",
 };
 
 function asTrimmedString(value: unknown): string {

@@ -2704,14 +2704,7 @@ export function UnifiedJobWorkflow() {
                 />
               ) : null}
 
-              <Box borderWidth="1px" borderColor="border.default" borderRadius="xl" bg="bg.surface" p={4}>
-                <VStack align="stretch" spacing={3}>
-                  <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                    Process Timeline
-                  </Text>
-                  <HistoryTimeline events={processTimeline} />
-                </VStack>
-              </Box>
+              <HistoryTimeline events={processTimeline} />
             </VStack>
           </Box>
         </Stack>

@@ -36,6 +36,7 @@ import { EvidenceRail } from "@/components/inspection/EvidenceRail";
 import { SealScanner } from "@/components/inspection/SealScanner";
 import { EmptyWorkState, InlineErrorState, PageSkeleton, TopErrorBanner } from "@/components/enterprise/AsyncState";
 import { ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
+import { EnterpriseSummaryStrip } from "@/components/enterprise/EnterprisePatterns";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
@@ -535,28 +536,14 @@ export function SampleManagementWorkspace({
           ) : null}
         </Stack>
 
-        <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
-            {[
-              { label: "Inspection decision", value: inspection?.decisionStatus ?? "PENDING", note: "Must be approved before sampling" },
-              { label: "Sample state", value: currentStatus.replaceAll("_", " "), note: "Current lifecycle stage" },
-              { label: "Required proof", value: `${mediaConfigs.filter((item) => item.required && mediaMap[item.mediaType]).length}/${requiredMediaCount}`, note: "Required media captured" },
-              { label: "Readiness", value: readiness.isReady ? "Ready" : `${readiness.missing.length} pending`, note: "Packet generation gate" },
-            ].map((item) => (
-            <Card key={item.label} variant="outline" borderRadius="xl">
-              <CardBody p={5}>
-                <Text fontSize="sm" color="text.muted">
-                  {item.label}
-                </Text>
-                <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
-                  {item.value}
-                </Text>
-                <Text fontSize="sm" color="text.secondary" mt={1}>
-                  {item.note}
-                </Text>
-              </CardBody>
-            </Card>
-          ))}
-        </SimpleGrid>
+        <EnterpriseSummaryStrip
+          items={[
+            { label: "Inspection decision", value: inspection?.decisionStatus ?? "PENDING" },
+            { label: "Sample state", value: currentStatus.replaceAll("_", " ") },
+            { label: "Required proof", value: `${mediaConfigs.filter((item) => item.required && mediaMap[item.mediaType]).length}/${requiredMediaCount}` },
+            { label: "Readiness", value: readiness.isReady ? "Ready" : `${readiness.missing.length} pending` },
+          ]}
+        />
 
         {inspectionApprovalRequired ? (
           <InlineErrorState
@@ -572,7 +559,7 @@ export function SampleManagementWorkspace({
           mobileActions={mobilePrimaryAction}
           activeStep={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 1
@@ -608,7 +595,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 2
@@ -663,7 +650,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 3
@@ -691,7 +678,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 4
@@ -726,7 +713,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 5
@@ -801,7 +788,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 6
@@ -837,7 +824,7 @@ export function SampleManagementWorkspace({
           }
           context={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={5}>
                   <Heading size="sm" color="text.primary">
                     Sample detail card
@@ -883,7 +870,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={5}>
                   <Heading size="sm" color="text.primary">
                     Media gallery
@@ -892,7 +879,7 @@ export function SampleManagementWorkspace({
                     {mediaConfigs
                       .filter((config) => mediaMap[config.mediaType]?.fileUrl)
                       .map((config) => (
-                        <Box key={config.mediaType} borderRadius="xl" overflow="hidden" border="1px solid" borderColor="gray.200">
+                        <Box key={config.mediaType} borderRadius="lg" overflow="hidden" border="1px solid" borderColor="gray.200">
                           <Image src={mediaMap[config.mediaType]?.fileUrl} alt={config.title} h="140px" w="full" objectFit="cover" />
                           <Box p={3}>
                             <Text fontWeight="semibold" color="text.primary">
@@ -911,7 +898,7 @@ export function SampleManagementWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={5}>
                   <Heading size="sm" color="text.primary">
                     Event timeline

@@ -258,9 +258,31 @@
 - Added operator diagnostic script:
   - `npm run packet:health -- --sampleId=<id> --sessionCookie='<cookie>'`
   - confirms DB query health and validates `/api/rd/packet` response shape for scoped checks.
+
+## R&D Report Linkage Recovery
+- Report generation is now auto-linked on R&D job completion and shared by manual regenerate flows.
+- Historical repair tooling now handles both cases:
+  - link existing snapshots to missing active lineage rows,
+  - generate a missing snapshot for completed lineage groups when no snapshot exists.
+- Commands:
+  - `npm run repair:rnd-report-linkage:dry-run`
+  - `npm run repair:rnd-report-linkage:execute`
 - Packet blocker UX copy now clarifies seal traceability origin when lot seal exists but sample traceability fields are missing.
 
 ## Documents Registry Job-Level Report/COA Lock
 - `/documents` now treats **Test Report** and **COA** as job-level artifacts only.
 - Lot rows remain lot-scoped and now focus on `Inspection Uploads`, `Packing List`, and `Dispatch Documents`.
 - Job-level missing counters include Report/COA once per job; lot-level missing counters no longer mirror report/COA gaps.
+
+## R&D Report Generation Recovery
+- Report generation is now deterministic on R&D completion:
+  - `COMPLETED` transitions auto-generate and link an active report snapshot,
+  - manual `Generate Report` and `Regenerate Report` actions reuse the same shared linkage service,
+  - completed jobs with missing lineage can fall back to the latest snapshot in the R&D detail route.
+- Added a one-off historical repair command for completed/approved R&D jobs with existing snapshots:
+  - `npm run repair:rnd-report-linkage:dry-run`
+  - `npm run repair:rnd-report-linkage:execute`
+- Repair scope is conservative:
+  - links existing snapshots only,
+  - does not invent report content,
+  - jobs without snapshots remain repairable via manual generation and runtime fallback.

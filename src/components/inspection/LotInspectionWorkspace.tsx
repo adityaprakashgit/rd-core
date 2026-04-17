@@ -40,6 +40,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint, TopErrorBanner } from "@/components/enterprise/AsyncState";
 import { ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
+import { EnterpriseSummaryStrip } from "@/components/enterprise/EnterprisePatterns";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
@@ -553,7 +554,7 @@ export function LotInspectionWorkspace({
     const issueValidationErrors = getIssueDraftValidationErrors(issueDrafts);
 
     return (
-      <Card variant="outline" borderRadius="xl" ref={exceptionSummaryRef}>
+      <Card variant="outline" borderRadius="lg" ref={exceptionSummaryRef}>
         <CardBody p={6}>
           <VStack align="stretch" spacing={4}>
             <HStack justify="space-between" align="start">
@@ -579,7 +580,7 @@ export function LotInspectionWorkspace({
             ) : null}
 
             {issueDrafts.length === 0 ? (
-              <Box borderRadius="xl" bg="bg.rail" p={4}>
+              <Box borderRadius="lg" bg="bg.rail" p={4}>
                 <Text fontSize="sm" color="text.secondary">
                   No issue records yet. Add one only if the lot should be held or rejected.
                 </Text>
@@ -587,7 +588,7 @@ export function LotInspectionWorkspace({
             ) : null}
 
             {issueDrafts.map((issue, index) => (
-              <Box key={`${issue.issueCategory}-${index}`} borderWidth="1px" borderColor="border.default" borderRadius="xl" p={4}>
+              <Box key={`${issue.issueCategory}-${index}`} borderWidth="1px" borderColor="border.default" borderRadius="lg" p={4}>
                 <VStack align="stretch" spacing={3}>
                   <HStack justify="space-between" align="center">
                     <Text fontWeight="semibold">Issue {index + 1}</Text>
@@ -658,7 +659,7 @@ export function LotInspectionWorkspace({
   function renderReviewPanel() {
     return (
       <VStack align="stretch" spacing={4}>
-        <Card variant="outline" borderRadius="xl">
+        <Card variant="outline" borderRadius="lg">
           <CardBody p={6}>
             <VStack align="stretch" spacing={4}>
               <HStack justify="space-between" align="start" flexWrap="wrap">
@@ -733,7 +734,7 @@ export function LotInspectionWorkspace({
     const uploadError = evidenceErrors[LOT_OVERVIEW_CATEGORY] || null;
 
     return (
-      <Card variant="outline" borderRadius="xl">
+      <Card variant="outline" borderRadius="lg">
         <CardBody p={6}>
           <VStack align="stretch" spacing={5}>
             <HStack justify="space-between" align="start" flexWrap="wrap">
@@ -815,7 +816,7 @@ export function LotInspectionWorkspace({
             </Box>
 
             {uploadError ? (
-              <Box borderRadius="xl" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
+              <Box borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
                 <HStack align="start" spacing={2}>
                   <Icon as={AlertTriangle} boxSize={4} color="red.600" mt={0.5} />
                   <Text fontSize="sm" color="red.700">{uploadError}</Text>
@@ -864,7 +865,7 @@ export function LotInspectionWorkspace({
               </Button>
             </HStack>
 
-            <Box borderRadius="xl" bg="bg.rail" p={4}>
+            <Box borderRadius="lg" bg="bg.rail" p={4}>
               <Text fontSize="sm" color="text.secondary">
                 The photo uploads immediately after selection. There is no extra save step for inspection proof.
               </Text>
@@ -881,7 +882,7 @@ export function LotInspectionWorkspace({
     }
 
     return (
-      <Card variant="outline" borderRadius="xl">
+      <Card variant="outline" borderRadius="lg">
         <CardBody p={6}>
           <VStack align="stretch" spacing={4}>
             <HStack justify="space-between" align="start">
@@ -957,36 +958,14 @@ export function LotInspectionWorkspace({
           </HStack>
         </HStack>
 
-        <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody>
-              <Text fontSize="sm" color="text.secondary">Inspection state</Text>
-              <Text fontSize="xl" fontWeight="bold">{payload.inspection ? "Active" : "Not started"}</Text>
-              <Text fontSize="sm" color="text.secondary">Start, capture, then review</Text>
-            </CardBody>
-          </Card>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody>
-              <Text fontSize="sm" color="text.secondary">Lot overview photo</Text>
-              <Text fontSize="xl" fontWeight="bold">{hasLotOverviewPhoto ? "Done" : "Pending"}</Text>
-              <Text fontSize="sm" color="text.secondary">Only required inspection proof</Text>
-            </CardBody>
-          </Card>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody>
-              <Text fontSize="sm" color="text.secondary">Issues captured</Text>
-              <Text fontSize="xl" fontWeight="bold">{issueDrafts.length}</Text>
-              <Text fontSize="sm" color="text.secondary">Add only when hold or reject is needed</Text>
-            </CardBody>
-          </Card>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody>
-              <Text fontSize="sm" color="text.secondary">Sampling gate</Text>
-              <Text fontSize="xl" fontWeight="bold">{payload.inspection?.decisionStatus === "READY_FOR_SAMPLING" ? "Open" : "Blocked"}</Text>
-              <Text fontSize="sm" color="text.secondary">Opens after pass approval</Text>
-            </CardBody>
-          </Card>
-        </SimpleGrid>
+        <EnterpriseSummaryStrip
+          items={[
+            { label: "Inspection state", value: payload.inspection ? "Active" : "Not started" },
+            { label: "Lot overview photo", value: hasLotOverviewPhoto ? "Done" : "Pending" },
+            { label: "Issues captured", value: String(issueDrafts.length) },
+            { label: "Sampling gate", value: payload.inspection?.decisionStatus === "READY_FOR_SAMPLING" ? "Open" : "Blocked" },
+          ]}
+        />
 
         <ProcessFlowLayout
           contextLabel="Readiness and Actions"
@@ -994,7 +973,7 @@ export function LotInspectionWorkspace({
           activeStep={
             <VStack align="stretch" spacing={4}>
               {!payload.inspection ? (
-                <Card variant="outline" borderRadius="xl">
+                <Card variant="outline" borderRadius="lg">
                   <CardBody p={6}>
                     <VStack align="stretch" spacing={4}>
                       <Text fontSize="lg" fontWeight="bold">Lot ready for inspection</Text>
@@ -1019,7 +998,7 @@ export function LotInspectionWorkspace({
           }
           context={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={5}>
                   <VStack align="stretch" spacing={3}>
                     <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
@@ -1034,7 +1013,7 @@ export function LotInspectionWorkspace({
                 </CardBody>
               </Card>
 
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={5}>
                   <VStack align="stretch" spacing={3}>
                     <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
@@ -1050,7 +1029,7 @@ export function LotInspectionWorkspace({
               </Card>
 
               {payload.inspection && isReviewStep ? (
-                <Card variant="outline" borderRadius="xl" display={{ base: "none", xl: "block" }}>
+                <Card variant="outline" borderRadius="lg" display={{ base: "none", xl: "block" }}>
                   <CardBody p={5}>
                     <VStack align="stretch" spacing={3}>
                       <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
@@ -1102,7 +1081,7 @@ export function LotInspectionWorkspace({
                   </CardBody>
                 </Card>
               ) : (
-                <Card variant="outline" borderRadius="xl" display={{ base: "none", xl: "block" }}>
+                <Card variant="outline" borderRadius="lg" display={{ base: "none", xl: "block" }}>
                   <CardBody p={5}>
                     <VStack align="stretch" spacing={3}>
                       <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">

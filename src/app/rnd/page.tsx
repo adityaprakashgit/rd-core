@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
-import { EnterpriseStickyTable, FilterSearchStrip, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
+import { FilterSearchStrip, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 
 type RndQueueRow = {
@@ -179,34 +179,32 @@ export default function RndQueuePage() {
           filtered.length === 0 ? (
             <EmptyWorkState title="No R&D jobs found" description="Try changing filters or search." />
           ) : (
-            <EnterpriseStickyTable>
-              <EnterpriseDataTable
-                rows={filtered}
-                rowKey={(row) => row.id}
-                columns={[
-                  { id: "rnd", header: "R&D Job Number", render: (row) => row.rndJobNumber },
-                  { id: "parent", header: "Parent Job Number", render: (row) => row.parentJobNumber },
-                  { id: "sample", header: "Sample ID", render: (row) => row.sampleId },
-                  { id: "packet", header: "Packet ID", render: (row) => row.packetId },
-                  { id: "weight", header: "Packet Weight", render: (row) => row.packetWeight },
-                  { id: "use", header: "Packet Use", render: (row) => row.packetUse },
-                  { id: "received", header: "Received Date", render: (row) => row.receivedDate },
-                  { id: "assigned", header: "Assigned User", render: (row) => row.assignedUser },
-                  { id: "priority", header: "Priority", render: (row) => <WorkflowStateChip status={row.priority} /> },
-                  { id: "due", header: "Due Status", render: (row) => <WorkflowStateChip status={row.dueStatus} /> },
-                  { id: "step", header: "Current Step", render: (row) => row.currentStep },
-                  {
-                    id: "action",
-                    header: "Primary Action",
-                    render: (row) => (
-                      <Button size="xs" onClick={() => router.push(`/rnd/jobs/${row.id}`)}>
-                        {row.primaryAction}
-                      </Button>
-                    ),
-                  },
-                ]}
-              />
-            </EnterpriseStickyTable>
+            <EnterpriseDataTable
+              rows={filtered}
+              rowKey={(row) => row.id}
+              columns={[
+                { id: "rnd", header: "R&D Job Number", render: (row) => row.rndJobNumber },
+                { id: "parent", header: "Parent Job Number", render: (row) => row.parentJobNumber },
+                { id: "sample", header: "Sample ID", render: (row) => row.sampleId },
+                { id: "packet", header: "Packet ID", render: (row) => row.packetId },
+                { id: "weight", header: "Packet Weight", render: (row) => row.packetWeight },
+                { id: "use", header: "Packet Use", render: (row) => row.packetUse },
+                { id: "received", header: "Received Date", render: (row) => row.receivedDate },
+                { id: "assigned", header: "Assigned User", render: (row) => row.assignedUser },
+                { id: "priority", header: "Priority", render: (row) => <WorkflowStateChip status={row.priority} /> },
+                { id: "due", header: "Due Status", render: (row) => <WorkflowStateChip status={row.dueStatus} /> },
+                { id: "step", header: "Current Step", render: (row) => row.currentStep },
+                {
+                  id: "action",
+                  header: "Primary Action",
+                  render: (row) => (
+                    <Button size="xs" onClick={() => router.push(`/rnd/jobs/${row.id}`)}>
+                      {row.primaryAction}
+                    </Button>
+                  ),
+                },
+              ]}
+            />
           )
         ) : null}
       </VStack>

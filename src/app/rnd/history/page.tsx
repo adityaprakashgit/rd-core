@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
-import { EnterpriseStickyTable, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
+import { PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 
@@ -85,31 +85,29 @@ export default function RndHistoryPage() {
           rows.length === 0 ? (
             <EmptyWorkState title="No completed R&D jobs" description="Completed jobs and retests will appear here." />
           ) : (
-            <EnterpriseStickyTable>
-              <EnterpriseDataTable
-                rows={rows}
-                rowKey={(row) => row.id}
-                columns={[
-                  { id: "rnd", header: "R&D Job", render: (row) => row.rndJobNumber },
-                  { id: "status", header: "Status", render: (row) => <WorkflowStateChip status={row.status} /> },
-                  { id: "parent", header: "Parent Job", render: (row) => row.parentJobNumber },
-                  { id: "lot", header: "Lot", render: (row) => row.lotNumber },
-                  { id: "packet", header: "Packet", render: (row) => row.packetId },
-                  { id: "prev", header: "Previous R&D Job", render: (row) => row.previousRndJob },
-                  { id: "retests", header: "Retests", render: (row) => String(row.nextRetests) },
-                  { id: "completed", header: "Completed At", render: (row) => row.completedAt },
-                  {
-                    id: "action",
-                    header: "Action",
-                    render: (row) => (
-                      <Button size="xs" onClick={() => router.push(`/rnd/jobs/${row.id}`)}>
-                        Open
-                      </Button>
-                    ),
-                  },
-                ]}
-              />
-            </EnterpriseStickyTable>
+            <EnterpriseDataTable
+              rows={rows}
+              rowKey={(row) => row.id}
+              columns={[
+                { id: "rnd", header: "R&D Job", render: (row) => row.rndJobNumber },
+                { id: "status", header: "Status", render: (row) => <WorkflowStateChip status={row.status} /> },
+                { id: "parent", header: "Parent Job", render: (row) => row.parentJobNumber },
+                { id: "lot", header: "Lot", render: (row) => row.lotNumber },
+                { id: "packet", header: "Packet", render: (row) => row.packetId },
+                { id: "prev", header: "Previous R&D Job", render: (row) => row.previousRndJob },
+                { id: "retests", header: "Retests", render: (row) => String(row.nextRetests) },
+                { id: "completed", header: "Completed At", render: (row) => row.completedAt },
+                {
+                  id: "action",
+                  header: "Action",
+                  render: (row) => (
+                    <Button size="xs" onClick={() => router.push(`/rnd/jobs/${row.id}`)}>
+                      Open
+                    </Button>
+                  ),
+                },
+              ]}
+            />
           )
         ) : null}
       </VStack>

@@ -28,10 +28,18 @@ import {
 } from "@chakra-ui/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint } from "@/components/enterprise/AsyncState";
+import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
-import { FilterRail, ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
+import {
+  enterpriseModalBodyProps,
+  enterpriseModalContentProps,
+  enterpriseModalFooterProps,
+  enterpriseModalHeaderProps,
+  EnterpriseRailPanel,
+  EnterpriseSummaryStrip,
+} from "@/components/enterprise/EnterprisePatterns";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
+import { FilterRail, ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
@@ -572,7 +580,7 @@ export default function ReportsPage() {
           activeStep={
             <VStack align="stretch" spacing={4}>
               {activeStep === "setup" ? (
-                <Card variant="outline" borderRadius="xl">
+                <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <HStack justify="space-between" align="start" flexWrap="wrap" spacing={3}>
                     <Box>
@@ -625,7 +633,7 @@ export default function ReportsPage() {
                       </Button>
                       <Button
                         variant="outline"
-                        borderRadius="xl"
+                        borderRadius="lg"
                         onClick={() => void handlePreviewDocument("stickers")}
                         isLoading={generating === "stickers"}
                         isDisabled={loadingJobs || !selectedJobId || loadingLots || lots.length === 0}
@@ -636,7 +644,7 @@ export default function ReportsPage() {
                   </Box>
 
                   {previewError ? (
-                    <Box mt={3} borderRadius="xl" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
+                    <Box mt={3} borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
                       <Text fontSize="sm" color="red.700">{previewError}</Text>
                       <HStack spacing={2} mt={2}>
                         {lastPreviewKind ? (
@@ -652,7 +660,7 @@ export default function ReportsPage() {
                   ) : null}
 
                   {masterError ? (
-                    <Box mt={3} borderRadius="xl" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
+                    <Box mt={3} borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
                       <Text fontSize="sm" color="red.700">{masterError}</Text>
                       <HStack spacing={2} mt={2}>
                         <Button size="xs" variant="ghost" onClick={() => void loadDispatchMasters()} isLoading={masterBusy === "load"}>
@@ -786,7 +794,7 @@ export default function ReportsPage() {
               ) : null}
 
               {activeStep === "review" ? (
-                <Card variant="outline" borderRadius="xl">
+                <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Stack
                     direction={{ base: "column", md: "row" }}
@@ -874,7 +882,7 @@ export default function ReportsPage() {
               ) : null}
 
               {activeStep === "preview" ? (
-                <Card variant="outline" borderRadius="xl">
+                <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 3
@@ -925,39 +933,36 @@ export default function ReportsPage() {
                 </Text>
               </Box>
 
-              <VStack align="stretch" spacing={3}>
-                <SectionHint label="Document type" value={getReportDocumentTypeLabel(selectedDocumentType)} />
-                <SectionHint label="Item" value={selectedItemName || selectedJob?.commodity || "Not selected"} />
-                <SectionHint label="Invoice no" value={invoiceNumber || "Not entered"} />
-                <SectionHint label="LR no" value={lrNumber || "Not entered"} />
-                <SectionHint label="Transporter ID" value={transporterId || "Not entered"} />
-                <SectionHint label="E-way bill" value={ewayBillDetails || "Not entered"} />
-                <SectionHint label="Transporter" value={selectedTransporterName || "Not selected"} />
-                <SectionHint label="Vehicle number" value={vehicleNo || "Required for packing list preview"} />
-                <SectionHint label="Preview state" value={pdfPreview ? "Ready to download" : "No preview generated"} />
-              </VStack>
+              <EnterpriseSummaryStrip
+                items={[
+                  { label: "Document type", value: getReportDocumentTypeLabel(selectedDocumentType) },
+                  { label: "Item", value: selectedItemName || selectedJob?.commodity || "Not selected" },
+                  { label: "Invoice no", value: invoiceNumber || "Not entered" },
+                  { label: "LR no", value: lrNumber || "Not entered" },
+                  { label: "Transporter ID", value: transporterId || "Not entered" },
+                  { label: "E-way bill", value: ewayBillDetails || "Not entered" },
+                  { label: "Transporter", value: selectedTransporterName || "Not selected" },
+                  { label: "Vehicle number", value: vehicleNo || "Required for packing list preview" },
+                  { label: "Preview state", value: pdfPreview ? "Ready to download" : "No preview generated", tone: pdfPreview ? "success" : "warning" },
+                ]}
+              />
 
-              <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg">
-                <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
-                  Readiness checks
-                </Text>
-                <VStack align="stretch" spacing={3} mt={3}>
-                  <SectionHint label="Job selected" value={selectedJobId ? "Complete" : "Missing"} />
-                  <SectionHint label="Lot data loaded" value={lots.length > 0 ? "Complete" : "Missing"} />
-                  <SectionHint label="Invoice entered" value={invoiceNumber.trim() ? "Complete" : "Missing"} />
-                  <SectionHint label="Vehicle entered" value={vehicleNo.trim() ? "Complete" : "Missing"} />
-                  <SectionHint
-                    label="Lot seals"
-                    value={totals.sealedLots === totals.totalLots ? "Complete" : "Some lots missing seal numbers"}
-                  />
-                </VStack>
-              </Box>
+              <EnterpriseSummaryStrip
+                items={[
+                  { label: "Job selected", value: selectedJobId ? "Complete" : "Missing", tone: selectedJobId ? "success" : "warning" },
+                  { label: "Lot data loaded", value: lots.length > 0 ? "Complete" : "Missing", tone: lots.length > 0 ? "success" : "warning" },
+                  { label: "Invoice entered", value: invoiceNumber.trim() ? "Complete" : "Missing", tone: invoiceNumber.trim() ? "success" : "warning" },
+                  { label: "Vehicle entered", value: vehicleNo.trim() ? "Complete" : "Missing", tone: vehicleNo.trim() ? "success" : "warning" },
+                  {
+                    label: "Lot seals",
+                    value: totals.sealedLots === totals.totalLots ? "Complete" : "Missing seals",
+                    tone: totals.sealedLots === totals.totalLots ? "success" : "warning",
+                  },
+                ]}
+              />
 
-              <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg">
-                <Text fontSize="sm" fontWeight="semibold" color="text.primary">
-                  Route ownership
-                </Text>
-                <HStack spacing={3} mt={4}>
+              <EnterpriseRailPanel title="Route ownership" description="Document actions stay with operations and master data while the preview remains in this workspace.">
+                <HStack spacing={3}>
                   <Button as="a" href="/operations" size="sm" variant="outline">
                     Open operations
                   </Button>
@@ -965,7 +970,7 @@ export default function ReportsPage() {
                     Open masters
                   </Button>
                 </HStack>
-              </Box>
+              </EnterpriseRailPanel>
             </VStack>
           }
           mobileActions={
@@ -1002,8 +1007,8 @@ export default function ReportsPage() {
 
       <Modal isOpen={isPreviewModalOpen && Boolean(pdfPreview)} onClose={handleClosePreview} size="full" motionPreset="slideInBottom">
         <ModalOverlay bg="blackAlpha.600" />
-        <ModalContent borderRadius={{ base: 0, md: "xl" }} overflow="hidden">
-          <ModalHeader>
+        <ModalContent {...enterpriseModalContentProps}>
+          <ModalHeader {...enterpriseModalHeaderProps}>
             <Stack spacing={1}>
               <Heading size="sm" color="text.primary">
                 {pdfPreview?.kind === "stickers" ? "Sticker preview" : "Packing list preview"}
@@ -1011,7 +1016,7 @@ export default function ReportsPage() {
             </Stack>
           </ModalHeader>
           <ModalCloseButton />
-          <ModalBody bg="bg.canvas" p={{ base: 0, md: 4 }}>
+          <ModalBody {...enterpriseModalBodyProps} bg="bg.canvas" p={{ base: 0, md: 4 }}>
             {pdfPreview ? (
               <Box
                 as="iframe"
@@ -1025,7 +1030,7 @@ export default function ReportsPage() {
               />
             ) : null}
           </ModalBody>
-          <ModalFooter borderTopWidth="1px" borderColor="border.subtle" gap={3}>
+          <ModalFooter {...enterpriseModalFooterProps} gap={3}>
             <Button variant="outline" onClick={handleClosePreview}>
               Back to workflow
             </Button>

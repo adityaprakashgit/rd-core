@@ -35,7 +35,14 @@ import {
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint, TopErrorBanner } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
-import { DetailTabsLayout, ExceptionBanner, HistoryTimeline, LinkedRecordsPanel } from "@/components/enterprise/EnterprisePatterns";
+import {
+  DetailTabsLayout,
+  EnterpriseRailPanel,
+  EnterpriseSummaryStrip,
+  ExceptionBanner,
+  HistoryTimeline,
+  LinkedRecordsPanel,
+} from "@/components/enterprise/EnterprisePatterns";
 import { MobileActionRail, WorkbenchPageTemplate } from "@/components/enterprise/PageTemplates";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
@@ -774,56 +781,34 @@ export function PacketManagementWorkspace() {
           </Button>
         </Stack>
 
-        <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody p={5}>
-              <Text fontSize="sm" color="text.muted">
-                Sample quantity
-              </Text>
-              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
-                {sample.sampleQuantity ?? "—"} {sample.sampleUnit ?? ""}
-              </Text>
-            </CardBody>
-          </Card>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody p={5}>
-              <Text fontSize="sm" color="text.muted">
-                Packet cards
-              </Text>
-              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
-                {packets.length}
-              </Text>
-            </CardBody>
-          </Card>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody p={5}>
-              <Text fontSize="sm" color="text.muted">
-                Ready packets
-              </Text>
-              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
-                {readyPackets.length}
-              </Text>
-            </CardBody>
-          </Card>
-          <Card variant="outline" borderRadius="xl">
-            <CardBody p={5}>
-              <Text fontSize="sm" color="text.muted">
-                Remaining quantity
-              </Text>
-              <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
-                {totalQuantity > 0 ? remainingQuantity : "—"} {sample.sampleUnit ?? ""}
-              </Text>
-            </CardBody>
-          </Card>
-        </SimpleGrid>
+        <EnterpriseSummaryStrip
+          items={[
+            {
+              label: "Sample quantity",
+              value: `${sample.sampleQuantity ?? "—"} ${sample.sampleUnit ?? ""}`.trim(),
+            },
+            {
+              label: "Packet cards",
+              value: String(packets.length),
+            },
+            {
+              label: "Ready packets",
+              value: String(readyPackets.length),
+            },
+            {
+              label: "Remaining quantity",
+              value: totalQuantity > 0 ? `${remainingQuantity} ${sample.sampleUnit ?? ""}`.trim() : "—",
+            },
+          ]}
+        />
 
-        <Card variant="outline" borderRadius="xl">
+        <Card variant="outline" borderRadius="lg">
           <CardBody p={5}>
             <WorkflowStepTracker title="Packet flow" steps={workflowSteps} compact />
           </CardBody>
         </Card>
 
-        <Card variant="outline" borderRadius="xl">
+        <Card variant="outline" borderRadius="lg">
           <CardBody p={5}>
             <VStack align="stretch" spacing={4}>
               <HStack justify="space-between">
@@ -870,7 +855,7 @@ export function PacketManagementWorkspace() {
           </CardBody>
         </Card>
 
-        <Card variant="outline" borderRadius="xl">
+        <Card variant="outline" borderRadius="lg">
           <CardBody p={5}>
             <VStack align="stretch" spacing={4}>
               <HStack justify="space-between">
@@ -1018,7 +1003,7 @@ export function PacketManagementWorkspace() {
           rightLabel="Quantity & Readiness"
           left={
             <VStack align="stretch" spacing={4}>
-              <Card variant="outline" borderRadius="xl">
+              <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
                   <Stack direction={{ base: "column", lg: "row" }} justify="space-between" align={{ base: "stretch", lg: "center" }} spacing={4}>
                     <Box>
@@ -1079,7 +1064,7 @@ export function PacketManagementWorkspace() {
                   const requiredProofDone = mediaConfigs.filter((item) => item.required).filter((item) => mediaMap[item.mediaType]?.fileUrl).length;
 
                   return (
-                    <Card key={packet.id} variant="outline" borderRadius="xl" borderColor={packet.packetStatus === "AVAILABLE" ? "green.200" : undefined}>
+                    <Card key={packet.id} variant="outline" borderRadius="lg" borderColor={packet.packetStatus === "AVAILABLE" ? "green.200" : undefined}>
                       <CardBody p={6}>
                         <Stack spacing={5}>
                           {draft.packetUnit && packet.packetUnit !== draft.packetUnit ? (
@@ -1122,7 +1107,7 @@ export function PacketManagementWorkspace() {
                             </Box>
 
                             <SimpleGrid columns={{ base: 3, md: 3 }} spacing={3} minW={{ md: "320px" }}>
-                              <Box p={3} borderRadius="xl" bg="gray.50">
+                              <Box p={3} borderRadius="lg" bg="gray.50">
                                 <Text fontSize="xs" color="text.muted" textTransform="uppercase">
                                   Quantity
                                 </Text>
@@ -1130,7 +1115,7 @@ export function PacketManagementWorkspace() {
                                   {packet.packetQuantity ?? "—"} {packet.packetUnit ?? ""}
                                 </Text>
                               </Box>
-                              <Box p={3} borderRadius="xl" bg="gray.50">
+                              <Box p={3} borderRadius="lg" bg="gray.50">
                                 <Text fontSize="xs" color="text.muted" textTransform="uppercase">
                                   Proof
                                 </Text>
@@ -1138,7 +1123,7 @@ export function PacketManagementWorkspace() {
                                   {requiredProofDone}/{mediaConfigs.filter((item) => item.required).length}
                                 </Text>
                               </Box>
-                              <Box p={3} borderRadius="xl" bg="gray.50">
+                              <Box p={3} borderRadius="lg" bg="gray.50">
                                 <Text fontSize="xs" color="text.muted" textTransform="uppercase">
                                   Ready
                                 </Text>
@@ -1284,7 +1269,7 @@ export function PacketManagementWorkspace() {
                                 const inputKey = `${packet.id}:${config.mediaType}`;
                                 const media = mediaMap[config.mediaType];
                                 return (
-                                  <Box key={config.mediaType} p={4} borderRadius="xl" borderWidth="1px" borderColor="border.default">
+                                  <Box key={config.mediaType} p={4} borderRadius="lg" borderWidth="1px" borderColor="border.default">
                                     <HStack justify="space-between" align="start" spacing={3}>
                                       <Box>
                                         <HStack spacing={2}>
@@ -1403,45 +1388,35 @@ export function PacketManagementWorkspace() {
           }
           right={
             <VStack align="stretch" spacing={4}>
-              <Box p={4} borderWidth="1px" borderColor="border.default" borderRadius="xl" bg="bg.rail">
-                <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
-                  Quantity split
-                </Text>
-                <Text fontWeight="semibold" color="text.primary" mt={1}>
-                  {allocatedQuantity} / {totalQuantity || "—"} {sample.sampleUnit ?? ""}
-                </Text>
-                <Progress mt={3} value={progressValue} colorScheme="purple" borderRadius="full" />
-                <Text fontSize="sm" color="text.secondary" mt={2}>
-                  Remaining: {totalQuantity > 0 ? `${remainingQuantity} ${sample.sampleUnit ?? ""}` : "Not tracked"}
-                </Text>
-              </Box>
+              <EnterpriseRailPanel title="Quantity split">
+                <VStack align="stretch" spacing={2}>
+                  <Text fontWeight="semibold" color="text.primary">
+                    {allocatedQuantity} / {totalQuantity || "—"} {sample.sampleUnit ?? ""}
+                  </Text>
+                  <Progress value={progressValue} colorScheme="purple" borderRadius="full" />
+                  <Text fontSize="sm" color="text.secondary">
+                    Remaining: {totalQuantity > 0 ? `${remainingQuantity} ${sample.sampleUnit ?? ""}` : "Not tracked"}
+                  </Text>
+                </VStack>
+              </EnterpriseRailPanel>
 
-              <Card variant="outline" borderRadius="xl">
-                <CardBody>
-                  <VStack align="stretch" spacing={3}>
-                    <SectionHint label="Sample status" value={deriveSampleStatus(sample).replaceAll("_", " ")} />
-                    <SectionHint label="Packet cards" value={String(packets.length)} />
-                    <SectionHint label="Available packets" value={String(readyPackets.length)} />
-                    <SectionHint
-                      label="Blocked packets"
-                      value={String(packets.filter((packet) => packet.allocation?.allocationStatus !== "AVAILABLE").length)}
-                    />
-                  </VStack>
-                </CardBody>
-              </Card>
+              <EnterpriseRailPanel title="Packet readiness">
+                <VStack align="stretch" spacing={3}>
+                  <SectionHint label="Sample status" value={deriveSampleStatus(sample).replaceAll("_", " ")} />
+                  <SectionHint label="Packet cards" value={String(packets.length)} />
+                  <SectionHint label="Available packets" value={String(readyPackets.length)} />
+                  <SectionHint
+                    label="Blocked packets"
+                    value={String(packets.filter((packet) => packet.allocation?.allocationStatus !== "AVAILABLE").length)}
+                  />
+                </VStack>
+              </EnterpriseRailPanel>
 
-              <Card variant="outline" borderRadius="xl" bg="bg.surface">
-                <CardBody>
-                  <VStack align="stretch" spacing={2}>
-                    <Text fontSize="sm" fontWeight="semibold" color="text.primary">
-                      Downstream rule
-                    </Text>
-                    <Text fontSize="sm" color="text.secondary">
-                      Trials should consume only packets marked AVAILABLE. Draft or blocked packets stay out of trial selection.
-                    </Text>
-                  </VStack>
-                </CardBody>
-              </Card>
+              <EnterpriseRailPanel title="Downstream rule">
+                <Text fontSize="sm" color="text.secondary">
+                  Trials should consume only packets marked AVAILABLE. Draft or blocked packets stay out of trial selection.
+                </Text>
+              </EnterpriseRailPanel>
             </VStack>
           }
         />

@@ -142,8 +142,8 @@ export async function loadRndLineageLinkage(
     supersededResults,
     activeReport,
     previousReports,
-    defaultReportUrl: defaultSnapshotId ? `/api/report/${defaultSnapshotId}` : null,
-    defaultCoaUrl: defaultSnapshotId ? `/api/report/${defaultSnapshotId}` : null,
+    defaultReportUrl: defaultSnapshotId ? `/api/report/export?snapshotId=${defaultSnapshotId}&format=pdf&documentType=EXPORT` : null,
+    defaultCoaUrl: defaultSnapshotId ? `/api/report/export?snapshotId=${defaultSnapshotId}&format=pdf&documentType=COA` : null,
   };
 }
 
@@ -179,7 +179,7 @@ export async function resolveActiveOutputForLineage(
       currentForDispatch: null,
       previousReports: linkage.previousReports.map((row) => ({
         snapshotId: row.reportSnapshotId,
-        url: `/api/report/${row.reportSnapshotId}`,
+        url: `/api/report/export?snapshotId=${row.reportSnapshotId}&format=pdf&documentType=EXPORT`,
         generatedAt: row.reportSnapshot.createdAt.toISOString(),
         rndJobNumber: row.rndJob.rndJobNumber,
         status: "Previous Report",
@@ -190,7 +190,7 @@ export async function resolveActiveOutputForLineage(
 
   const activeRef: ActiveOutputRef = {
     snapshotId: activeSnapshotId,
-    url: `/api/report/${activeSnapshotId}`,
+    url: `/api/report/export?snapshotId=${activeSnapshotId}&format=pdf&documentType=EXPORT`,
     generatedAt: activeGeneratedAt ? activeGeneratedAt.toISOString() : null,
     rndJobNumber: activeRndJobNumber,
   };
@@ -201,7 +201,7 @@ export async function resolveActiveOutputForLineage(
     currentForDispatch: activeRef,
     previousReports: linkage.previousReports.map((row) => ({
       snapshotId: row.reportSnapshotId,
-      url: `/api/report/${row.reportSnapshotId}`,
+      url: `/api/report/export?snapshotId=${row.reportSnapshotId}&format=pdf&documentType=EXPORT`,
       generatedAt: row.reportSnapshot.createdAt.toISOString(),
       rndJobNumber: row.rndJob.rndJobNumber,
       status: "Previous Report",

@@ -24,7 +24,15 @@ import { useRouter } from "next/navigation";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
-import { EnterpriseStickyTable, FilterSearchStrip, PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
+import {
+  enterpriseModalBodyProps,
+  enterpriseModalContentProps,
+  enterpriseModalFooterProps,
+  enterpriseModalHeaderProps,
+  FilterSearchStrip,
+  PageActionBar,
+  PageIdentityBar,
+} from "@/components/enterprise/EnterprisePatterns";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { formatHoursDuration, getCurrentMilestoneAgeHours, getCurrentMilestoneStage } from "@/lib/workflow-milestone-display";
 import type { InspectionJob } from "@/types/inspection";
@@ -300,15 +308,15 @@ export default function AdminWorkspacePage() {
 
   return (
     <ControlTowerLayout>
-      <VStack align="stretch" spacing={5}>
+      <VStack align="stretch" spacing={4}>
         <PageIdentityBar
           title="Admin Workspace"
           subtitle="Governance queues for access, masters, workflow, audit, and document configuration"
           breadcrumbs={[{ label: "Admin", href: "/admin" }]}
           status={
             <HStack spacing={2}>
-              <Badge colorScheme="red">Admin</Badge>
-              <Badge variant="subtle">{rows.length} escalations</Badge>
+              <Badge colorScheme="gray" variant="subtle">Admin</Badge>
+              <Badge colorScheme={rows.length > 0 ? "orange" : "gray"} variant="subtle">{rows.length} escalations</Badge>
             </HStack>
           }
         />
@@ -364,26 +372,25 @@ export default function AdminWorkspacePage() {
                 <Text fontWeight="semibold">Milestone health</Text>
                 <Badge variant="subtle">{milestoneHealthRows.length}</Badge>
               </HStack>
-              <EnterpriseStickyTable><EnterpriseDataTable
-                    rows={milestoneHealthRows}
-                    rowKey={(row) => row.id}
-                    emptyLabel="No active milestone health items."
-                    columns={[
-                      { id: "job", header: "Job Number", render: (row) => row.jobNumber },
-                      { id: "milestone", header: "Current Milestone", render: (row) => row.currentMilestone },
-                      { id: "age", header: "Stage Age", render: (row) => row.stageAge },
-                      { id: "owner", header: "Owner", render: (row) => row.owner },
-                      { id: "action", header: "Next Action", render: (row) => row.nextAction },
-                    ]}
-                    rowActions={[
-                      {
-                        id: "open-job",
-                        label: "Open Job Workflow",
-                        onClick: (row) => router.push(row.link),
-                      },
-                    ]}
-                  />
-              </EnterpriseStickyTable>
+              <EnterpriseDataTable
+                rows={milestoneHealthRows}
+                rowKey={(row) => row.id}
+                emptyLabel="No active milestone health items."
+                columns={[
+                  { id: "job", header: "Job Number", render: (row) => row.jobNumber },
+                  { id: "milestone", header: "Current Milestone", render: (row) => row.currentMilestone },
+                  { id: "age", header: "Stage Age", render: (row) => row.stageAge },
+                  { id: "owner", header: "Owner", render: (row) => row.owner },
+                  { id: "action", header: "Next Action", render: (row) => row.nextAction },
+                ]}
+                rowActions={[
+                  {
+                    id: "open-job",
+                    label: "Open Job Workflow",
+                    onClick: (row) => router.push(row.link),
+                  },
+                ]}
+              />
             </VStack>
 
             {[
@@ -398,33 +405,32 @@ export default function AdminWorkspacePage() {
                   <Text fontWeight="semibold">{section.title}</Text>
                   <Badge variant="subtle">{section.rows.length}</Badge>
                 </HStack>
-                <EnterpriseStickyTable><EnterpriseDataTable
-                      rows={section.rows}
-                      rowKey={(row) => row.id}
-                      emptyLabel={`No ${section.title.toLowerCase()} items.`}
-                      columns={[
-                        { id: "queue", header: "Queue", render: (row) => row.queue },
-                        { id: "action", header: "Pending Action", render: (row) => row.pendingAction },
-                        { id: "owner", header: "Owner", render: (row) => row.owner },
-                        {
-                          id: "priority",
-                          header: "Priority",
-                          render: (row) => (
-                            <Badge colorScheme={row.priority === "High" ? "red" : row.priority === "Medium" ? "orange" : "gray"}>
-                              {row.priority}
-                            </Badge>
-                          ),
-                        },
-                      ]}
-                      rowActions={[
-                        {
-                          id: "open",
-                          label: "Open Queue Detail",
-                          onClick: (row) => router.push(row.link),
-                        },
-                      ]}
-                    />
-                </EnterpriseStickyTable>
+                <EnterpriseDataTable
+                  rows={section.rows}
+                  rowKey={(row) => row.id}
+                  emptyLabel={`No ${section.title.toLowerCase()} items.`}
+                  columns={[
+                    { id: "queue", header: "Queue", render: (row) => row.queue },
+                    { id: "action", header: "Pending Action", render: (row) => row.pendingAction },
+                    { id: "owner", header: "Owner", render: (row) => row.owner },
+                    {
+                      id: "priority",
+                      header: "Priority",
+                      render: (row) => (
+                        <Badge colorScheme={row.priority === "High" ? "red" : row.priority === "Medium" ? "orange" : "gray"}>
+                          {row.priority}
+                        </Badge>
+                      ),
+                    },
+                  ]}
+                  rowActions={[
+                    {
+                      id: "open",
+                      label: "Open Queue Detail",
+                      onClick: (row) => router.push(row.link),
+                    },
+                  ]}
+                />
               </VStack>
             ))}
 
@@ -433,44 +439,43 @@ export default function AdminWorkspacePage() {
                 <Text fontWeight="semibold">Escalation queue</Text>
                 <Badge variant="subtle">{escalationRows.length}</Badge>
               </HStack>
-              <EnterpriseStickyTable><EnterpriseDataTable
-                    rows={escalationRows}
-                    rowKey={(row) => row.id}
-                    emptyLabel="No escalations found."
-                    columns={[
-                      { id: "created", header: "Created", render: (row) => formatDate(row.createdAt) },
-                      { id: "type", header: "Type", render: (row) => row.type },
-                      { id: "severity", header: "Severity", render: (row) => <Badge colorScheme={severityColor(row.severity)}>{row.severity}</Badge> },
-                      { id: "status", header: "Status", render: (row) => <Badge colorScheme={statusColor(row.status)}>{row.status}</Badge> },
-                      { id: "scope", header: "Job/Lot", render: (row) => [row.jobId ?? "-", row.lotId ?? "-"].join(" / ") },
-                      { id: "owner", header: "Raised By", render: (row) => row.raisedByUser?.profile?.displayName ?? row.raisedByUser?.email ?? "-" },
-                      { id: "title", header: "Title", render: (row) => row.title },
-                    ]}
-                    rowActions={[
-                      {
-                        id: "ack",
-                        label: "Acknowledge",
-                        onClick: (row) => void updateEscalationStatus(row.id, "ACKNOWLEDGED"),
-                        isDisabled: (row) => row.status !== "OPEN" || updatingId === row.id,
-                      },
-                      {
-                        id: "resolve",
-                        label: "Resolve",
-                        onClick: (row) => {
-                          setActiveEscalation(row);
-                          setResolutionNote("");
-                        },
-                        isDisabled: (row) => row.status === "RESOLVED" || updatingId === row.id,
-                      },
-                      {
-                        id: "dismiss",
-                        label: "Dismiss",
-                        onClick: (row) => void updateEscalationStatus(row.id, "DISMISSED"),
-                        isDisabled: (row) => row.status === "DISMISSED" || updatingId === row.id,
-                      },
-                    ]}
-                  />
-              </EnterpriseStickyTable>
+              <EnterpriseDataTable
+                rows={escalationRows}
+                rowKey={(row) => row.id}
+                emptyLabel="No escalations found."
+                columns={[
+                  { id: "created", header: "Created", render: (row) => formatDate(row.createdAt) },
+                  { id: "type", header: "Type", render: (row) => row.type },
+                  { id: "severity", header: "Severity", render: (row) => <Badge colorScheme={severityColor(row.severity)}>{row.severity}</Badge> },
+                  { id: "status", header: "Status", render: (row) => <Badge colorScheme={statusColor(row.status)}>{row.status}</Badge> },
+                  { id: "scope", header: "Job/Lot", render: (row) => [row.jobId ?? "-", row.lotId ?? "-"].join(" / ") },
+                  { id: "owner", header: "Raised By", render: (row) => row.raisedByUser?.profile?.displayName ?? row.raisedByUser?.email ?? "-" },
+                  { id: "title", header: "Title", render: (row) => row.title },
+                ]}
+                rowActions={[
+                  {
+                    id: "ack",
+                    label: "Acknowledge",
+                    onClick: (row) => void updateEscalationStatus(row.id, "ACKNOWLEDGED"),
+                    isDisabled: (row) => row.status !== "OPEN" || updatingId === row.id,
+                  },
+                  {
+                    id: "resolve",
+                    label: "Resolve",
+                    onClick: (row) => {
+                      setActiveEscalation(row);
+                      setResolutionNote("");
+                    },
+                    isDisabled: (row) => row.status === "RESOLVED" || updatingId === row.id,
+                  },
+                  {
+                    id: "dismiss",
+                    label: "Dismiss",
+                    onClick: (row) => void updateEscalationStatus(row.id, "DISMISSED"),
+                    isDisabled: (row) => row.status === "DISMISSED" || updatingId === row.id,
+                  },
+                ]}
+              />
             </VStack>
 
             {governanceQueues.userRoleRows.length + governanceQueues.masterDataRows.length + governanceQueues.workflowRows.length + governanceQueues.auditRows.length + governanceQueues.documentTemplateRows.length + escalationRows.length === 0 ? (
@@ -481,10 +486,10 @@ export default function AdminWorkspacePage() {
 
         <Modal isOpen={activeEscalation !== null} onClose={() => setActiveEscalation(null)} isCentered>
           <ModalOverlay />
-          <ModalContent borderRadius="xl" borderWidth="1px" borderColor="border.default">
-            <ModalHeader pb={3}>Resolve Escalation</ModalHeader>
+          <ModalContent {...enterpriseModalContentProps}>
+            <ModalHeader {...enterpriseModalHeaderProps}>Resolve Escalation</ModalHeader>
             <ModalCloseButton />
-            <ModalBody py={4}>
+            <ModalBody {...enterpriseModalBodyProps}>
               <VStack align="stretch" spacing={3}>
                 <Text fontSize="sm" color="text.secondary">{activeEscalation?.title}</Text>
                 <FormControl>
@@ -497,7 +502,7 @@ export default function AdminWorkspacePage() {
                 </FormControl>
               </VStack>
             </ModalBody>
-            <ModalFooter borderTopWidth="1px" borderColor="border.default" pt={3}>
+            <ModalFooter {...enterpriseModalFooterProps}>
               <HStack spacing={2}>
                 <Button variant="outline" onClick={() => setActiveEscalation(null)}>
                   Cancel

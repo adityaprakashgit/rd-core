@@ -29,7 +29,10 @@ import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/ent
 import { EnterpriseDataTable } from "@/components/enterprise/EnterpriseDataTable";
 import { WorkflowStateChip } from "@/components/enterprise/WorkflowStateChip";
 import {
-  EnterpriseStickyTable,
+  enterpriseModalBodyProps,
+  enterpriseModalContentProps,
+  enterpriseModalFooterProps,
+  enterpriseModalHeaderProps,
   FilterSearchStrip,
   PageActionBar,
   PageIdentityBar,
@@ -466,53 +469,52 @@ export default function RdPage() {
             filteredRows.length === 0 ? (
               <EmptyWorkState title="No jobs found" description="Create a job or change filters." />
             ) : (
-              <EnterpriseStickyTable><EnterpriseDataTable
-                    rows={filteredRows}
-                    rowKey={(row) => row.id}
-                    columns={[
-                      {
-                        id: "job-id",
-                        header: "Job ID",
-                        render: (row) => row.inspectionSerialNumber || row.jobReferenceNumber || "—",
-                      },
-                      { id: "customer", header: "Customer / Source", render: (row) => row.plantLocation ? `${row.clientName} • ${row.plantLocation}` : row.clientName },
-                      { id: "lots", header: "Number of Lots", render: (row) => String(row.lots?.length ?? 0) },
-                      {
-                        id: "stage",
-                        header: "Current Stage",
-                        render: (row) => {
-                          const presentation = getJobWorkflowPresentation(row);
-                          return <WorkflowStateChip status={presentation.label} />;
+              <EnterpriseDataTable
+                rows={filteredRows}
+                rowKey={(row) => row.id}
+                columns={[
+                  {
+                    id: "job-id",
+                    header: "Job ID",
+                    render: (row) => row.inspectionSerialNumber || row.jobReferenceNumber || "—",
+                  },
+                  { id: "customer", header: "Customer / Source", render: (row) => row.plantLocation ? `${row.clientName} • ${row.plantLocation}` : row.clientName },
+                  { id: "lots", header: "Number of Lots", render: (row) => String(row.lots?.length ?? 0) },
+                  {
+                    id: "stage",
+                    header: "Current Stage",
+                    render: (row) => {
+                      const presentation = getJobWorkflowPresentation(row);
+                      return <WorkflowStateChip status={presentation.label} />;
+                    },
+                  },
+                  {
+                    id: "pending-action",
+                    header: "Pending Action",
+                    render: (row) => getJobWorkflowPresentation(row).nextAction,
+                  },
+                  { id: "owner", header: "Owner", render: (row) => row.assignedTo?.profile?.displayName || "Unassigned" },
+                  { id: "updated", header: "Last Updated", render: (row) => formatDate(row.updatedAt) },
+                  { id: "aging", header: "Aging / SLA", render: (row) => getAging(row.updatedAt) },
+                ]}
+                rowActions={[
+                  { id: "open", label: "Open Job Workflow", onClick: (row) => router.push(`/jobs/${row.id}/workflow`) },
+                  {
+                    id: "open-inspection",
+                    label: "Open Inspection Queue",
+                    onClick: (row) => router.push(`/jobs/${row.id}/workflow?section=images`),
+                  },
+                  ...(isAdminUser
+                    ? [
+                        {
+                          id: "delete-job",
+                          label: "Delete Job",
+                          onClick: (row: InspectionJob) => void handleDeleteJob(row.id),
                         },
-                      },
-                      {
-                        id: "pending-action",
-                        header: "Pending Action",
-                        render: (row) => getJobWorkflowPresentation(row).nextAction,
-                      },
-                      { id: "owner", header: "Owner", render: (row) => row.assignedTo?.profile?.displayName || "Unassigned" },
-                      { id: "updated", header: "Last Updated", render: (row) => formatDate(row.updatedAt) },
-                      { id: "aging", header: "Aging / SLA", render: (row) => getAging(row.updatedAt) },
-                    ]}
-                    rowActions={[
-                      { id: "open", label: "Open Job Workflow", onClick: (row) => router.push(`/jobs/${row.id}/workflow`) },
-                      {
-                        id: "open-inspection",
-                        label: "Open Inspection Queue",
-                        onClick: (row) => router.push(`/jobs/${row.id}/workflow?section=images`),
-                      },
-                      ...(isAdminUser
-                        ? [
-                            {
-                              id: "delete-job",
-                              label: "Delete Job",
-                              onClick: (row: InspectionJob) => void handleDeleteJob(row.id),
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-              </EnterpriseStickyTable>
+                      ]
+                    : []),
+                ]}
+              />
             )
           ) : null}
         </VStack>
@@ -586,10 +588,10 @@ export default function RdPage() {
 
       <Modal isOpen={duplicateWarning !== null} onClose={() => setDuplicateWarning(null)} size="xl" isCentered>
         <ModalOverlay />
-        <ModalContent borderRadius="xl" borderWidth="1px" borderColor="border.default">
-          <ModalHeader pb={3}>Potential duplicate job</ModalHeader>
+        <ModalContent {...enterpriseModalContentProps}>
+          <ModalHeader {...enterpriseModalHeaderProps}>Potential duplicate job</ModalHeader>
           <ModalCloseButton />
-          <ModalBody py={4}>
+          <ModalBody {...enterpriseModalBodyProps}>
             <VStack align="stretch" spacing={3}>
               <Text color="text.secondary">{duplicateWarning?.details}</Text>
               <Text fontSize="sm" color="text.secondary">Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours.</Text>
@@ -610,7 +612,7 @@ export default function RdPage() {
               </FormControl>
             </VStack>
           </ModalBody>
-          <ModalFooter borderTopWidth="1px" borderColor="border.default" pt={3}>
+          <ModalFooter {...enterpriseModalFooterProps}>
             <HStack spacing={2}>
               <Button variant="ghost" onClick={() => setDuplicateWarning(null)}>Cancel</Button>
               {duplicateWarning?.canOverrideDuplicate ? (

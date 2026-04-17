@@ -93,18 +93,7 @@ export const workspaceJobSelect = {
           createdAt: true,
         },
       },
-      sampling: {
-        select: {
-          id: true,
-          status: true,
-          assignedAt: true,
-          beforePhotoUrl: true,
-          duringPhotoUrl: true,
-          afterPhotoUrl: true,
-          assignedTo: publicUserSelect,
-          assignedBy: publicUserSelect,
-        },
-      },
+
       sample: {
         select: {
           id: true,
@@ -425,14 +414,7 @@ export const workspaceJobSummarySelect = {
           createdAt: true,
         },
       },
-      sampling: {
-        select: {
-          id: true,
-          beforePhotoUrl: true,
-          duringPhotoUrl: true,
-          afterPhotoUrl: true,
-        },
-      },
+
       sample: {
         select: {
           id: true,

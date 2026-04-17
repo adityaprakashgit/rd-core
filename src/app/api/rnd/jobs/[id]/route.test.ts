@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   searchRndUsersMock: vi.fn(),
   resolveSuggestedRndAssigneeIdMock: vi.fn(),
   loadRndLineageLinkageMock: vi.fn(),
+  reportSnapshotFindManyMock: vi.fn(),
 }));
 
 vi.mock("@/lib/rbac", async () => {
@@ -29,6 +30,9 @@ vi.mock("@/lib/prisma", () => ({
     rndJob: {
       findFirst: mocks.rndJobFindFirstMock,
     },
+    reportSnapshot: {
+      findMany: mocks.reportSnapshotFindManyMock,
+    },
   },
 }));
 
@@ -49,6 +53,12 @@ describe("/api/rnd/jobs/[id] GET", () => {
       defaultReportUrl: null,
       defaultCoaUrl: null,
     });
+    mocks.reportSnapshotFindManyMock.mockResolvedValue([
+      {
+        id: "snap-1",
+        createdAt: new Date("2026-04-10T10:00:00.000Z"),
+      },
+    ]);
     mocks.rndJobFindFirstMock.mockResolvedValue({
       id: "r1",
       rndJobNumber: "RND-2026-0001",
@@ -71,9 +81,12 @@ describe("/api/rnd/jobs/[id] GET", () => {
       blockers: string[];
       pickerOptions: { suggestedAssigneeId?: string | null };
       ledger: { balance: { available: number } };
+      reportLinkage: { defaultReportUrl?: string | null; defaultCoaUrl?: string | null };
     };
     expect(payload.blockers).toEqual(expect.arrayContaining(["packet use not selected", "test type not chosen"]));
     expect(payload.pickerOptions.suggestedAssigneeId).toBe("u-rnd");
     expect(payload.ledger.balance.available).toBe(100);
+    expect(payload.reportLinkage.defaultReportUrl).toBe("/api/report/export?snapshotId=snap-1&format=pdf&documentType=EXPORT");
+    expect(payload.reportLinkage.defaultCoaUrl).toBe("/api/report/export?snapshotId=snap-1&format=pdf&documentType=COA");
   });
 });

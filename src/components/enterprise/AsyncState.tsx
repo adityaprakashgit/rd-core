@@ -5,6 +5,13 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 
 import { Card } from "@/components/Card";
 
+const stateCardProps = {
+  borderWidth: "1px",
+  borderColor: "border.default",
+  borderRadius: "lg" as const,
+  bg: "bg.surface",
+};
+
 export function PageSkeleton({
   cards = 4,
   rows = 2,
@@ -49,7 +56,7 @@ export function InlineErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <Card>
+    <Card {...stateCardProps}>
       <Center py={8}>
         <VStack spacing={3} maxW="lg" textAlign="center">
           <AlertTriangle size={22} />
@@ -80,8 +87,8 @@ export function TopErrorBanner({
   onDismiss?: () => void;
 }) {
   return (
-    <Card bg="red.50" borderColor="red.200">
-      <HStack justify="space-between" align="start" spacing={4}>
+    <Card {...stateCardProps} bg="red.50" borderColor="red.200">
+      <HStack justify="space-between" align="start" spacing={4} px={4} py={3}>
         <HStack align="start" spacing={3}>
           <AlertTriangle size={18} color="#C53030" />
           <VStack align="start" spacing={1}>
@@ -113,7 +120,7 @@ export function EmptyWorkState({
   action?: React.ReactNode;
 }) {
   return (
-    <Card>
+    <Card {...stateCardProps}>
       <Center py={10}>
         <VStack spacing={3} maxW="md" textAlign="center">
           <Text fontWeight="bold" color="text.primary">

@@ -180,7 +180,6 @@ export async function POST(req: NextRequest) {
         include: {
           bags: true,
           mediaFiles: true,
-          sampling: true,
         },
       });
 
@@ -266,7 +265,6 @@ export async function GET(req: NextRequest) {
         mediaFiles: {
           orderBy: { createdAt: "asc" },
         },
-        sampling: true,
       },
     });
 
@@ -428,7 +426,6 @@ export async function PATCH(req: NextRequest) {
         include: {
           bags: true,
           mediaFiles: true,
-          sampling: true,
         },
       });
 
