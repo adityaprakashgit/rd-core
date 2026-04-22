@@ -8,6 +8,9 @@ import {
   Card,
   CardBody,
   HStack,
+  Tab,
+  TabList,
+  Tabs,
   Text,
   VStack,
   useToast,
@@ -15,7 +18,6 @@ import {
 import { Lock, Package, Play } from "lucide-react";
 import { PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
 import { ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
-import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import { PlaygroundMissionPanel } from "@/components/playground/PlaygroundMissionPanel";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -508,6 +510,15 @@ const PLAYGROUND_FLOW_STEP_LABELS = [
   "Archive",
 ] as const;
 
+const PLAYGROUND_FLOW_STEP_STATUSES: PlaygroundStatus[] = [
+  "BUILDING",
+  "READY_TO_RUN",
+  "RUNNING",
+  "TRIALS_IN_PROGRESS",
+  "RESULT_SELECTED",
+  "LOCKED",
+];
+
 const PLAYGROUND_FLOW_STEP_INDEX: Record<PlaygroundStatus, number> = {
   BUILDING: 0,
   READY_TO_RUN: 1,
@@ -606,6 +617,7 @@ function PlaygroundPageContent() {
   const [acceptedWork, setAcceptedWork] = useState<AcceptedWorkRow[]>([]);
   const [acceptedWorkSummary, setAcceptedWorkSummary] = useState<AcceptedWorkSummary | null>(null);
   const [acceptedWorkError, setAcceptedWorkError] = useState<string | null>(null);
+  const [activeFlowStepIndex, setActiveFlowStepIndex] = useState(0);
 
   const [playgroundStatus, setPlaygroundStatus] = useState<PlaygroundStatus>("BUILDING");
   const [steps, setSteps] = useState<ExperimentStep[]>([]);
@@ -633,6 +645,10 @@ function PlaygroundPageContent() {
     () => acceptedWork.find((row) => row.id === jobId) ?? null,
     [acceptedWork, jobId],
   );
+  const activeFlowStatus = useMemo(
+    () => PLAYGROUND_FLOW_STEP_STATUSES[activeFlowStepIndex] ?? playgroundStatus,
+    [activeFlowStepIndex, playgroundStatus],
+  );
 
   const allStepsDone = useMemo(() => steps.length > 0 && steps.every((s) => s.status === "DONE"), [steps]);
 
@@ -643,13 +659,9 @@ function PlaygroundPageContent() {
 
   const isLocked = playgroundStatus === "LOCKED";
   const isBuildMode = playgroundStatus === "BUILDING" || playgroundStatus === "READY_TO_RUN";
-  const playgroundFlowSteps = useMemo<WorkflowStep[]>(() => {
-    const currentIndex = PLAYGROUND_FLOW_STEP_INDEX[playgroundStatus];
-    return PLAYGROUND_FLOW_STEP_LABELS.map((label, index) => ({
-      id: label,
-      label,
-      state: index < currentIndex ? "completed" : index === currentIndex ? "current" : "upcoming",
-    }));
+
+  useEffect(() => {
+    setActiveFlowStepIndex(PLAYGROUND_FLOW_STEP_INDEX[playgroundStatus]);
   }, [playgroundStatus]);
 
   const persistBoard = useCallback(
@@ -896,12 +908,12 @@ function PlaygroundPageContent() {
       const template = wholeProcessTemplates.find((item) => item.id === templateId);
       if (!template) return false;
 
-      const nextSteps = template.stageIds
-        .map((stageId, index) => {
-          const stepMaster = processStepMasters.find((item) => item.id === stageId);
-          if (!stepMaster) return null;
+      const nextSteps: ExperimentStep[] = template.stageIds.flatMap((stageId, index) => {
+        const stepMaster = processStepMasters.find((item) => item.id === stageId);
+        if (!stepMaster) return [];
 
-          return {
+        return [
+          {
             id: `step-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
             stepMasterId: stepMaster.id,
             name: stepMaster.name,
@@ -919,9 +931,9 @@ function PlaygroundPageContent() {
             dueMinutes: Math.max(15, Math.round(stepMaster.defaultDurationSeconds / 60)),
             timerStartedAt: null,
             resources: [],
-          };
-        })
-        .filter((step): step is ExperimentStep => step !== null);
+          } satisfies ExperimentStep,
+        ];
+      });
 
       setSteps(nextSteps);
       setSelectedProcessTemplateId(template.id);
@@ -1186,42 +1198,6 @@ function PlaygroundPageContent() {
     }
   };
 
-  const moveStep = (stepId: string, direction: "UP" | "DOWN") => {
-    if (!isBuildMode || isLocked) return;
-
-    setSteps((prev) => {
-      const next = [...prev].sort((a, b) => a.orderNo - b.orderNo);
-      const currentIndex = next.findIndex((s) => s.id === stepId);
-      if (currentIndex < 0) return prev;
-
-      const targetIndex = direction === "UP" ? currentIndex - 1 : currentIndex + 1;
-      if (targetIndex < 0 || targetIndex >= next.length) return prev;
-
-      const temp = next[currentIndex];
-      next[currentIndex] = next[targetIndex];
-      next[targetIndex] = temp;
-
-      return next.map((item, index) => ({ ...item, orderNo: index + 1 }));
-    });
-    void logAction("PLAYGROUND_STEP_REORDER", direction);
-  };
-
-  const deleteStep = (stepId: string) => {
-    if (!isBuildMode || isLocked) return;
-
-    setSteps((prev) =>
-      prev
-        .filter((step) => step.id !== stepId)
-        .sort((a, b) => a.orderNo - b.orderNo)
-        .map((step, index) => ({ ...step, orderNo: index + 1 }))
-    );
-
-    if (selection?.type === "STEP" && selection.id === stepId) {
-      setSelection(null);
-    }
-    void logAction("PLAYGROUND_STEP_DELETE");
-  };
-
   const startExecution = () => {
     if (!runBuildValidation()) return;
 
@@ -1344,10 +1320,11 @@ function PlaygroundPageContent() {
     }
 
     void logAction("PLAYGROUND_STEP_COMPLETE");
-    if (reminderRef) {
-      nextReminderEvents = [reminderRef, ...reminderEvents].slice(0, 12);
+    if (reminderRef !== null) {
+      const reminder: ReminderEvent = reminderRef;
+      nextReminderEvents = [reminder, ...reminderEvents].slice(0, 12);
       setReminderEvents(nextReminderEvents);
-      toast({ title: reminderRef.title, description: reminderRef.subtitle, status: "info" });
+      toast({ title: reminder.title, description: reminder.subtitle, status: "info" });
     }
     if (nextStepsRef) {
       void persistBoard(allDone ? "STEPS_COMPLETED" : "RUNNING", "PLAYGROUND_STEP_COMPLETE", {
@@ -1457,6 +1434,19 @@ function PlaygroundPageContent() {
   const selectFinalTrial = (trialId: string) => {
     if (isLocked) return;
 
+    const selected = trials.find((trial) => trial.id === trialId);
+    if (!selected) {
+      toast({ title: "Result not found", status: "error" });
+      return;
+    }
+
+    if (!isTrialComplete(selected.measurements)) {
+      setValidationErrors(["Add at least one complete metric before selecting the final result."]);
+      setSelection({ type: "VALIDATION" });
+      toast({ title: "Result cannot be selected yet", description: "Add complete metrics first.", status: "warning" });
+      return;
+    }
+
     const nextTrials = trials.map((trial) => ({
       ...trial,
       status: mapTrialStatus(trial.measurements, trial.id === trialId),
@@ -1519,19 +1509,19 @@ function PlaygroundPageContent() {
     <Button colorScheme="teal" leftIcon={<Package size={16} />} onClick={() => openMission(acceptedWork[0]?.id ?? "")} isDisabled={acceptedWork.length === 0 || loadingAcceptedWork}>
       Open Work
     </Button>
-  ) : playgroundStatus === "BUILDING" ? (
+  ) : activeFlowStatus === "BUILDING" ? (
     <Button colorScheme="teal" leftIcon={<Package size={16} />} onClick={runBuildValidation} isDisabled={isLocked || loadingBoard}>
       Validate Process
     </Button>
-  ) : playgroundStatus === "READY_TO_RUN" ? (
+  ) : activeFlowStatus === "READY_TO_RUN" ? (
     <Button colorScheme="teal" leftIcon={<Play size={16} />} onClick={startExecution} isDisabled={!isBuildMode || isLocked || loadingBoard}>
       Start Processing
     </Button>
-  ) : playgroundStatus === "STEPS_COMPLETED" || playgroundStatus === "TRIALS_IN_PROGRESS" ? (
+  ) : activeFlowStatus === "TRIALS_IN_PROGRESS" ? (
     <Button colorScheme="purple" leftIcon={<Package size={16} />} onClick={() => selectedTrialId && selectFinalTrial(selectedTrialId)} isDisabled={!selectedTrialId || isLocked || loadingBoard}>
       Review Results
     </Button>
-  ) : playgroundStatus === "RESULT_SELECTED" ? (
+  ) : activeFlowStatus === "RESULT_SELECTED" ? (
     <Button colorScheme="red" leftIcon={<Lock size={16} />} onClick={lockExperiment} isDisabled={isLocked || loadingBoard}>
       Release Record
     </Button>
@@ -1541,19 +1531,330 @@ function PlaygroundPageContent() {
     </Button>
   );
 
+  const pageSecondaryActions = !jobId ? (
+    <HStack spacing={2} wrap="wrap">
+      <Button variant="outline" onClick={() => void loadAcceptedWork()} isDisabled={loadingAcceptedWork}>
+        Refresh Queue
+      </Button>
+    </HStack>
+  ) : activeFlowStatus === "BUILDING" ? (
+    <HStack spacing={2} wrap="wrap">
+      <Button
+        variant="outline"
+        onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })}
+        isDisabled={isLocked || !jobId || loadingBoard}
+        isLoading={savingBoard}
+      >
+        Save Process
+      </Button>
+      <Button variant="outline" onClick={() => setSelection({ type: "VALIDATION" })} isDisabled={isLocked || validationErrors.length === 0}>
+        Review Blockers
+      </Button>
+    </HStack>
+  ) : activeFlowStatus === "READY_TO_RUN" ? (
+    <HStack spacing={2} wrap="wrap">
+      <Button
+        variant="outline"
+        onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })}
+        isDisabled={isLocked || !jobId || loadingBoard}
+        isLoading={savingBoard}
+      >
+        Save Process
+      </Button>
+      <Button variant="outline" onClick={() => setSelection({ type: "VALIDATION" })} isDisabled={isLocked || validationErrors.length === 0}>
+        Review Blockers
+      </Button>
+    </HStack>
+  ) : activeFlowStatus === "RUNNING" ? (
+    <HStack spacing={2} wrap="wrap">
+      <Button variant="outline" onClick={() => setSelection({ type: "STEP", id: selectedStep?.id ?? orderedSteps[0]?.id ?? "" })} isDisabled={isLocked || orderedSteps.length === 0}>
+        Inspect Step
+      </Button>
+      <Button
+        variant="outline"
+        onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })}
+        isDisabled={isLocked || !jobId || loadingBoard}
+        isLoading={savingBoard}
+      >
+        Save Progress
+      </Button>
+    </HStack>
+  ) : activeFlowStatus === "TRIALS_IN_PROGRESS" ? (
+    <HStack spacing={2} wrap="wrap">
+      <Button
+        variant="outline"
+        onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })}
+        isDisabled={isLocked || !jobId || loadingBoard}
+        isLoading={savingBoard}
+      >
+        Save Result
+      </Button>
+      <Button variant="outline" onClick={() => setSelection({ type: "TRIAL", id: selectedTrialId ?? trials[0]?.id ?? "" })} isDisabled={isLocked || trials.length === 0}>
+        Review Result
+      </Button>
+    </HStack>
+  ) : activeFlowStatus === "RESULT_SELECTED" ? (
+    <HStack spacing={2} wrap="wrap">
+      <Button
+        variant="outline"
+        onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })}
+        isDisabled={isLocked || !jobId || loadingBoard}
+        isLoading={savingBoard}
+      >
+        Save Release
+      </Button>
+      <Button variant="outline" onClick={() => setSelection({ type: "TRIAL", id: selectedTrialId ?? trials[0]?.id ?? "" })} isDisabled={isLocked || trials.length === 0}>
+        Inspect Result
+      </Button>
+    </HStack>
+  ) : (
+    <HStack spacing={2} wrap="wrap" />
+  );
+
   const selectedStepChemicals = selectedStep
     ? selectedStep.resources.filter((resource) => resource.resourceType === "CHEMICAL")
     : [];
   const selectedStepAssets = selectedStep
     ? selectedStep.resources.filter((resource) => resource.resourceType === "ASSET")
     : [];
-
+  const currentMission = selectedAcceptedWork;
+  const activePacket = currentMission ? packets.find((packet) => packet.code === currentMission.packetId) ?? packets[0] ?? null : null;
+  const phaseContext = !jobId ? (
+    <VStack align="stretch" spacing={3}>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current phase
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+          Accepted Sample Work
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Queue
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {loadingAcceptedWork ? "Loading queue" : `${acceptedWork.length} in queue`}
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Next action
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          Open a job from the queue
+        </Text>
+      </Box>
+    </VStack>
+  ) : activeFlowStatus === "BUILDING" ? (
+    <VStack align="stretch" spacing={3}>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current phase
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+          Build process
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Process template
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {selectedProcessTemplateId ? wholeProcessTemplates.find((template) => template.id === selectedProcessTemplateId)?.name ?? "Applied template" : "None applied"}
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Next action
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          Apply a template or add steps, then validate
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Blockers
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {validationErrors.length > 0 ? `${validationErrors.length} blocker(s)` : "No blockers detected"}
+        </Text>
+      </Box>
+    </VStack>
+  ) : activeFlowStatus === "READY_TO_RUN" ? (
+    <VStack align="stretch" spacing={3}>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current phase
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+          Validate
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Process template
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {selectedProcessTemplateId ? wholeProcessTemplates.find((template) => template.id === selectedProcessTemplateId)?.name ?? "Applied template" : "None applied"}
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Next action
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          Review blockers and start processing
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Blockers
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {validationErrors.length > 0 ? `${validationErrors.length} blocker(s)` : "No blockers detected"}
+        </Text>
+      </Box>
+    </VStack>
+  ) : activeFlowStatus === "RUNNING" ? (
+    <VStack align="stretch" spacing={3}>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current phase
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+          Run process
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current step
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {selectedStep ? `#${selectedStep.orderNo} · ${selectedStep.name} · ${stepStatusLabel(selectedStep.status)}` : "Select a step to inspect"}
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Next action
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          Start or complete the active step
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Completion reminders
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {reminderEvents.length} queued
+        </Text>
+      </Box>
+    </VStack>
+  ) : activeFlowStatus === "TRIALS_IN_PROGRESS" ? (
+    <VStack align="stretch" spacing={3}>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current phase
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+          Capture results
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Active packet
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {activePacket ? `${activePacket.code} · ${activePacket.status}` : "No packet loaded"}
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Next action
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          Create one result, then add metrics
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Result selection
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {selectedTrial ? `Result #${selectedTrial.trialNo} selected` : `${trials.length} result record(s)`} 
+        </Text>
+      </Box>
+    </VStack>
+  ) : activeFlowStatus === "RESULT_SELECTED" ? (
+    <VStack align="stretch" spacing={3}>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current phase
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+          Review release
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Selected result
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {selectedTrial ? `Result #${selectedTrial.trialNo} · ${selectedTrial.packetCode}` : "No result selected"}
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Next action
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          Release the selected record
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Metrics
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          {selectedTrial ? `${selectedTrial.measurements.length} metric(s)` : "No metrics selected"}
+        </Text>
+      </Box>
+    </VStack>
+  ) : (
+    <VStack align="stretch" spacing={3}>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Current phase
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+          Archived
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Status
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          Locked and read only
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+          Next action
+        </Text>
+        <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+          View the locked record
+        </Text>
+      </Box>
+    </VStack>
+  );
   return (
     <ControlTowerLayout>
       <VStack align="stretch" spacing={6}>
         <PageIdentityBar
           title="Sample Process Control"
-          subtitle="Unified control workspace for sample intake, preparation, process execution, result capture, and release."
+          subtitle="Open an accepted sample job, apply a process, validate it, run the steps, then capture and release the result."
           status={
             <HStack spacing={2} flexWrap="wrap">
               <Badge variant="subtle" colorScheme="purple" borderRadius="full" px={2.5} py={1}>
@@ -1564,39 +1865,17 @@ function PlaygroundPageContent() {
               </Badge>
               {jobId ? (
                 <Badge variant="subtle" colorScheme="blue" borderRadius="full" px={2.5} py={1}>
-                  Selected work loaded
+                  Job loaded
                 </Badge>
               ) : null}
               <Badge variant="subtle" colorScheme="gray" borderRadius="full" px={2.5} py={1}>
-                {loadingAcceptedWork ? "Loading queue" : `${acceptedWork.length} accepted work item(s)`}
+                {loadingAcceptedWork ? "Loading queue" : `${acceptedWork.length} in queue`}
               </Badge>
             </HStack>
           }
         />
 
-        <PageActionBar
-          primaryAction={pagePrimaryAction}
-          secondaryActions={
-            <HStack spacing={2} wrap="wrap">
-              <Button
-                variant="outline"
-                onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })}
-                isDisabled={isLocked || !jobId || loadingBoard}
-                isLoading={savingBoard}
-              >
-                Save Process
-              </Button>
-              <Button variant="outline" onClick={() => setSelection({ type: "VALIDATION" })} isDisabled={isLocked || validationErrors.length === 0}>
-                Review Blockers
-              </Button>
-              {jobId ? (
-                <Button variant="ghost" onClick={() => router.push("/playground")}>
-                  Back to Queue
-                </Button>
-              ) : null}
-            </HStack>
-          }
-        />
+        <PageActionBar primaryAction={pagePrimaryAction} secondaryActions={pageSecondaryActions} />
 
         <ProcessFlowLayout
           header={
@@ -1606,13 +1885,31 @@ function PlaygroundPageContent() {
                   <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary">
                     Loading sample process context...
                   </Text>
-                </CardBody>
-              </Card>
-            ) : null
+              </CardBody>
+            </Card>
+          ) : null
           }
-          tracker={<WorkflowStepTracker steps={playgroundFlowSteps} title="Sample process flow" compact />}
+          tracker={
+            <VStack align="stretch" spacing={3}>
+              <Tabs
+                variant="line-enterprise"
+                index={activeFlowStepIndex}
+                onChange={setActiveFlowStepIndex}
+                isLazy
+              >
+                <TabList overflowX="auto" overflowY="hidden">
+                  {PLAYGROUND_FLOW_STEP_LABELS.map((label) => (
+                    <Tab key={label} whiteSpace="nowrap" fontSize={{ base: "sm", md: "md" }}>
+                      {label}
+                    </Tab>
+                  ))}
+                </TabList>
+              </Tabs>
+            </VStack>
+          }
           activeStep={
             <PlaygroundMissionPanel
+              playgroundStatus={activeFlowStatus}
               acceptedWorkRows={acceptedWork}
               selectedAcceptedWork={selectedAcceptedWork}
               onOpenMission={openMission}
@@ -1643,8 +1940,6 @@ function PlaygroundPageContent() {
               allStepsDone={allStepsDone}
               onCanvasDrop={onCanvasDrop}
               onStepDrop={onStepDrop}
-              moveStep={moveStep}
-              deleteStep={deleteStep}
               startStep={startStep}
               completeStep={completeStep}
               onResultDrop={onTrialDrop}
@@ -1663,69 +1958,7 @@ function PlaygroundPageContent() {
               onCreateResult={createTrialFromPacket}
             />
           }
-          context={
-            <VStack align="stretch" spacing={3}>
-              <Box>
-                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
-                  Current phase
-                </Text>
-                <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
-                  {PLAYGROUND_PHASE_LABELS[playgroundStatus]}
-                </Text>
-              </Box>
-              <Box>
-                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
-                  Primary action
-                </Text>
-                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
-                  {isBuildMode ? "Validate or start processing" : "Release record"}
-                </Text>
-              </Box>
-              <Box>
-                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
-                  Process template
-                </Text>
-                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
-                  {selectedProcessTemplateId ? wholeProcessTemplates.find((template) => template.id === selectedProcessTemplateId)?.name ?? "Applied template" : "None applied"}
-                </Text>
-              </Box>
-              <Box>
-                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
-                  Completion reminders
-                </Text>
-                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
-                  {reminderEvents.length} queued
-                </Text>
-              </Box>
-              <Box>
-                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
-                  Blockers
-                </Text>
-                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
-                  Validation issues, incomplete result capture, or locked state will block progression.
-                </Text>
-              </Box>
-            </VStack>
-          }
-          mobileActions={
-            <>
-              <Button variant="outline" onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })} isDisabled={isLocked || !jobId || loadingBoard} isLoading={savingBoard}>
-                Save Process
-              </Button>
-              <Button variant="outline" onClick={runBuildValidation} isDisabled={isLocked}>
-                Validate
-              </Button>
-              {isBuildMode ? (
-                <Button colorScheme="teal" leftIcon={<Play size={16} />} onClick={startExecution} isDisabled={!isBuildMode || isLocked}>
-                  Start Processing
-                </Button>
-              ) : (
-                <Button colorScheme="red" leftIcon={<Lock size={16} />} onClick={lockExperiment} isDisabled={isLocked}>
-                  Release Record
-                </Button>
-              )}
-            </>
-          }
+          context={phaseContext}
         />
       </VStack>
     </ControlTowerLayout>
