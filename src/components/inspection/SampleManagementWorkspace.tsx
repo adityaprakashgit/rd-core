@@ -43,6 +43,7 @@ import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { useWorkspaceView } from "@/context/WorkspaceViewContext";
 import {
   deriveSampleStatus,
+  getInspectionSamplingDisplayStatus,
   getRequiredMissingMedia,
   getSampleReadiness,
   hasHomogenizedSample,
@@ -190,6 +191,7 @@ export function SampleManagementWorkspace({
   const inspection = payload?.inspection ?? null;
   const lot = payload?.lot ?? null;
   const readiness = useMemo(() => getSampleReadiness(sample), [sample]);
+  const readinessBlockers = readiness.blockers;
   const mediaMap = useMemo(() => mapSampleMediaByType(sample?.media), [sample?.media]);
   const currentStatus = deriveSampleStatus(sample);
   const workflowSteps = useMemo(() => buildWorkflowSteps(sample), [sample]);
@@ -197,7 +199,7 @@ export function SampleManagementWorkspace({
   const isSealFormatValid = /^\d{16}$/.test(sealForm.sealNo.trim());
   const lotApproved =
     !inspection ||
-    inspection?.inspectionStatus === "COMPLETED" && inspection?.decisionStatus === "READY_FOR_SAMPLING";
+    getInspectionSamplingDisplayStatus(inspection) === "READY_FOR_SAMPLING";
   const inspectionApprovalRequired = Boolean(inspection) && !lotApproved;
 
   const updateSample = useCallback(
@@ -448,7 +450,7 @@ export function SampleManagementWorkspace({
   if (!payload || !lot) {
     return (
       <ControlTowerLayout>
-        <EmptyWorkState title="Lot not found" description="The selected lot could not be loaded." />
+        <EmptyWorkState title="Bag not found" description="The selected bag could not be loaded." />
       </ControlTowerLayout>
     );
   }
@@ -538,7 +540,7 @@ export function SampleManagementWorkspace({
 
         <EnterpriseSummaryStrip
           items={[
-            { label: "Inspection decision", value: inspection?.decisionStatus ?? "PENDING" },
+            { label: "Bag decision", value: getInspectionSamplingDisplayStatus(inspection) },
             { label: "Sample state", value: currentStatus.replaceAll("_", " ") },
             { label: "Required proof", value: `${mediaConfigs.filter((item) => item.required && mediaMap[item.mediaType]).length}/${requiredMediaCount}` },
             { label: "Readiness", value: readiness.isReady ? "Ready" : `${readiness.missing.length} pending` },
@@ -547,8 +549,8 @@ export function SampleManagementWorkspace({
 
         {inspectionApprovalRequired ? (
           <InlineErrorState
-            title="Lot not ready for sampling"
-            description="Inspection must be completed and approved before a sample can be created for this lot."
+            title="Bag not ready for sampling"
+            description="Inspection must be completed and approved before a sample can be created for this bag."
             onRetry={() => void fetchData()}
           />
         ) : null}
@@ -655,11 +657,11 @@ export function SampleManagementWorkspace({
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 3
                   </Text>
-              <Heading size="md" mt={1}>
+                  <Heading size="md" mt={1}>
                     Capture proof
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2} mb={5}>
-                    Keep this minimal. Only the homogenized sample photo is required here. Packet photos belong in packet management.
+                    Keep this minimal. Capture the homogeneous sample photo and the sealed sample photo here. Seal scan and seal generation live in the same proof step.
                   </Text>
 
                   <EvidenceRail
@@ -675,6 +677,76 @@ export function SampleManagementWorkspace({
                       setMediaErrors((prev) => ({ ...prev, [itemId as SampleMediaType]: undefined }));
                     }}
                   />
+                  <Box mt={5} p={4} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.rail">
+                    <VStack align="stretch" spacing={4}>
+                      <Box>
+                        <Text fontSize="sm" fontWeight="semibold" color="text.primary">
+                          Seal number and seal photo
+                        </Text>
+                        <Text fontSize="sm" color="text.secondary" mt={1}>
+                          Scan the seal or generate one, then capture the sealed sample photo with the seal visible.
+                        </Text>
+                      </Box>
+                      <SimpleGrid columns={{ base: 1, md: 1 }} spacing={4}>
+                        <FormControl>
+                          <FormLabel>Seal number</FormLabel>
+                          <HStack align="stretch" flexWrap={{ base: "wrap", sm: "nowrap" }}>
+                            <Input
+                              value={sealForm.sealNo}
+                              onChange={(event) => {
+                                setSealForm((prev) => ({ ...prev, sealNo: event.target.value.replace(/\D/g, "").slice(0, 16) }));
+                                setSealAuto(false);
+                              }}
+                              placeholder="Scan or enter 16-digit seal number"
+                              inputMode="numeric"
+                              isDisabled={!sample}
+                            />
+                            <SealScanner
+                              onScanned={(sealNumber) => {
+                                setSealForm((prev) => ({ ...prev, sealNo: sealNumber }));
+                                setSealAuto(false);
+                              }}
+                              onManualConfirm={(sealNumber) => {
+                                setSealForm((prev) => ({ ...prev, sealNo: sealNumber }));
+                                setSealAuto(false);
+                              }}
+                              isDisabled={!sample}
+                            />
+                            <Button
+                              variant="outline"
+                              onClick={() => void handleGenerateSeal()}
+                              isLoading={generatingSeal}
+                              isDisabled={!sample}
+                            >
+                              Auto-generate
+                            </Button>
+                          </HStack>
+                          <HStack mt={2} spacing={2} flexWrap="wrap">
+                            <WorkflowStateChip status={isSealFormatValid ? "SEAL_VALID" : "SEAL_INVALID"} />
+                            <WorkflowStateChip status={sealAuto ? "SEAL_AUTO" : "SEAL_MANUAL"} />
+                          </HStack>
+                          <Text fontSize="xs" color="text.secondary" mt={2}>
+                            {sealAuto ? "Seal was generated by system." : "Scan seal, then save. Manual entry is fallback only."}
+                          </Text>
+                        </FormControl>
+                      </SimpleGrid>
+                      <Button
+                        alignSelf="start"
+                        colorScheme="blue"
+                        leftIcon={<PackageCheck size={16} />}
+                        onClick={() => void handleSaveSeal()}
+                        isLoading={savingSeal}
+                        isDisabled={!sample || !isSealFormatValid}
+                      >
+                        Save seal
+                      </Button>
+                      {stepErrors.seal ? (
+                        <Box borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
+                          <Text fontSize="sm" color="red.700">{stepErrors.seal}</Text>
+                        </Box>
+                      ) : null}
+                    </VStack>
+                  </Box>
                 </CardBody>
               </Card>
 
@@ -719,72 +791,29 @@ export function SampleManagementWorkspace({
                     Step 5
                   </Text>
                   <Heading size="md" mt={1}>
-                    Scan and confirm seal
+                    Seal confirmation
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2} mb={5}>
-                    Scan the pre-printed seal first. Use manual entry only if scan is unavailable.
+                    Seal proof is captured in Step 3. This card is a read-only confirmation before readiness.
                   </Text>
 
-                  <SimpleGrid columns={{ base: 1, md: 1 }} spacing={4}>
-                    <FormControl>
-                      <FormLabel>Seal number</FormLabel>
-                      <HStack align="stretch" flexWrap={{ base: "wrap", sm: "nowrap" }}>
-                        <Input
-                          value={sealForm.sealNo}
-                          onChange={(event) => {
-                            setSealForm((prev) => ({ ...prev, sealNo: event.target.value.replace(/\D/g, "").slice(0, 16) }));
-                            setSealAuto(false);
-                          }}
-                          placeholder="Scan or enter 16-digit seal number"
-                          inputMode="numeric"
-                          isDisabled={!sample}
-                        />
-                        <SealScanner
-                          onScanned={(sealNumber) => {
-                            setSealForm((prev) => ({ ...prev, sealNo: sealNumber }));
-                            setSealAuto(false);
-                          }}
-                          onManualConfirm={(sealNumber) => {
-                            setSealForm((prev) => ({ ...prev, sealNo: sealNumber }));
-                            setSealAuto(false);
-                          }}
-                          isDisabled={!sample}
-                        />
-                        <Button
-                          variant="outline"
-                          onClick={() => void handleGenerateSeal()}
-                          isLoading={generatingSeal}
-                          isDisabled={!sample}
-                        >
-                          Auto-generate
-                        </Button>
-                      </HStack>
-                      <HStack mt={2} spacing={2} flexWrap="wrap">
+                  <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" p={4} bg="bg.rail">
+                    <VStack align="stretch" spacing={2}>
+                      <Text fontWeight="semibold" color="text.primary">
+                        Current seal status
+                      </Text>
+                      <Text fontSize="sm" color="text.secondary">
+                        Seal number: {sample?.sealLabel?.sealNo || sealForm.sealNo || "Not set"}
+                      </Text>
+                      <Text fontSize="sm" color="text.secondary">
+                        Seal captured: {sample?.sealLabel?.sealedAt ? new Date(sample.sealLabel.sealedAt).toLocaleString() : "Not captured"}
+                      </Text>
+                      <HStack spacing={2} flexWrap="wrap">
                         <WorkflowStateChip status={isSealFormatValid ? "SEAL_VALID" : "SEAL_INVALID"} />
                         <WorkflowStateChip status={sealAuto ? "SEAL_AUTO" : "SEAL_MANUAL"} />
                       </HStack>
-                      <Text fontSize="xs" color="text.secondary" mt={2}>
-                        {sealAuto ? "Seal was generated by system." : "Scan seal, then save. Manual entry is fallback only."}
-                      </Text>
-                    </FormControl>
-                  </SimpleGrid>
-
-                  <Button
-                    display={desktopPrimaryDisplay}
-                    mt={5}
-                    colorScheme="blue"
-                    leftIcon={<PackageCheck size={16} />}
-                    onClick={() => void handleSaveSeal()}
-                    isLoading={savingSeal}
-                    isDisabled={!sample || !isSealFormatValid}
-                  >
-                    Save seal
-                  </Button>
-                  {stepErrors.seal ? (
-                    <Box mt={3} borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
-                      <Text fontSize="sm" color="red.700">{stepErrors.seal}</Text>
-                    </Box>
-                  ) : null}
+                    </VStack>
+                  </Box>
                 </CardBody>
               </Card>
 
@@ -797,17 +826,41 @@ export function SampleManagementWorkspace({
                     Complete
                   </Heading>
                   <Text fontSize="sm" color="text.secondary" mt={2} mb={5}>
-                    Readiness requires sample details, homogenized sample proof, homogeneous confirmation, and seal evidence.
+                    Readiness requires job evidence, bag evidence, and sample packet evidence to be complete.
                   </Text>
                   <VStack align="stretch" spacing={2}>
-                    {(readiness.missing.length > 0 ? readiness.missing : ["Ready for packet generation"]).map((item) => (
-                      <HStack key={item} spacing={3} p={3} borderRadius="md" bg="bg.rail">
-                        <Icon as={readiness.isReady ? CheckCircle2 : ClipboardCheck} color={readiness.isReady ? "green.500" : "gray.500"} />
+                    {readinessBlockers.length > 0 ? (
+                      readinessBlockers.map((blocker) => (
+                        <Box key={blocker.key} p={3} borderRadius="md" bg="bg.rail" borderWidth="1px" borderColor="border.default">
+                          <HStack spacing={3} align="start">
+                            <Icon as={ClipboardCheck} color="orange.500" mt={0.5} />
+                            <Box>
+                              <HStack spacing={2} flexWrap="wrap">
+                                <Badge colorScheme="orange" variant="subtle" borderRadius="full" px={2.5} py={0.5}>
+                                  {blocker.groupTitle}
+                                </Badge>
+                                <Text fontSize="sm" fontWeight="semibold" color="text.primary">
+                                  {blocker.proofLabel}
+                                </Text>
+                              </HStack>
+                              <Text fontSize="sm" color="text.secondary" mt={1}>
+                                {blocker.detail}
+                              </Text>
+                              <Text fontSize="xs" color="text.muted" mt={1}>
+                                Complete here: {blocker.locationLabel}
+                              </Text>
+                            </Box>
+                          </HStack>
+                        </Box>
+                      ))
+                    ) : (
+                      <HStack spacing={3} p={3} borderRadius="md" bg="bg.rail">
+                        <Icon as={CheckCircle2} color="green.500" />
                         <Text fontSize="sm" color="text.primary">
-                          {item}
+                          Ready for packet generation
                         </Text>
                       </HStack>
-                    ))}
+                    )}
                   </VStack>
 
                   <Button display={desktopPrimaryDisplay} mt={5} colorScheme="green" leftIcon={<CheckCircle2 size={16} />} onClick={() => void handleMarkReady()} isLoading={markingReady} isDisabled={!sample || inspectionApprovalRequired}>
@@ -827,7 +880,7 @@ export function SampleManagementWorkspace({
               <Card variant="outline" borderRadius="lg">
                 <CardBody p={5}>
                   <Heading size="sm" color="text.primary">
-                    Sample detail card
+                    Job sample card
                   </Heading>
                   <VStack align="stretch" spacing={3} mt={4}>
                     <Box>
@@ -840,7 +893,7 @@ export function SampleManagementWorkspace({
                     </Box>
                     <Box>
                       <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
-                        Linked lot
+                        Linked bag
                       </Text>
                       <Text color="text.primary">{lot.lotNumber}</Text>
                     </Box>
@@ -862,9 +915,22 @@ export function SampleManagementWorkspace({
                       <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
                         Missing actions
                       </Text>
-                      <Text color="text.primary">
-                        {readiness.missing.length > 0 ? readiness.missing.join(", ") : "None"}
-                      </Text>
+                      <VStack align="stretch" spacing={2} mt={2}>
+                        {readinessBlockers.length > 0 ? (
+                          readinessBlockers.map((blocker) => (
+                            <Box key={blocker.key} p={3} borderRadius="md" bg="bg.rail" borderWidth="1px" borderColor="border.default">
+                              <Text fontSize="sm" fontWeight="semibold" color="text.primary">
+                                {blocker.groupTitle} · {blocker.proofLabel}
+                              </Text>
+                              <Text fontSize="sm" color="text.secondary" mt={1}>
+                                {blocker.detail}
+                              </Text>
+                            </Box>
+                          ))
+                        ) : (
+                          <Text color="text.primary">None</Text>
+                        )}
+                      </VStack>
                     </Box>
                   </VStack>
                 </CardBody>

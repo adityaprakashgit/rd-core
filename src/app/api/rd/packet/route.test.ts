@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   rndJobFindFirstMock: vi.fn(),
   rndJobCreateMock: vi.fn(),
   inspectionJobFindUniqueMock: vi.fn(),
+  inspectionLotFindManyMock: vi.fn(),
 }));
 
 vi.mock("@/lib/rbac", async () => {
@@ -122,7 +123,7 @@ function buildPacketRecord(overrides?: Partial<Record<string, unknown>>) {
 
 describe("/api/rd/packet PATCH submit-to-R&D handoff", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
 
     mocks.getCurrentUserFromRequestMock.mockResolvedValue({
       id: "ops-1",
@@ -146,6 +147,16 @@ describe("/api/rd/packet PATCH submit-to-R&D handoff", () => {
       id: "rnd-job-1",
       rndJobNumber: "RND-2026-0001",
     });
+    mocks.inspectionLotFindManyMock.mockResolvedValue([
+      {
+        sealNumber: "1234567890123456",
+        sample: {
+          sealLabel: {
+            sealNo: "1234567890123456",
+          },
+        },
+      },
+    ]);
     mocks.inspectionJobFindUniqueMock.mockResolvedValue({
       deadline: new Date("2026-04-20T00:00:00.000Z"),
     });
@@ -183,6 +194,9 @@ describe("/api/rd/packet PATCH submit-to-R&D handoff", () => {
         inspectionJob: {
           findUnique: mocks.inspectionJobFindUniqueMock,
         },
+        inspectionLot: {
+          findMany: mocks.inspectionLotFindManyMock,
+        },
         packetMedia: {
           findFirst: vi.fn(),
           update: vi.fn(),
@@ -212,14 +226,19 @@ describe("/api/rd/packet PATCH submit-to-R&D handoff", () => {
     expect(mocks.rndJobCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          companyId: "company-1",
           parentJobId: "job-1",
-          lotId: "lot-1",
+          lotId: null,
           sampleId: "sample-1",
           packetId: "packet-1",
           status: "CREATED",
           jobType: "INITIAL_TEST",
+          packetUse: "TESTING",
+          priority: "MEDIUM",
+          deadline: new Date("2026-04-20T00:00:00.000Z"),
           assignedToId: "rnd-user-1",
         }),
+        select: { id: true, rndJobNumber: true },
       }),
     );
     expect(mocks.packetEventCreateMock).toHaveBeenCalledWith(
@@ -263,6 +282,34 @@ describe("/api/rd/packet PATCH submit-to-R&D handoff", () => {
     );
   });
 
+  it("does not emit duplicate submit events when the packet was already submitted", async () => {
+    mocks.packetFindUniqueMock.mockReset();
+    mocks.packetFindUniqueMock
+      .mockResolvedValueOnce(
+        buildPacketRecord({
+          submittedToRndAt: new Date("2026-04-10T09:15:00.000Z"),
+          submittedToRndBy: "ops-1",
+        }),
+      )
+      .mockResolvedValueOnce(buildPacketRecord())
+      .mockResolvedValueOnce(buildPacketRecord());
+    mocks.rndJobFindFirstMock.mockResolvedValueOnce({ id: "existing-rnd-job" });
+
+    const response = await PATCH(
+      {
+        json: async () => ({
+          packetId: "packet-1",
+          markSubmittedToRnd: true,
+          handedOverToRndTo: "rnd-user-1",
+        }),
+      } as NextRequest,
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.packetEventCreateMock).not.toHaveBeenCalled();
+    expect(mocks.rndJobCreateMock).not.toHaveBeenCalled();
+  });
+
   it("keeps non-submit packet update flow compatible and does not create R&D job", async () => {
     const response = await PATCH(
       {
@@ -277,5 +324,51 @@ describe("/api/rd/packet PATCH submit-to-R&D handoff", () => {
     expect(mocks.rndJobFindFirstMock).not.toHaveBeenCalled();
     expect(mocks.rndJobCreateMock).not.toHaveBeenCalled();
     expect(mocks.packetUpdateMock).toHaveBeenCalled();
+  });
+
+  it("returns structured packet evidence blockers when readiness is not satisfied", async () => {
+    mocks.packetFindUniqueMock.mockReset();
+    mocks.packetFindUniqueMock
+      .mockResolvedValueOnce(
+        buildPacketRecord({
+          packetWeight: null,
+          packetUnit: null,
+          packetType: null,
+          sealLabel: {
+            sealedAt: null,
+            labeledAt: null,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildPacketRecord({
+          packetWeight: null,
+          packetUnit: null,
+          packetType: null,
+          sealLabel: {
+            sealedAt: null,
+            labeledAt: null,
+          },
+        }),
+      );
+
+    const response = await PATCH(
+      {
+        json: async () => ({
+          packetId: "packet-1",
+          markAvailable: true,
+        }),
+      } as NextRequest,
+    );
+
+    expect(response.status).toBe(422);
+    const payload = (await response.json()) as { details?: string };
+    expect(payload.details).toContain("Sample packet evidence");
+    expect(payload.details).toContain("Packet details are incomplete");
+    expect(payload.details).toContain("Packet Management > Packet card > Details");
+    expect(payload.details).toContain("Packet label photo is missing");
+    expect(payload.details).toContain("Seal number is missing");
+    expect(mocks.packetAllocationUpsertMock).not.toHaveBeenCalled();
+    expect(mocks.rndJobCreateMock).not.toHaveBeenCalled();
   });
 });

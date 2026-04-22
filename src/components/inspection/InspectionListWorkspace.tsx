@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, HStack, Input, Select, Spinner, Text, VStack } from "@chakra-ui/react";
+import { Badge, Button, HStack, Input, Select, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
 import { InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
@@ -41,12 +41,12 @@ function getSampleStatus(job: InspectionJob): string {
 function getLotReference(job: InspectionJob): string {
   const lots = job.lots ?? [];
   if (lots.length === 0) {
-    return "No lots";
+    return "No bags";
   }
   if (lots.length === 1) {
-    return lots[0]?.lotNumber ?? "1 lot";
+      return lots[0]?.lotNumber ?? "1 bag";
   }
-  return `${lots[0]?.lotNumber ?? "Lot"} +${lots.length - 1}`;
+    return `${lots[0]?.lotNumber ?? "Bag"} +${lots.length - 1}`;
 }
 
 export function InspectionListWorkspace({
@@ -159,7 +159,7 @@ export function InspectionListWorkspace({
       <PageActionBar
         primaryAction={
           <Button onClick={() => router.push(createHref)}>
-            Create job
+            Create Job
           </Button>
         }
         secondaryActions={
@@ -185,23 +185,22 @@ export function InspectionListWorkspace({
             ))}
           </Select>
         }
-        search={<Input placeholder="Search inspection, customer, lot, plant" value={search} onChange={(event) => setSearch(event.target.value)} size="sm" maxW={{ base: "full", lg: "320px" }} />}
+        search={<Input placeholder="Search job, customer, bag, plant" value={search} onChange={(event) => setSearch(event.target.value)} size="sm" maxW={{ base: "full", lg: "320px" }} />}
         actions={<Button size="sm" variant="outline" onClick={() => { setSearch(""); setStage("all"); }}>Clear</Button>}
       />
 
       {loading ? <PageSkeleton cards={2} rows={3} /> : null}
       {!loading && error ? <InlineErrorState title="Inspection queue unavailable" description={error} onRetry={() => void fetchJobs({ initial: true })} /> : null}
       {!loading && !error ? (
-        <EnterpriseStickyTable>
-          <Box p={3}>
-            <EnterpriseDataTable
+        <EnterpriseStickyTable p={3}>
+          <EnterpriseDataTable
               rows={tableRows}
               rowKey={(row) => row.id}
               emptyLabel="No inspections match these filters."
               columns={[
                 {
                   id: "inspection-id",
-                  header: "Inspection ID",
+                  header: "Job Number",
                   render: (row) => (
                     <Text fontWeight="semibold">
                       {row.inspectionSerialNumber || row.jobReferenceNumber || "—"}
@@ -210,7 +209,7 @@ export function InspectionListWorkspace({
                 },
                 { id: "date", header: "Date", render: (row) => formatDate(row.updatedAt || row.createdAt) },
                 { id: "source", header: "Source / Vendor / Plant", render: (row) => row.plantLocation ? `${row.clientName} • ${row.plantLocation}` : row.clientName },
-                { id: "lot-id", header: "Lot Number", render: (row) => getLotReference(row) },
+                { id: "lot-id", header: "Bag Number", render: (row) => getLotReference(row) },
                 {
                   id: "sample-status",
                   header: "Sample Status",
@@ -241,12 +240,12 @@ export function InspectionListWorkspace({
               rowActions={[
                 {
                   id: "open-detail",
-                  label: "Open Inspection Detail",
+                  label: "Open Job Detail",
                   onClick: (row) => router.push(detailHref(row)),
                 },
                 {
                   id: "open-lot",
-                  label: "Open Lot Detail",
+                  label: "Open Bag Detail",
                   onClick: (row) => {
                     const lot = row.lots?.[0];
                     if (lot) {
@@ -258,7 +257,7 @@ export function InspectionListWorkspace({
                 },
                 {
                   id: "open-lot-workflow",
-                  label: "Open Lot Workflow",
+                  label: "Open Bag Workflow",
                   onClick: (row) => {
                     const lot = row.lots?.[0];
                     if (lot) {
@@ -290,7 +289,6 @@ export function InspectionListWorkspace({
                   : []),
               ]}
             />
-          </Box>
         </EnterpriseStickyTable>
       ) : null}
     </VStack>

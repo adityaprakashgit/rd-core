@@ -1,7 +1,7 @@
 # UI_REVAMP_PROGRESS
 
 ## Last Updated
-2026-04-10 00:22:00 IST
+2026-04-19 00:00:00 IST
 
 ## Governance Sync (Current)
 - Canonical UI architecture authority locked to `docs/enterprise-ui-governance.md`.
@@ -138,6 +138,8 @@
 - Validate `Open Traceability` availability from production, packet, and exception action surfaces.
 - Validate document actions remain context-aware and use canonical labels only.
 - Validate operator routes remain queue-first and free of KPI/dashboard clutter on mobile/tablet.
+- Validate Batch/Bag wording appears only on workflow shells that route through the shared terminology helper, while Job Number and Lot Number remain visible for traceability.
+- Validate sample seal traceability backfill keeps packet-readiness checks aligned on older sealed records.
 
 ## Scope Notes
 - Runtime UI refactor with additive read-only aggregation APIs for traceability, documents, and exceptions.

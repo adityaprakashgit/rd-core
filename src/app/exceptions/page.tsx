@@ -324,7 +324,7 @@ export default function ManagerWorkspacePage() {
       <VStack align="stretch" spacing={5}>
         <PageIdentityBar
           title="Manager Workspace"
-          subtitle="Active jobs, aging lots, bottlenecks, and document/COA risks in scoped queues"
+          subtitle="Active jobs, aging bags, bottlenecks, and document/COA risks in scoped queues"
           breadcrumbs={[{ label: "Manager", href: "/exceptions" }]}
           status={
             <HStack spacing={2}>
@@ -349,7 +349,7 @@ export default function ManagerWorkspacePage() {
 
         <FilterSearchStrip
           filters={<Badge variant="subtle">Scoped Manager View</Badge>}
-          search={<Input size="sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search job, lot, owner, issue" maxW={{ base: "full", lg: "320px" }} />}
+          search={<Input size="sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search job, bag, owner, issue" maxW={{ base: "full", lg: "320px" }} />}
           actions={<Button size="sm" variant="outline" onClick={() => setSearch("")}>Clear</Button>}
         />
 
@@ -362,7 +362,7 @@ export default function ManagerWorkspacePage() {
               <HStack justify="space-between"><Text fontWeight="semibold">Active jobs</Text><Badge variant="subtle">{activeJobsFiltered.length}</Badge></HStack>
               <EnterpriseDataTable rows={activeJobsFiltered} rowKey={(row) => row.id} emptyLabel="No active jobs." columns={[
                 { id: "job", header: "Job Number", render: (row) => row.jobNumber },
-                { id: "lots", header: "Lots", render: (row) => row.lots },
+                { id: "lots", header: "Bags", render: (row) => row.lots },
                 { id: "stage", header: "Current Stage", render: (row) => row.currentStage },
                 { id: "pending", header: "Pending Action", render: (row) => row.pendingAction },
                 { id: "started", header: "Job Started", render: (row) => row.jobStarted },
@@ -375,16 +375,16 @@ export default function ManagerWorkspacePage() {
             </VStack>
 
             <VStack align="stretch" spacing={2}>
-              <HStack justify="space-between"><Text fontWeight="semibold">Lot aging</Text><Badge variant="subtle">{lotAgingFiltered.length}</Badge></HStack>
-              <EnterpriseDataTable rows={lotAgingFiltered} rowKey={(row) => row.id} emptyLabel="No aging lots in scope." columns={[
-                { id: "lot", header: "Lot Number", render: (row) => row.lotNumber },
+              <HStack justify="space-between"><Text fontWeight="semibold">Bag aging</Text><Badge variant="subtle">{lotAgingFiltered.length}</Badge></HStack>
+              <EnterpriseDataTable rows={lotAgingFiltered} rowKey={(row) => row.id} emptyLabel="No aging bags in scope." columns={[
+                { id: "lot", header: "Bag Number", render: (row) => row.lotNumber },
                 { id: "job", header: "Job Number", render: (row) => row.jobNumber },
                 { id: "age", header: "Age", render: (row) => `${row.ageHours}h` },
                 { id: "stage-age", header: "Stage Age", render: (row) => row.stageAge },
                 { id: "milestone", header: "Current Milestone", render: (row) => row.currentMilestone },
                 { id: "sample", header: "Sample Status", render: (row) => row.sampleStatus },
                 { id: "blocker", header: "Blocker", render: (row) => row.blocker },
-              ]} rowActions={[{ id: "open-lot", label: "Open Lot Workflow", onClick: (row) => { router.push(`/jobs/${row.jobRefId}/workflow?lotId=${row.lotRefId}&section=lots`); } }]} />
+              ]} rowActions={[{ id: "open-lot", label: "Open Bag Workflow", onClick: (row) => { router.push(`/jobs/${row.jobRefId}/workflow?lotId=${row.lotRefId}&section=lots`); } }]} />
             </VStack>
 
             <VStack align="stretch" spacing={2}>
@@ -392,7 +392,7 @@ export default function ManagerWorkspacePage() {
               <EnterpriseDataTable rows={bottlenecksFiltered} rowKey={(row) => row.id} emptyLabel="No workflow bottlenecks." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
-                { id: "lot", header: "Lot", render: (row) => row.lotNumber },
+                { id: "lot", header: "Bag", render: (row) => row.lotNumber },
                 { id: "stage", header: "Blocking Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
@@ -404,7 +404,7 @@ export default function ManagerWorkspacePage() {
               <EnterpriseDataTable rows={missingDocsFiltered} rowKey={(row) => row.id} emptyLabel="No missing documents in scope." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
-                { id: "lot", header: "Lot", render: (row) => row.lotNumber },
+                { id: "lot", header: "Bag", render: (row) => row.lotNumber },
                 { id: "stage", header: "Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
@@ -416,7 +416,7 @@ export default function ManagerWorkspacePage() {
               <EnterpriseDataTable rows={dispatchDelaysFiltered} rowKey={(row) => row.id} emptyLabel="No dispatch delays in scope." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
-                { id: "lot", header: "Lot", render: (row) => row.lotNumber },
+                { id: "lot", header: "Bag", render: (row) => row.lotNumber },
                 { id: "stage", header: "Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },
@@ -428,7 +428,7 @@ export default function ManagerWorkspacePage() {
               <EnterpriseDataTable rows={missingCoaFiltered} rowKey={(row) => row.id} emptyLabel="No missing COA in scope." columns={[
                 { id: "type", header: "Issue", render: (row) => row.type },
                 { id: "job", header: "Job", render: (row) => row.jobNumber },
-                { id: "lot", header: "Lot", render: (row) => row.lotNumber },
+                { id: "lot", header: "Bag", render: (row) => row.lotNumber },
                 { id: "stage", header: "Stage", render: (row) => row.stage },
                 { id: "age", header: "Age", render: (row) => row.age },
                 { id: "owner", header: "Owner", render: (row) => row.owner },

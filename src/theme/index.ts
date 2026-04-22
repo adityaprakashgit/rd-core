@@ -41,6 +41,9 @@ export const appTheme = extendTheme({
   },
   styles: {
     global: {
+      html: {
+        fontSize: { base: "15px", md: "15px", xl: "15px" },
+      },
       "html, body": {
         bg: "bg.app",
         color: "text.primary",
@@ -78,6 +81,7 @@ export const appTheme = extendTheme({
         h: "auto",
         px: 3.5,
         py: 2,
+        fontSize: { base: "sm", md: "md" },
         maxW: "100%",
         whiteSpace: "normal",
         textAlign: "center",
@@ -107,14 +111,14 @@ export const appTheme = extendTheme({
         },
       },
       sizes: {
-        sm: { minH: 8, px: 3, fontSize: "sm" },
-        md: { minH: 9, px: 3.5, fontSize: "sm" },
-        lg: { minH: 10, px: 4, fontSize: "md" },
+        sm: { minH: 8, px: 3, fontSize: { base: "sm", md: "md" } },
+        md: { minH: 9, px: 3.5, fontSize: { base: "sm", md: "md" } },
+        lg: { minH: 10, px: 4, fontSize: { base: "md", md: "lg" } },
       },
     },
     FormLabel: {
       baseStyle: {
-        fontSize: "sm",
+        fontSize: { base: "xs", md: "sm" },
         color: "text.secondary",
         fontWeight: "semibold",
       },
@@ -136,8 +140,8 @@ export const appTheme = extendTheme({
         },
       },
       sizes: {
-        sm: { field: { h: 9, px: 3, fontSize: "sm" } },
-        md: { field: { h: 10, px: 3.5, fontSize: "sm" } },
+        sm: { field: { h: 9, px: 3, fontSize: { base: "sm", md: "md" } } },
+        md: { field: { h: 10, px: 3.5, fontSize: { base: "sm", md: "md" } } },
       },
     },
     Select: {
@@ -157,8 +161,8 @@ export const appTheme = extendTheme({
         },
       },
       sizes: {
-        sm: { field: { h: 9, px: 3, fontSize: "sm" } },
-        md: { field: { h: 10, px: 3.5, fontSize: "sm" } },
+        sm: { field: { h: 9, px: 3, fontSize: { base: "sm", md: "md" } } },
+        md: { field: { h: 10, px: 3.5, fontSize: { base: "sm", md: "md" } } },
       },
     },
     Textarea: {
@@ -182,7 +186,7 @@ export const appTheme = extendTheme({
         px: 2,
         py: 0.5,
         fontWeight: "semibold",
-        fontSize: "xs",
+        fontSize: { base: "2xs", md: "xs" },
         letterSpacing: "0.02em",
       },
     },
@@ -209,7 +213,7 @@ export const appTheme = extendTheme({
             top: 0,
             zIndex: 1,
             textTransform: "none",
-            fontSize: "xs",
+            fontSize: { base: "2xs", md: "xs" },
             px: 3,
             py: 2.5,
           },
@@ -217,7 +221,7 @@ export const appTheme = extendTheme({
             borderColor: "border.default",
             px: 3,
             py: 2.5,
-            fontSize: "sm",
+            fontSize: { base: "sm", md: "md" },
           },
           tr: {
             _hover: {
@@ -242,6 +246,7 @@ export const appTheme = extendTheme({
             fontWeight: "medium",
             px: 3,
             py: 2.5,
+            fontSize: { base: "xs", md: "sm" },
             borderRadius: "0",
             _selected: {
               color: "text.primary",

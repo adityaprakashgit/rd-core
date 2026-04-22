@@ -16,6 +16,7 @@
 - Exclude Playground
 - No KPI/dashboard clutter on operational screens
 - Preserve traceability, permissions, validations, and auditability
+- Shared workflow shells may render Batch/Bag terminology in navigation and step labels; canonical record identifiers stay Job Number/Lot Number.
 
 ## Pattern Library Summary
 - Design direction: Zoho-inspired enterprise structure with light visual weight, strong hierarchy, and high scan speed.

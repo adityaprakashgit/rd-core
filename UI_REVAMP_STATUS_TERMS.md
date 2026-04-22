@@ -19,6 +19,11 @@
 - Core object: Lot
 - Exclude Playground
 
+## Execution Terminology Compatibility
+- Shared workflow shells may render Job/Lot terminology as Batch/Bag in navigation and step labels.
+- Canonical identifiers remain Job Number/Lot Number in traceability, PDFs, and audit trails.
+- Legacy evidence-policy aliases remain accepted for imported settings and backfill compatibility only.
+
 ## Workflow Semantics (Must Stay Distinct)
 - **Stage**: where the record is in the process sequence.
 - **Status**: current record state within or across stages.
@@ -43,6 +48,12 @@ Rules:
 - View PDF
 - Share PDF
 - Print PDF
+
+## Execution Surface Labels
+- Batch Number
+- Bag Number
+- Batch Workflow
+- Bag Intake
 
 ## Final Pass Decision Terms
 Allowed decisions:

@@ -13,7 +13,7 @@ describe("image proof policy helpers", () => {
   it("maps required labels to upload category keys", () => {
     expect(
       resolveRequiredImageUploadCategories([
-        "Bag photo with visible LOT no",
+        "Bag photo with visible bag no",
         "Material in bag",
       ]),
     ).toEqual(["BAG_WITH_LOT_NO", "MATERIAL_VISIBLE"]);
@@ -22,10 +22,10 @@ describe("image proof policy helpers", () => {
   it("returns missing required labels from uploaded categories", () => {
     expect(
       getMissingRequiredImageProofLabels(
-        ["Bag photo with visible LOT no", "Material in bag", "Bag condition"],
+        ["Bag photo with visible bag no", "Material in bag", "Bag condition"],
         ["BAG_WITH_LOT_NO", "BAG_CONDITION"],
       ),
-    ).toEqual(["Material visible"]);
+    ).toEqual(["Material in bag"]);
   });
 
   it("dedupes BAG and BAG_WITH_LOT_NO to canonical bag proof in resolver", () => {

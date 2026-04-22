@@ -5,6 +5,9 @@ Legend:
 - `Partial`: Implemented, but not as an explicit standalone workflow node exactly as charted.
 - `Missing`: Not found as a distinct implemented node/automation.
 
+Terminology note:
+- Execution shells may render Batch/Bag wording in workflow chrome, but Job Number and Lot Number remain the canonical identifiers for traceability and reporting.
+
 ## 1) Job Creation Lane
 
 | Flowchart Node | App Implementation | Status | Evidence |

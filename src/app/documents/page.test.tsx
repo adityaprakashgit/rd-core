@@ -128,28 +128,28 @@ function renderPage() {
 }
 
 describe("documents page", () => {
-  it("renders jobs and opens lot groups from compact mobile flow", async () => {
+  it("renders jobs and opens bag groups from compact mobile flow", async () => {
     const fetchMock = vi.fn(async () => createResponse(payload));
     vi.stubGlobal("fetch", fetchMock);
 
     renderPage();
 
     expect((await screen.findAllByText("INS-2026-0002")).length).toBeGreaterThan(0);
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open Lots" }))[0]);
+    fireEvent.click((await screen.findByText("Open Bags")).closest("button") as HTMLButtonElement);
 
     expect(await screen.findByText("Lot 1")).toBeInTheDocument();
     expect(screen.getByText("Inspection Uploads")).toBeInTheDocument();
     expect(screen.getByText("Dispatch Documents")).toBeInTheDocument();
   });
 
-  it("shows normalized statuses in lot groups", async () => {
+  it("shows normalized statuses in bag groups", async () => {
     const fetchMock = vi.fn(async () => createResponse(payload));
     vi.stubGlobal("fetch", fetchMock);
 
     renderPage();
     expect((await screen.findAllByText("Active", { selector: "span" })).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Superseded", { selector: "span" }).length).toBeGreaterThan(0);
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open Lots" }))[0]);
+    fireEvent.click((await screen.findByText("Open Bags")).closest("button") as HTMLButtonElement);
     const drawer = await screen.findByRole("dialog");
     expect(within(drawer).getByText("Current for Dispatch", { selector: "span" })).toBeInTheDocument();
   });
@@ -159,7 +159,7 @@ describe("documents page", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderPage();
-    fireEvent.click((await screen.findAllByRole("button", { name: "Open Lots" }))[0]);
+    fireEvent.click((await screen.findByText("Open Bags")).closest("button") as HTMLButtonElement);
 
     const drawer = await screen.findByRole("dialog");
     const buttons = await within(drawer).findAllByLabelText(/actions$/i);
@@ -176,20 +176,19 @@ describe("documents page", () => {
     expect(missingButton).toBeTruthy();
   });
 
-  it("opens mobile lots drawer from Open Lots action", async () => {
+  it("opens mobile bags drawer from Open Bags action", async () => {
     const fetchMock = vi.fn(async () => createResponse(payload));
     vi.stubGlobal("fetch", fetchMock);
 
     renderPage();
 
-    const openLotsButtons = await screen.findAllByRole("button", { name: "Open Lots" });
-    fireEvent.click(openLotsButtons[0]);
+    fireEvent.click((await screen.findByText("Open Bags")).closest("button") as HTMLButtonElement);
 
     await waitFor(() => {
       const drawer = screen.getByRole("dialog");
-      expect(within(drawer).getByText("Lots")).toBeInTheDocument();
+      expect(within(drawer).getByText("Bags")).toBeInTheDocument();
       expect(within(drawer).getByText("Lot 1")).toBeInTheDocument();
-      expect(within(drawer).getByRole("link", { name: "Open Lot Workflow" })).toBeInTheDocument();
+      expect(within(drawer).getByRole("link", { name: "Open Bag Workflow" })).toBeInTheDocument();
     });
   });
 });

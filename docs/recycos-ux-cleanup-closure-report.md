@@ -148,6 +148,7 @@ Future contributors **MUST**:
 - Prefer neutral enterprise surfaces and semantic chips/icons over saturated contextual blocks
 - Preserve canonical route ownership for core object experiences
 - Treat repeated behavior in 2+ modules as a shared-primitive candidate
+- Keep Batch/Bag wording scoped to execution shells only; Job Number and Lot Number remain the canonical traceability identifiers.
 
 Future contributors **MUST NOT**:
 

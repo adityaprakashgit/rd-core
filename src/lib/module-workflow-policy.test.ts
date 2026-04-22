@@ -60,7 +60,7 @@ describe("module workflow image policy hardening", () => {
   it("flags non-canonical image categories on write validation", () => {
     const issues = validateImagePolicyCategoryBuckets({
       images: {
-        requiredImageCategories: ["Bag photo with visible LOT no"],
+        requiredImageCategories: ["Bag photo with visible bag no"],
         optionalImageCategories: [],
         hiddenImageCategories: [],
         imageTimestampRequired: false,
@@ -68,7 +68,7 @@ describe("module workflow image policy hardening", () => {
     });
 
     expect(issues).toEqual([
-      { bucket: "requiredImageCategories", value: "Bag photo with visible LOT no" },
+      { bucket: "requiredImageCategories", value: "Bag photo with visible bag no" },
     ]);
   });
 });

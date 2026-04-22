@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserFromRequest } from "@/lib/session";
 import { authorize, AuthorizationError } from "@/lib/rbac";
-import { buildSampleCode } from "@/lib/sample-management";
+import { buildSampleCode, isInspectionReadyForSampling } from "@/lib/sample-management";
 
 const sampleInclude = {
   media: true,
@@ -63,9 +63,7 @@ export async function POST(req: NextRequest) {
     }
 
     const incompleteLots = job.lots.filter(
-      (lot) =>
-        lot.inspection?.inspectionStatus !== "COMPLETED" ||
-        lot.inspection?.decisionStatus !== "READY_FOR_SAMPLING",
+      (lot) => !isInspectionReadyForSampling(lot.inspection),
     );
 
     if (incompleteLots.length > 0) {

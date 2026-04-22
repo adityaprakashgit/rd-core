@@ -194,7 +194,7 @@ export function JobIntakeWorkspace({
                 Open inspection
               </Button>
               <Button size="sm" variant="outline" onClick={() => setEditLotId(lot.id)}>
-                Edit lot
+                Edit bag
               </Button>
               <Button
                 size="sm"
@@ -420,7 +420,7 @@ export function JobIntakeWorkspace({
               </HStack>
             ) : null}
             <Button leftIcon={<PackagePlus size={16} />} onClick={onOpen}>
-              Add Lot
+              Add Bag
             </Button>
             <Button
               leftIcon={<ScanFace size={16} />}
@@ -428,7 +428,7 @@ export function JobIntakeWorkspace({
               onClick={() => nextLot && router.push(lotHref(job.id, nextLot.id))}
               isDisabled={!nextLot}
             >
-              {nextLot ? "Open next inspection" : "Open first lot"}
+              {nextLot ? "Open next bag inspection" : "Open first bag"}
             </Button>
           </HStack>
         </HStack>
@@ -436,7 +436,7 @@ export function JobIntakeWorkspace({
         <Card>
           <VStack align="stretch" spacing={4}>
             <WorkflowStepTracker
-              title="Inspection progress"
+              title="Bag inspection progress"
               steps={workflowSteps.map((step) => ({
                 ...step,
                 onClick: () => router.push(getWorkflowStepRoute(job.id, step.id)),
@@ -444,7 +444,7 @@ export function JobIntakeWorkspace({
               compact
             />
             <SimpleGrid display={{ base: "none", lg: "grid" }} columns={{ base: 2, lg: 6 }} spacing={4}>
-              <SectionHint label="Total lots" value={String(intakeSummary.total)} />
+              <SectionHint label="Total bags" value={String(intakeSummary.total)} />
               <SectionHint label="Ready now" value={String(intakeSummary.ready)} />
               <SectionHint label="In progress" value={String(intakeSummary.inProgress)} />
               <SectionHint label="On hold" value={String(intakeSummary.onHold)} />
@@ -466,7 +466,7 @@ export function JobIntakeWorkspace({
                   </VStack>
                 ) : (
                   <WorkbenchPageTemplate
-                    rightLabel="Linked Lot View"
+                    rightLabel="Linked Bag View"
                     left={
                       <VStack align="stretch" spacing={4}>
                         {orderedLots.map((lot) => {
@@ -551,7 +551,7 @@ export function JobIntakeWorkspace({
                                     Open inspection
                                   </Button>
                                   <Button size="sm" variant="outline" onClick={() => setEditLotId(lot.id)}>
-                                    Edit lot
+                                    Edit bag
                                   </Button>
                                   <Button size="sm" variant="outline" leftIcon={<Camera size={14} />} onClick={() => router.push(lotHref(job.id, lot.id))}>
                                     Review proof
@@ -571,24 +571,24 @@ export function JobIntakeWorkspace({
                         <LinkedRecordsPanel
                           items={[
                             { label: "Job Number", value: job.inspectionSerialNumber || job.jobReferenceNumber || "Job" },
-                            { label: "Lot Number", value: selectedLot.lotNumber, href: lotHref(job.id, selectedLot.id) },
+                            { label: "Bag Number", value: selectedLot.lotNumber, href: lotHref(job.id, selectedLot.id) },
                             { label: "Sample", value: selectedLot.sample?.sampleCode || "Pending" },
                             { label: "Packet", value: selectedLot.sample?.packets?.[0]?.packetCode || "Pending" },
                             { label: "Documents", value: `${job.reportSnapshots?.length ?? 0}` },
-                            { label: "Lot Workflow", value: "Open", href: lotHref(job.id, selectedLot.id) },
+                            { label: "Bag Workflow", value: "Open", href: lotHref(job.id, selectedLot.id) },
                           ]}
                         />
                       ) : (
-                        <EmptyWorkState title="Select a lot" description="Choose a lot card to review its linked records." />
+                        <EmptyWorkState title="Select a bag" description="Choose a bag card to review its linked records." />
                       )
                     }
                   />
                 )
               ) : (
-                <EmptyWorkState
-                  title="No lots registered yet"
-                  description="Create the first lot to start this inspection queue."
-                  action={<Button onClick={onOpen}>Add first lot</Button>}
+                  <EmptyWorkState
+                  title="No bags registered yet"
+                  description="Create the first bag to start this inspection queue."
+                  action={<Button onClick={onOpen}>Add first bag</Button>}
                 />
               ),
             },
@@ -651,8 +651,8 @@ export function JobIntakeWorkspace({
                   items={[
                     { label: "Job Number", value: job.inspectionSerialNumber || job.jobReferenceNumber || "Job" },
                     { label: "Client", value: job.clientName },
-                    { label: "Lot Count", value: String(job.lots?.length ?? 0) },
-                    { label: "Current Step", value: presentation?.label ?? job.status },
+                    { label: "Bag Count", value: String(job.lots?.length ?? 0) },
+                    { label: "Current Stage", value: presentation?.label ?? job.status },
                   ]}
                 />
               ),
@@ -696,15 +696,15 @@ export function JobIntakeWorkspace({
                 <LinkedRecordsPanel
                   items={[
                     { label: "Job Number", value: job.inspectionSerialNumber || job.jobReferenceNumber || "Job" },
-                    { label: "Lot Number", value: selectedLot.lotNumber, href: lotHref(job.id, selectedLot.id) },
-                    { label: "Current Step", value: presentation?.label ?? job.status },
+                    { label: "Bag Number", value: selectedLot.lotNumber, href: lotHref(job.id, selectedLot.id) },
+                    { label: "Current Stage", value: presentation?.label ?? job.status },
                     { label: "Sample", value: selectedLot.sample?.sampleCode || "Not Available" },
                     { label: "Packet", value: selectedLot.sample?.packets?.[0]?.packetCode || "Not Available" },
-                    { label: "Lot Workflow", value: "Open", href: lotHref(job.id, selectedLot.id) },
+                    { label: "Bag Workflow", value: "Open", href: lotHref(job.id, selectedLot.id) },
                   ]}
                 />
               ) : (
-                <EmptyWorkState title="Select a lot" description="Choose a lot to view linked records." />
+                  <EmptyWorkState title="Select a bag" description="Choose a bag to view linked records." />
               )}
               <HistoryTimeline
                 events={logs.slice(0, 5).map((log) => ({
@@ -719,14 +719,14 @@ export function JobIntakeWorkspace({
         />
         <MobileActionRail>
           <Button leftIcon={<PackagePlus size={16} />} onClick={onOpen}>
-            Add Lot
+            Add Bag
           </Button>
           <Button
             variant="outline"
             onClick={() => nextLot && router.push(lotHref(job.id, nextLot.id))}
             isDisabled={!nextLot}
           >
-            {nextLot ? "Open next inspection" : "Open first lot"}
+            {nextLot ? "Open next bag inspection" : "Open first bag"}
           </Button>
         </MobileActionRail>
       </VStack>

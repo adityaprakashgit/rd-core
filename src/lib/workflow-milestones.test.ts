@@ -40,12 +40,12 @@ function buildLot(
     createdAt: overrides?.createdAt ?? new Date("2026-04-09T04:00:00.000Z"),
     lotNumber: `LOT-${id}`,
     sealNumber: overrides?.lotSealNo ?? null,
-    mediaFiles:
+        mediaFiles:
       overrides?.mediaFiles ??
       settings.images.requiredImageCategories.map((label) => ({
         category: (
           {
-            "Bag photo with visible LOT no": "BAG_WITH_LOT_NO",
+            "Bag photo with visible bag no": "BAG_WITH_LOT_NO",
             "Material in bag": "MATERIAL_VISIBLE",
             "During Sampling Photo": "SAMPLING_IN_PROGRESS",
             "Sample Completion": "SEALED_BAG",
@@ -144,7 +144,7 @@ describe("workflow milestone rollups", () => {
     expect(update.adminDecisionStatus).toBe("REJECT");
   });
 
-  it("keeps operationsCompletedAt empty until all lots satisfy operations readiness", () => {
+  it("sets operationsCompletedAt once all lots satisfy operations readiness", () => {
     const update = computeJobWorkflowMilestoneUpdate(
       buildJob({
         lots: [
@@ -154,10 +154,10 @@ describe("workflow milestone rollups", () => {
       }),
       settings,
     );
-    expect(update.operationsCompletedAt).toBeUndefined();
+    expect(update.operationsCompletedAt).toBeInstanceOf(Date);
   });
 
-  it("does not roll up handover until all packets are submitted", () => {
+  it("rolls up handover from the primary sample when its packets are submitted", () => {
     const update = computeJobWorkflowMilestoneUpdate(
       buildJob({
         lots: [
@@ -168,22 +168,23 @@ describe("workflow milestone rollups", () => {
       settings,
       { handedOverToRndTo: "rnd-1" },
     );
-    expect(update.handedOverToRndAt).toBeUndefined();
-    expect(update.handedOverToRndTo).toBeUndefined();
+    expect(update.handedOverToRndAt).toEqual(new Date("2026-04-09T09:00:00.000Z"));
+    expect(update.handedOverToRndBy).toBe("ops-1");
+    expect(update.handedOverToRndTo).toBe("rnd-1");
   });
 
-  it("stores the handover target when all packets are submitted", () => {
+  it("stores the latest handover packet timestamp when the primary sample packets are submitted", () => {
     const update = computeJobWorkflowMilestoneUpdate(
       buildJob({
         lots: [
           buildLot("1", { packets: [buildPacket({ id: "packet-1", submittedToRndAt: new Date("2026-04-09T09:00:00.000Z"), submittedToRndBy: "ops-1" })] }),
-          buildLot("2", { packets: [buildPacket({ id: "packet-2", submittedToRndAt: new Date("2026-04-09T09:15:00.000Z"), submittedToRndBy: "ops-1" })] }),
+          buildLot("2", { packets: [buildPacket({ id: "packet-2", submittedToRndAt: null, submittedToRndBy: null })] }),
         ],
       }),
       settings,
       { handedOverToRndTo: "rnd-user-7" },
     );
-    expect(update.handedOverToRndAt).toEqual(new Date("2026-04-09T09:15:00.000Z"));
+    expect(update.handedOverToRndAt).toEqual(new Date("2026-04-09T09:00:00.000Z"));
     expect(update.handedOverToRndBy).toBe("ops-1");
     expect(update.handedOverToRndTo).toBe("rnd-user-7");
   });

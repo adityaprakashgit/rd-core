@@ -12,6 +12,11 @@ type PlaygroundBoardPayload = {
   selectedTrialId?: string | null;
 };
 
+type PlaygroundScope = {
+  requestJobId: string;
+  inspectionJobId: string;
+};
+
 function parseBoard(raw: string | null): PlaygroundBoardPayload {
   if (!raw) return {};
   try {
@@ -22,16 +27,32 @@ function parseBoard(raw: string | null): PlaygroundBoardPayload {
   }
 }
 
-async function resolveJobScope(jobId: string, companyId: string) {
+async function resolveJobScope(jobId: string, companyId: string): Promise<PlaygroundScope | null> {
   const job = await prisma.inspectionJob.findUnique({
     where: { id: jobId },
     select: { id: true, companyId: true },
   });
 
   if (!job || job.companyId !== companyId) {
-    return null;
+    const rndJob = await prisma.rndJob.findUnique({
+      where: { id: jobId },
+      select: { id: true, companyId: true, parentJobId: true },
+    });
+
+    if (!rndJob || rndJob.companyId !== companyId) {
+      return null;
+    }
+
+    return {
+      requestJobId: rndJob.id,
+      inspectionJobId: rndJob.parentJobId,
+    };
   }
-  return job;
+
+  return {
+    requestJobId: job.id,
+    inspectionJobId: job.id,
+  };
 }
 
 async function findOrCreateExperiment(jobId: string) {
@@ -45,7 +66,7 @@ async function findOrCreateExperiment(jobId: string) {
   return prisma.rDExperiment.create({
     data: {
       jobId,
-      title: "R&D Playground",
+      title: "Internal R&D Workspace",
       status: "BUILDING",
       hypothesis: null,
     },
@@ -71,11 +92,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden", details: "Cross-company access is not allowed." }, { status: 403 });
     }
 
-    const experiment = await findOrCreateExperiment(job.id);
+    const experiment = await findOrCreateExperiment(job.inspectionJobId);
     const board = parseBoard(experiment.hypothesis);
 
     const packets = await prisma.packet.findMany({
-      where: { jobId: job.id },
+      where: { jobId: job.inspectionJobId },
       orderBy: [{ lot: { lotNumber: "asc" } }, { packetNo: "asc" }],
       select: {
         id: true,
@@ -87,7 +108,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       experimentId: experiment.id,
-      jobId: job.id,
+      jobId: job.requestJobId,
+      workspaceJobId: job.inspectionJobId,
       status: experiment.status,
       board,
       packets: packets.map((packet) => ({
@@ -102,7 +124,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden", details: error.message }, { status: 403 });
     }
 
-    const message = error instanceof Error ? error.message : "Failed to load playground.";
+    const message = error instanceof Error ? error.message : "Failed to load workspace.";
     return NextResponse.json({ error: "System Error", details: message }, { status: 500 });
   }
 }
@@ -131,7 +153,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden", details: "Cross-company access is not allowed." }, { status: 403 });
     }
 
-    const experiment = await findOrCreateExperiment(job.id);
+    const experiment = await findOrCreateExperiment(job.inspectionJobId);
     if (experiment.status === "LOCKED" && status !== "LOCKED") {
       return NextResponse.json({ error: "Forbidden", details: "Experiment is locked and cannot be modified." }, { status: 403 });
     }
@@ -152,7 +174,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.auditLog.create({
       data: {
-        jobId: job.id,
+        jobId: job.inspectionJobId,
         userId: currentUser.id,
         entity: "PLAYGROUND",
         action,
@@ -176,7 +198,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof AuthorizationError) {
       return NextResponse.json({ error: "Forbidden", details: error.message }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Failed to persist playground.";
+    const message = error instanceof Error ? error.message : "Failed to persist workspace.";
     return NextResponse.json({ error: "System Error", details: message }, { status: 500 });
   }
 }

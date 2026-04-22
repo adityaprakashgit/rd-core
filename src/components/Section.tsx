@@ -11,8 +11,10 @@ export function Section({ title, subtitle, actions, children, ...props }: Sectio
     <Stack spacing={4} {...props}>
       <Stack direction={{ base: "column", md: "row" }} justify="space-between" align={{ base: "stretch", md: "center" }} spacing={3}>
         <Box>
-          <Heading size="sm">{title}</Heading>
-          {subtitle ? <Text fontSize="sm" color="text.secondary">{subtitle}</Text> : null}
+          <Heading fontSize={{ base: "md", md: "lg" }} lineHeight="short">
+            {title}
+          </Heading>
+          {subtitle ? <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary">{subtitle}</Text> : null}
         </Box>
         {actions}
       </Stack>

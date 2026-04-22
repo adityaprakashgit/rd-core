@@ -108,10 +108,10 @@ export default function LoginPage() {
             <Badge colorScheme="brand" variant="subtle" w="fit-content">
               Enterprise Access
             </Badge>
-            <Text fontSize="xl" fontWeight="semibold" color="text.primary">
+            <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="semibold" color="text.primary">
               Sign In
             </Text>
-            <Text color="text.secondary" fontSize="sm">
+            <Text color="text.secondary" fontSize={{ base: "sm", md: "md" }}>
               Continue to your workspace.
             </Text>
           </VStack>
@@ -149,7 +149,7 @@ export default function LoginPage() {
             Continue to Workspace
           </Button>
 
-          <Text fontSize="sm" color="text.secondary" textAlign="center">
+          <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary" textAlign="center">
             New company?{" "}
             <Link color="brand.600" onClick={() => router.push("/signup")}>
               Create account

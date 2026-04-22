@@ -27,6 +27,7 @@ import { buildModuleWorkflowSettingsCreate, canApproveFinalDecision, toModuleWor
 import { prisma } from "@/lib/prisma";
 import { authorize, AuthorizationError } from "@/lib/rbac";
 import { getCurrentUserFromRequest } from "@/lib/session";
+import { getSamplingReadinessInvariantError } from "@/lib/sample-management";
 import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import type {
   InspectionChecklistResponse,
@@ -728,37 +729,68 @@ export async function PATCH(request: NextRequest) {
         }
       }
 
+      const inspectionRecordsToSync = decisionStatus
+        ? await tx.inspection.findMany({
+            where: { jobId: lot.jobId },
+            include: inspectionInclude,
+            orderBy: { createdAt: "asc" },
+          })
+        : [refreshed];
+      const scopedLotById = new Map(scopedLots.map((entry) => [entry.id, entry]));
       const nextInspectionStatus = nextDecisionStatus && nextDecisionStatus !== "PENDING" ? "COMPLETED" : "IN_PROGRESS";
       const nextLotStatus =
         nextDecisionStatus && nextDecisionStatus !== "PENDING" ? nextDecisionStatus : "INSPECTION_IN_PROGRESS";
 
-      await tx.inspection.update({
-        where: { id: inspection.id },
-        data: {
-          ...(overallRemarkProvided ? { overallRemark: nextOverallRemark } : {}),
-          decisionStatus: nextDecisionStatus ?? "PENDING",
-          ...(decisionStatus === "PENDING" && !inspection.sentToAdminAt
-            ? {
-                sentToAdminAt: new Date(),
-                sentToAdminBy: currentUser.id,
-              }
-            : {}),
-          ...(decisionStatus && decisionStatus !== "PENDING"
-            ? {
-                decisionAt: new Date(),
-                decisionBy: currentUser.id,
-                decisionOutcome: mapDecisionOutcome(decisionStatus),
-              }
-            : {}),
-          inspectionStatus: nextInspectionStatus,
-          completedAt: nextInspectionStatus === "COMPLETED" ? new Date() : null,
-          identityRiskFlag: assessment.identityRiskFlag,
-          packagingRiskFlag: assessment.packagingRiskFlag,
-          materialRiskFlag: assessment.materialRiskFlag,
-          samplingBlockedFlag: assessment.samplingBlockedFlag,
-          issueCount: assessment.issueCount,
-        },
+      const samplingInvariantError = getSamplingReadinessInvariantError({
+        inspectionStatus: nextInspectionStatus,
+        decisionStatus: nextDecisionStatus,
       });
+      if (samplingInvariantError) {
+        throw new Error(samplingInvariantError);
+      }
+
+      for (const inspectionRow of inspectionRecordsToSync) {
+        const inspectionLot = scopedLotById.get(inspectionRow.lotId);
+        if (!inspectionLot) {
+          continue;
+        }
+
+        const inspectionAssessment = deriveInspectionAssessment({
+          items: checklistItems,
+          responses: inspectionRow.responses as InspectionChecklistResponse[],
+          issues: inspectionRow.issues as InspectionIssue[],
+          mediaCategories: mergeCanonicalMediaCategories(inspectionRow.mediaFiles, inspectionLot.mediaFiles),
+          requiredMediaCategories: resolveRequiredImageUploadCategories(workflowPolicy.images.requiredImageCategories),
+        });
+
+        await tx.inspection.update({
+          where: { id: inspectionRow.id },
+          data: {
+            ...(inspectionRow.id === inspection.id && overallRemarkProvided ? { overallRemark: nextOverallRemark } : {}),
+            decisionStatus: nextDecisionStatus ?? "PENDING",
+            ...(decisionStatus === "PENDING" && !inspectionRow.sentToAdminAt
+              ? {
+                  sentToAdminAt: new Date(),
+                  sentToAdminBy: currentUser.id,
+                }
+              : {}),
+            ...(decisionStatus && decisionStatus !== "PENDING"
+              ? {
+                  decisionAt: new Date(),
+                  decisionBy: currentUser.id,
+                  decisionOutcome: mapDecisionOutcome(decisionStatus),
+                }
+              : {}),
+            inspectionStatus: nextInspectionStatus,
+            completedAt: nextInspectionStatus === "COMPLETED" ? new Date() : null,
+            identityRiskFlag: inspectionAssessment.identityRiskFlag,
+            packagingRiskFlag: inspectionAssessment.packagingRiskFlag,
+            materialRiskFlag: inspectionAssessment.materialRiskFlag,
+            samplingBlockedFlag: inspectionAssessment.samplingBlockedFlag,
+            issueCount: inspectionAssessment.issueCount,
+          },
+        });
+      }
 
       if (decisionStatus) {
         await tx.inspectionLot.updateMany({
@@ -781,26 +813,6 @@ export async function PATCH(request: NextRequest) {
             finalDecisionAt: decisionAt,
             finalDecisionBy: decisionStatus !== "PENDING" ? currentUser.id : null,
             finalDecisionNote: nextOverallRemark ?? null,
-          },
-        });
-
-        await tx.inspection.updateMany({
-          where: { jobId: lot.jobId },
-          data: {
-            decisionStatus,
-            ...(decisionStatus === "PENDING"
-              ? {
-                  sentToAdminAt: inspection.sentToAdminAt ?? new Date(),
-                  sentToAdminBy: inspection.sentToAdminBy ?? currentUser.id,
-                  decisionAt: null,
-                  decisionBy: null,
-                  decisionOutcome: null,
-                }
-              : {
-                  decisionAt: decisionAt ?? new Date(),
-                  decisionBy: currentUser.id,
-                  decisionOutcome: mapDecisionOutcome(decisionStatus),
-                }),
           },
         });
       }
@@ -900,6 +912,14 @@ export async function PATCH(request: NextRequest) {
         "Complete seal assignment in Seal step before submitting or approving decision.",
         422,
         "SEAL_REQUIRED_FOR_DECISION_SUBMISSION",
+      );
+    }
+    if (message === "READY_FOR_SAMPLING_REQUIRES_COMPLETED_INSPECTION") {
+      return jsonError(
+        "Validation Error",
+        "Mark the inspection completed before marking the lot ready for sampling.",
+        422,
+        "READY_FOR_SAMPLING_REQUIRES_COMPLETED_INSPECTION",
       );
     }
 

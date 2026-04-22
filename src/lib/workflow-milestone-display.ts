@@ -1,8 +1,8 @@
 import type { InspectionJob } from "@/types/inspection";
 
 export type WorkflowMilestoneLabel =
-  | "Job Created"
-  | "Job Started"
+  | "Batch Created"
+  | "Batch Started"
   | "Sent to Admin"
   | "Admin Decision"
   | "Operations Completed"
@@ -40,8 +40,8 @@ export function diffHours(from: string | Date | null | undefined, to?: string | 
 }
 
 export function getCurrentMilestoneStage(job: InspectionJob): WorkflowMilestoneLabel {
-  if (!job.jobStartedAt) return "Job Created";
-  if (!job.sentToAdminAt) return "Job Started";
+  if (!job.jobStartedAt) return "Batch Created";
+  if (!job.sentToAdminAt) return "Batch Started";
   if (!job.adminDecisionAt) return "Sent to Admin";
   if (!job.operationsCompletedAt) return "Admin Decision";
   if (!job.handedOverToRndAt) return "Operations Completed";
@@ -50,9 +50,9 @@ export function getCurrentMilestoneStage(job: InspectionJob): WorkflowMilestoneL
 
 export function getCurrentMilestoneAgeHours(job: InspectionJob): number | null {
   switch (getCurrentMilestoneStage(job)) {
-    case "Job Created":
+    case "Batch Created":
       return diffHours(job.createdAt);
-    case "Job Started":
+    case "Batch Started":
       return diffHours(job.jobStartedAt);
     case "Sent to Admin":
       return diffHours(job.sentToAdminAt);
@@ -69,12 +69,11 @@ export function getCurrentMilestoneAgeHours(job: InspectionJob): number | null {
 
 export function getMilestoneHealthRows(job: InspectionJob) {
   return [
-    { label: "Job Created" as const, at: job.createdAt },
-    { label: "Job Started" as const, at: job.jobStartedAt },
+    { label: "Batch Created" as const, at: job.createdAt },
+    { label: "Batch Started" as const, at: job.jobStartedAt },
     { label: "Sent to Admin" as const, at: job.sentToAdminAt },
     { label: "Admin Decision" as const, at: job.adminDecisionAt },
     { label: "Operations Completed" as const, at: job.operationsCompletedAt },
     { label: "Handed Over to R&D" as const, at: job.handedOverToRndAt },
   ];
 }
-

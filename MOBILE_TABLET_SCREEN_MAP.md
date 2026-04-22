@@ -15,6 +15,8 @@ Stage order used in every screen:
 Canonical lineage model:
 `Job -> Lot -> Sample -> Trial -> Packet -> Dispatch -> COA`
 
+Execution shells may render Batch/Bag wording in the workflow chrome, but Job Number and Lot Number remain the canonical identifiers for traceability and reporting.
+
 Device policy lock:
 - Execution/process pages MUST be task-first and stage-oriented across breakpoints.
 - Registry/oversight pages MAY use dense enterprise list/table patterns.
@@ -211,3 +213,15 @@ Workflow-heavy detail rule:
 - Tablet Layout: Split actions with same naming and order.
 - Validation / Blocking Rules: Failed generation shows inline retry and reason.
 - Success State: Packing list PDF downloaded/viewed/printed/shared.
+
+## Image category labels used on capture cards
+1. Bag photo with visible bag no
+2. Material in bag
+3. During Sampling Photo
+4. Sample Completion
+5. Seal on bag
+6. Bag condition
+7. Whole batch photo
+
+Compatibility note:
+- Legacy aliases remain accepted when loaded from older policy data.

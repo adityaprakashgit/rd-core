@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, HStack, Input, Select, Text, VStack } from "@chakra-ui/react";
+import { Badge, Button, HStack, Input, Select, Text, VStack } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
@@ -74,12 +74,12 @@ type DispatchPrepRow = {
 function lotSummary(job: InspectionJob): string {
   const lots = job.lots ?? [];
   if (lots.length === 0) {
-    return "No lots";
+    return "No bags";
   }
   if (lots.length === 1) {
-    return lots[0]?.lotNumber ?? "1 lot";
+    return lots[0]?.lotNumber ?? "1 bag";
   }
-  return `${lots[0]?.lotNumber ?? "Lot"} +${lots.length - 1}`;
+  return `${lots[0]?.lotNumber ?? "Bag"} +${lots.length - 1}`;
 }
 
 function sampleStatusText(job: InspectionJob): string {
@@ -366,16 +366,15 @@ export function ProductionWorkspaceHome({
               <Text fontWeight="semibold">Pending inspections</Text>
               <Badge variant="subtle">{pendingInspections.length}</Badge>
             </HStack>
-            <EnterpriseStickyTable>
-              <Box p={3}>
-                <EnterpriseDataTable
+            <EnterpriseStickyTable p={3}>
+              <EnterpriseDataTable
                   rows={pendingInspections}
                   rowKey={(row) => row.id}
                   emptyLabel="No pending inspections."
                   columns={[
-                    { id: "inspection", header: "Inspection ID", render: (row) => row.inspectionId },
+                    { id: "inspection", header: "Job Number", render: (row) => row.inspectionId },
                     { id: "customer", header: "Customer / Plant", render: (row) => row.customer },
-                    { id: "lot", header: "Lot Number", render: (row) => row.lotRef },
+                    { id: "lot", header: "Bag Number", render: (row) => row.lotRef },
                     { id: "sample", header: "Sample Status", render: (row) => row.sampleStatus },
                     { id: "user", header: "Assigned User", render: (row) => row.assignedUser },
                     { id: "stage", header: "Current Stage", render: (row) => row.stage },
@@ -396,7 +395,7 @@ export function ProductionWorkspaceHome({
                   rowActions={[
                     {
                       id: "open-inspection",
-                      label: "Open Inspection",
+                      label: "Open Job",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(detailHref(job));
@@ -404,7 +403,7 @@ export function ProductionWorkspaceHome({
                     },
                     {
                       id: "open-lot",
-                      label: "Open Lot",
+                      label: "Open Bag",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (!job) return;
@@ -418,7 +417,7 @@ export function ProductionWorkspaceHome({
                     { id: "open-docs", label: "Open Documents", onClick: (row) => router.push(`/documents?job=${row.inspectionId}`) },
                     {
                       id: "open-lot-workflow",
-                      label: "Open Lot Workflow",
+                      label: "Open Bag Workflow",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job && row.lotRefId) {
@@ -448,23 +447,21 @@ export function ProductionWorkspaceHome({
                       : []),
                   ]}
                 />
-              </Box>
             </EnterpriseStickyTable>
           </VStack>
 
           <VStack align="stretch" spacing={2}>
             <HStack justify="space-between">
-              <Text fontWeight="semibold">Lots needing action</Text>
+              <Text fontWeight="semibold">Bags needing action</Text>
               <Badge variant="subtle">{lotsNeedingAction.length}</Badge>
             </HStack>
-            <EnterpriseStickyTable>
-              <Box p={3}>
-                <EnterpriseDataTable
+            <EnterpriseStickyTable p={3}>
+              <EnterpriseDataTable
                   rows={lotsNeedingAction}
                   rowKey={(row) => row.id}
-                  emptyLabel="No lots need immediate action."
+                  emptyLabel="No bags need immediate action."
                   columns={[
-                    { id: "lot", header: "Lot Number", render: (row) => row.lotNumber },
+                    { id: "lot", header: "Bag Number", render: (row) => row.lotNumber },
                     { id: "material", header: "Material", render: (row) => row.materialName },
                     { id: "sample", header: "Sample Status", render: (row) => row.sampleStatus },
                     { id: "packet", header: "Packet State", render: (row) => row.packetStatus },
@@ -474,7 +471,7 @@ export function ProductionWorkspaceHome({
                   rowActions={[
                     {
                       id: "open-lot",
-                      label: "Open Lot",
+                      label: "Open Bag",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(lotHref(job, row.lotRefId));
@@ -482,7 +479,7 @@ export function ProductionWorkspaceHome({
                     },
                     {
                       id: "open-inspection",
-                      label: "Open Inspection",
+                      label: "Open Job",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(detailHref(job));
@@ -491,7 +488,7 @@ export function ProductionWorkspaceHome({
                     { id: "open-docs", label: "Open Documents", onClick: (row) => router.push(`/documents?lot=${row.lotNumber}`) },
                     {
                       id: "open-lot-workflow",
-                      label: "Open Lot Workflow",
+                      label: "Open Bag Workflow",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(lotHref(job, row.lotRefId));
@@ -499,7 +496,6 @@ export function ProductionWorkspaceHome({
                     },
                   ]}
                 />
-              </Box>
             </EnterpriseStickyTable>
           </VStack>
 
@@ -508,15 +504,14 @@ export function ProductionWorkspaceHome({
               <Text fontWeight="semibold">Packet-related pending work</Text>
               <Badge variant="subtle">{packetPendingWork.length}</Badge>
             </HStack>
-            <EnterpriseStickyTable>
-              <Box p={3}>
-                <EnterpriseDataTable
+            <EnterpriseStickyTable p={3}>
+              <EnterpriseDataTable
                   rows={packetPendingWork}
                   rowKey={(row) => row.id}
                   emptyLabel="No packet-related pending work."
                   columns={[
                     { id: "packet", header: "Packet ID", render: (row) => row.packetId },
-                    { id: "lot", header: "Lot Number", render: (row) => row.lotNumber },
+                    { id: "lot", header: "Bag Number", render: (row) => row.lotNumber },
                     { id: "sample", header: "Sample ID", render: (row) => row.sampleId },
                     { id: "packetStatus", header: "Packet Status", render: (row) => row.packetStatus },
                     { id: "dispatch", header: "Dispatch State", render: (row) => row.dispatchState },
@@ -534,7 +529,7 @@ export function ProductionWorkspaceHome({
                     },
                     {
                       id: "open-lot",
-                      label: "Open Lot",
+                      label: "Open Bag",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(lotHref(job, row.lotRefId));
@@ -542,7 +537,7 @@ export function ProductionWorkspaceHome({
                     },
                     {
                       id: "open-lot-workflow",
-                      label: "Open Lot Workflow",
+                      label: "Open Bag Workflow",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(lotHref(job, row.lotRefId));
@@ -550,7 +545,6 @@ export function ProductionWorkspaceHome({
                     },
                   ]}
                 />
-              </Box>
             </EnterpriseStickyTable>
           </VStack>
 
@@ -559,15 +553,14 @@ export function ProductionWorkspaceHome({
               <Text fontWeight="semibold">Dispatch preparation items</Text>
               <Badge variant="subtle">{dispatchPrep.length}</Badge>
             </HStack>
-            <EnterpriseStickyTable>
-              <Box p={3}>
-                <EnterpriseDataTable
+            <EnterpriseStickyTable p={3}>
+              <EnterpriseDataTable
                   rows={dispatchPrep}
                   rowKey={(row) => row.id}
                   emptyLabel="No dispatch preparation blockers."
                   columns={[
                     { id: "job", header: "Job Number", render: (row) => row.jobNumber },
-                    { id: "lot", header: "Lot Number", render: (row) => row.lotNumber },
+                    { id: "lot", header: "Bag Number", render: (row) => row.lotNumber },
                     { id: "coa", header: "COA", render: (row) => row.coaStatus },
                     { id: "docs", header: "Missing Documents", render: (row) => row.pendingDocs },
                     { id: "ready", header: "Dispatch Readiness", render: (row) => row.dispatchReadiness },
@@ -585,7 +578,7 @@ export function ProductionWorkspaceHome({
                     },
                     {
                       id: "open-inspection",
-                      label: "Open Inspection",
+                      label: "Open Job",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(detailHref(job));
@@ -593,7 +586,7 @@ export function ProductionWorkspaceHome({
                     },
                     {
                       id: "open-lot-workflow",
-                      label: "Open Lot Workflow",
+                      label: "Open Bag Workflow",
                       onClick: (row) => {
                         const job = getJobById(row.jobRefId);
                         if (job) router.push(lotHref(job, row.lotRefId));
@@ -601,7 +594,6 @@ export function ProductionWorkspaceHome({
                     },
                   ]}
                 />
-              </Box>
             </EnterpriseStickyTable>
           </VStack>
 

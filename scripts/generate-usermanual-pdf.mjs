@@ -24,13 +24,13 @@ const sections = {
     "7. Packing List: download, share, print, or view the packing list PDF.",
   ],
   evidence: [
-    "Bag photo with visible LOT no",
+    "Bag photo with visible bag no",
     "Material in bag",
     "During Sampling Photo",
     "Sample Completion",
     "Seal on bag",
     "Bag condition",
-    "Whole Job bag palletized and packed",
+    "Whole batch photo",
   ],
   captureRules: [
     "Scan Seal first. Use Capture Seal Photo if scanning fails.",

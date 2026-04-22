@@ -3,6 +3,7 @@ import {
   Blocks,
   ClipboardCheck,
   Ellipsis,
+  Beaker,
   FlaskConical,
   Home,
   Settings,
@@ -134,6 +135,16 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     },
   },
   {
+    id: "playground",
+    label: "Playground",
+    href: "/playground",
+    icon: Beaker,
+    roles: ["ADMIN", "RND"],
+    activeMatch: /^\/(playground|masterplayground)(\/|$)/,
+    mobileTabGroup: "more",
+    mobilePriority: 4.5,
+  },
+  {
     id: "documents",
     label: "Documents",
     href: "/documents",
@@ -190,32 +201,32 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
 export const PAGE_DEFINITIONS: PageDefinition[] = [
   {
     id: "jobs-registry",
-    title: "Jobs",
-    subtitle: "Unified job registry with workflow-first execution routing.",
+    title: "Batches",
+    subtitle: "Unified batch registry with workflow-first execution routing.",
     moduleId: "jobs",
     matcher: /^\/jobs$/,
-    breadcrumbs: [{ label: "Jobs", href: "/jobs" }],
+    breadcrumbs: [{ label: "Batches", href: "/jobs" }],
   },
   {
     id: "job-detail",
-    title: "Job Detail",
-    subtitle: "Job context, linked records, and workflow entry for the selected job.",
+    title: "Batch Detail",
+    subtitle: "Batch context, linked records, and workflow entry for the selected batch.",
     moduleId: "jobs",
     matcher: /^\/jobs\/[^/]+$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Detail" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Detail" },
     ],
   },
   {
     id: "jobs-workflow",
-    title: "Job Workflow",
-    subtitle: "One guided flow from job basics through lots, proof, packets, and R&D submission.",
+    title: "Batch Workflow",
+    subtitle: "One guided flow from batch basics through bags, proof, packets, and R&D submission.",
     moduleId: "jobs",
     matcher: /^\/jobs\/[^/]+\/workflow$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Workflow" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Workflow" },
     ],
   },
   {
@@ -251,77 +262,85 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
     breadcrumbs: [{ label: "Home", href: "/admin" }],
   },
   {
+    id: "playground-home",
+    title: "Playground",
+    subtitle: "Sandbox workspace for building, validating, executing, trialing, and locking experiment flows.",
+    moduleId: "playground",
+    matcher: /^\/playground$/,
+    breadcrumbs: [{ label: "Playground", href: "/playground" }],
+  },
+  {
     id: "inspection-list",
-    title: "Inspection",
-    subtitle: "Operational inspection queue with explicit lot linkage and primary next actions.",
+    title: "Bag Inspection",
+    subtitle: "Operational inspection queue with explicit bag linkage and primary next actions.",
     moduleId: "inspection",
     matcher: /^\/operations$/,
-    breadcrumbs: [{ label: "Inspection", href: "/operations" }],
+    breadcrumbs: [{ label: "Bag Inspection", href: "/operations" }],
   },
   {
     id: "inspection-detail-legacy-userinsp",
-    title: "Job Workflow",
-    subtitle: "Legacy inspection route redirected into the canonical job workflow.",
+    title: "Batch Workflow",
+    subtitle: "Legacy inspection route redirected into the canonical batch workflow.",
     moduleId: "jobs",
     matcher: /^\/userinsp\/job\/[^/]+$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Workflow" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Workflow" },
     ],
   },
   {
     id: "inspection-detail-legacy-operations",
-    title: "Job Workflow",
-    subtitle: "Legacy operations route redirected into the canonical job workflow.",
+    title: "Batch Workflow",
+    subtitle: "Legacy operations route redirected into the canonical batch workflow.",
     moduleId: "jobs",
     matcher: /^\/operations\/job\/[^/]+$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Workflow" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Workflow" },
     ],
   },
   {
     id: "inspection-lot-legacy-userinsp",
-    title: "Job Workflow",
-    subtitle: "Legacy lot route redirected into the canonical job workflow.",
+    title: "Batch Workflow",
+    subtitle: "Legacy bag route redirected into the canonical batch workflow.",
     moduleId: "jobs",
     matcher: /^\/userinsp\/job\/[^/]+\/lot\/[^/]+$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Workflow" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Workflow" },
     ],
   },
   {
     id: "inspection-lot-legacy-operations",
-    title: "Job Workflow",
-    subtitle: "Legacy lot route redirected into the canonical job workflow.",
+    title: "Batch Workflow",
+    subtitle: "Legacy bag route redirected into the canonical batch workflow.",
     moduleId: "jobs",
     matcher: /^\/operations\/job\/[^/]+\/lot\/[^/]+$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Workflow" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Workflow" },
     ],
   },
   {
     id: "packet-legacy-userinsp",
-    title: "Job Workflow",
-    subtitle: "Legacy packet route redirected into the canonical job workflow.",
+    title: "Batch Workflow",
+    subtitle: "Legacy packet route redirected into the canonical batch workflow.",
     moduleId: "jobs",
     matcher: /^\/userinsp\/job\/[^/]+\/lot\/[^/]+\/packet$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Workflow" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Workflow" },
     ],
   },
   {
     id: "packet-legacy-operations",
-    title: "Job Workflow",
-    subtitle: "Legacy packet route redirected into the canonical job workflow.",
+    title: "Batch Workflow",
+    subtitle: "Legacy packet route redirected into the canonical batch workflow.",
     moduleId: "jobs",
     matcher: /^\/operations\/job\/[^/]+\/lot\/[^/]+\/packet$/,
     breadcrumbs: [
-      { label: "Jobs", href: "/jobs" },
-      { label: "Job Workflow" },
+      { label: "Batches", href: "/jobs" },
+      { label: "Batch Workflow" },
     ],
   },
   {
@@ -332,16 +351,16 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
     matcher: /^\/(rnd\/jobs\/[^/]+|userrd\/job\/[^/]+)$/,
     breadcrumbs: [
       { label: "R&D", href: "/rnd" },
-      { label: "R&D Job Detail" },
+      { label: "R&D Batch Detail" },
     ],
   },
   {
     id: "job-orchestration-legacy",
-    title: "Jobs",
-    subtitle: "Legacy job orchestration route retained while the unified jobs registry becomes canonical.",
+    title: "Batches",
+    subtitle: "Legacy batch orchestration route retained while the unified batches registry becomes canonical.",
     moduleId: "jobs",
     matcher: /^\/rd$/,
-    breadcrumbs: [{ label: "Jobs", href: "/jobs" }],
+    breadcrumbs: [{ label: "Batches", href: "/jobs" }],
   },
   {
     id: "documents-home",
@@ -372,24 +391,24 @@ export const PAGE_DEFINITIONS: PageDefinition[] = [
   },
   {
     id: "lot-detail-route",
-    title: "Lot Detail",
-    subtitle: "Direct lot lookup redirected into the canonical job workflow.",
+    title: "Bag Detail",
+    subtitle: "Direct bag lookup redirected into the canonical batch workflow.",
     moduleId: "documents",
     matcher: /^\/lots\/[^/]+$/,
     breadcrumbs: [
       { label: "Documents", href: "/documents" },
-      { label: "Lot Detail" },
+      { label: "Bag Detail" },
     ],
   },
   {
     id: "sample-detail-route",
-    title: "Sample Detail",
-    subtitle: "Direct homogeneous sample lookup redirected into the job-level workflow.",
+    title: "Batch Sample Detail",
+    subtitle: "Direct homogeneous sample lookup redirected into the batch-level workflow.",
     moduleId: "rnd",
     matcher: /^\/samples\/[^/]+$/,
     breadcrumbs: [
       { label: "R&D", href: "/rnd" },
-      { label: "Sample Detail" },
+      { label: "Batch Sample Detail" },
     ],
   },
   {
@@ -586,15 +605,15 @@ export function getMobileTabDefinitions(role: NormalizedRole | null | undefined)
             activeMatch: /^\/(exceptions|status)(\/|$)/,
           },
         ]),
-    {
-      id: "more",
-      label: "More",
-      icon: Ellipsis,
-      activeMatch: /^\/(jobs|settings|admin|master|rnd|userrd|rd)(\/|$)/,
-      isMore: true,
-    },
-  ];
-}
+      {
+        id: "more",
+        label: "More",
+        icon: Ellipsis,
+        activeMatch: /^\/(jobs|settings|admin|master|rnd|userrd|rd|playground|masterplayground)(\/|$)/,
+        isMore: true,
+      },
+    ];
+  }
 
 export function getMobileMoreModules(role: NormalizedRole | null | undefined): ModuleDefinition[] {
   if (!role) {
@@ -608,5 +627,5 @@ export function getMobileMoreModules(role: NormalizedRole | null | undefined): M
     .sort((left, right) => (left.mobilePriority ?? 999) - (right.mobilePriority ?? 999));
 }
 
-export const GLOBAL_SEARCH_PLACEHOLDER = "Search Lot ID, Job ID, Sample ID, Packet ID, Dispatch ID, Certificate";
+export const GLOBAL_SEARCH_PLACEHOLDER = "Search Bag ID, Batch ID, Sample ID, Packet ID, Dispatch ID, Certificate";
 export const GLOBAL_FILTER_ICON = SlidersHorizontal;

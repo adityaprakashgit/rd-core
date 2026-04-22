@@ -5,7 +5,6 @@ import {
   Badge,
   Box,
   Button,
-  Divider,
   FormControl,
   FormLabel,
   Heading,
@@ -51,9 +50,9 @@ type WeightRow = {
 };
 
 const wizardSteps = [
-  { id: "details", label: "Lot basics" },
+  { id: "details", label: "Bag basics" },
   { id: "quantity", label: "Quantity" },
-  { id: "photos", label: "Photos" },
+  { id: "photos", label: "Bag evidence" },
   { id: "review", label: "Review" },
 ] as const;
 
@@ -70,10 +69,6 @@ const emptyPhotos = photoBlueprint.reduce<Record<string, File | null>>((acc, ite
   acc[item.category] = null;
   return acc;
 }, {});
-
-function formatModeLabel(mode: QuantityMode) {
-  return mode === "MULTI_WEIGHT" ? "Multi Weight" : "Single Piece";
-}
 
 export function LotIntakeWizard({
   jobId,
@@ -159,10 +154,10 @@ export function LotIntakeWizard({
 
   function goNext() {
     if (!canAdvanceFromCurrentStep()) {
-      setSurfaceError(stepIndex === 2 ? "Required evidence photos are still missing." : "Required lot details are still missing.");
+      setSurfaceError(stepIndex === 2 ? "Required evidence photos are still missing." : "Required bag details are still missing.");
       toast({
         title: "Finish the current step",
-        description: stepIndex === 2 ? "Required evidence photos are still missing." : "Required lot details are still missing.",
+        description: stepIndex === 2 ? "Required evidence photos are still missing." : "Required bag details are still missing.",
         status: "warning",
       });
       return;
@@ -170,21 +165,6 @@ export function LotIntakeWizard({
 
     setStepIndex((current) => Math.min(current + 1, wizardSteps.length - 1));
     setSurfaceError(null);
-  }
-
-  function updateWeightRow(id: string, patch: Partial<WeightRow>) {
-    setWeightRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
-  }
-
-  function addWeightRow() {
-    setWeightRows((rows) => [
-      ...rows,
-        {
-        id: createRandomId(),
-        bagNo: String(rows.length + 1),
-        weight: "",
-      },
-    ]);
   }
 
   async function uploadPhoto(lotId: string, category: string, file: File) {
@@ -300,7 +280,7 @@ export function LotIntakeWizard({
               <Text fontWeight="semibold" color="text.primary">
                 {photo.title}
               </Text>
-              <Text fontSize="sm" color="text.secondary" mt={1}>
+              <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary" mt={1}>
                 {photo.hint}
               </Text>
             </Box>
@@ -324,15 +304,15 @@ export function LotIntakeWizard({
             {file ? (
               <VStack spacing={2}>
                 <Icon as={CheckCircle2} color="green.500" boxSize={8} />
-                <Text fontSize="sm" color="green.700" fontWeight="semibold">
+                <Text fontSize={{ base: "sm", md: "md" }} color="green.700" fontWeight="semibold">
                   {file.name}
                 </Text>
               </VStack>
             ) : (
               <VStack spacing={2}>
                 <Icon as={ImageIcon} color="text.muted" boxSize={8} />
-                <Text fontSize="sm" color="text.secondary">
-                  Camera-first capture placeholder
+                <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary">
+                  Camera-first capture area
                 </Text>
               </VStack>
             )}
@@ -379,12 +359,12 @@ export function LotIntakeWizard({
           <Stack spacing={3}>
             <HStack justify="space-between" align="center">
               <Box>
-                <Badge colorScheme="brand">LOT INTAKE</Badge>
+                <Badge colorScheme="brand">BAG INTAKE</Badge>
                 <Heading size="lg" mt={2}>
-                  Add lot
+                  Add bag
                 </Heading>
-                <Text fontSize="sm" color="text.secondary" mt={1}>
-                  One screen, one task, one clear next step.
+                <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary" mt={1}>
+                  One screen, one bag, one clear next step.
                 </Text>
               </Box>
               <ModalCloseButton position="static" />
@@ -420,16 +400,16 @@ export function LotIntakeWizard({
                       <Package2 size={20} />
                     </Box>
                     <Box>
-                      <Heading size="md">Lot basics</Heading>
-                      <Text color="text.secondary" fontSize="sm" mt={1}>
-                        Keep typing to the minimum needed to start inspection evidence.
+                      <Heading size="md">Bag basics</Heading>
+                      <Text color="text.secondary" fontSize={{ base: "sm", md: "md" }} mt={1}>
+                        Keep typing to the minimum needed to start bag evidence capture.
                       </Text>
                     </Box>
                   </HStack>
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
                     <FormControl isRequired>
-                      <FormLabel>Lot no</FormLabel>
-                      <Input value={lotNumber} onChange={(event) => setLotNumber(event.target.value)} placeholder="e.g. LOT-018" />
+                      <FormLabel>Bag no</FormLabel>
+                      <Input value={lotNumber} onChange={(event) => setLotNumber(event.target.value)} placeholder="e.g. BAG-018" />
                     </FormControl>
                     <FormControl>
                       <FormLabel>Material category</FormLabel>
@@ -453,7 +433,7 @@ export function LotIntakeWizard({
                     </Box>
                     <Box>
                       <Heading size="md">Single Piece quantity</Heading>
-                      <Text color="text.secondary" fontSize="sm" mt={1}>
+                      <Text color="text.secondary" fontSize={{ base: "sm", md: "md" }} mt={1}>
                         Capture a simple count and the overall weight. (At least one weight dimension is required to proceed)
                       </Text>
                     </Box>
@@ -492,9 +472,9 @@ export function LotIntakeWizard({
                     <Camera size={20} />
                   </Box>
                   <Box>
-                    <Heading size="md">Capture inspection evidence photos</Heading>
-                    <Text color="text.secondary" fontSize="sm" mt={1}>
-                      Think social story flow: capture, confirm, continue.
+                    <Heading size="md">Capture bag evidence photos</Heading>
+                    <Text color="text.secondary" fontSize={{ base: "sm", md: "md" }} mt={1}>
+                      Capture the bag evidence needed to move into inspection and seal work.
                     </Text>
                   </Box>
                 </HStack>
@@ -513,22 +493,22 @@ export function LotIntakeWizard({
                         <ShieldCheck size={20} />
                       </Box>
                       <Box>
-                        <Heading size="md">Review lot intake</Heading>
-                        <Text color="text.secondary" fontSize="sm" mt={1}>
-                          One last glance before the lot enters the queue.
+                        <Heading size="md">Review bag intake</Heading>
+                        <Text color="text.secondary" fontSize={{ base: "sm", md: "md" }} mt={1}>
+                          One last glance before the bag enters the queue.
                         </Text>
                       </Box>
                     </HStack>
                     <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
                       <Box>
-                        <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
-                          Lot
+                        <Text fontSize={{ base: "xs", md: "sm" }} textTransform="uppercase" color="text.muted" fontWeight="bold">
+                          Bag
                         </Text>
                         <Text fontWeight="semibold" mt={1}>{lotNumber}</Text>
                         <Text color="text.secondary">{lotMaterialCategory || "Item"}</Text>
                       </Box>
                       <Box>
-                        <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                        <Text fontSize={{ base: "xs", md: "sm" }} textTransform="uppercase" color="text.muted" fontWeight="bold">
                           Mode
                         </Text>
                         <Text fontWeight="semibold" mt={1}>Single Piece</Text>
@@ -537,7 +517,7 @@ export function LotIntakeWizard({
                         </Text>
                       </Box>
                       <Box>
-                        <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                        <Text fontSize={{ base: "xs", md: "sm" }} textTransform="uppercase" color="text.muted" fontWeight="bold">
                           Photos
                         </Text>
                         <Text fontWeight="semibold" mt={1}>
@@ -548,7 +528,7 @@ export function LotIntakeWizard({
                         </Text>
                       </Box>
                       <Box>
-                        <Text fontSize="xs" textTransform="uppercase" color="text.muted" fontWeight="bold">
+                        <Text fontSize={{ base: "xs", md: "sm" }} textTransform="uppercase" color="text.muted" fontWeight="bold">
                           Remarks
                         </Text>
                         <Text color="text.secondary" mt={1}>

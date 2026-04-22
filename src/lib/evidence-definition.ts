@@ -3,25 +3,32 @@ import type { InspectionMediaCategory, SampleMediaType } from "@/types/inspectio
 export type SamplingStepKey = "before" | "during" | "after";
 export type SamplingStepCategory = "BEFORE" | "DURING" | "AFTER";
 export type CanonicalEvidenceCategory = Exclude<InspectionMediaCategory, "BAG" | "SEAL" | "DURING">;
+export type WorkflowEvidenceGroup = {
+  id: "batch" | "bag" | "packet";
+  title: string;
+  description: string;
+  categories: readonly InspectionMediaCategory[];
+  scope: "batch" | "bag" | "sample-packet";
+};
 
 export const EVIDENCE_CATEGORY_LABELS: Record<InspectionMediaCategory, string> = {
-  BEFORE: "Sampling before photo",
-  DURING: "Sampling during photo",
-  AFTER: "Sampling after photo",
+  BEFORE: "Batch before photo",
+  DURING: "Batch during photo",
+  AFTER: "Batch after photo",
   BAG: "Bag photo",
   SEAL: "Seal photo",
-  BAG_WITH_LOT_NO: "Bag with lot number",
-  MATERIAL_VISIBLE: "Material visible",
-  SAMPLING_IN_PROGRESS: "Sampling in progress",
-  SEALED_BAG: "Sealed bag",
-  SEAL_CLOSEUP: "Seal close-up",
+  BAG_WITH_LOT_NO: "Bag photo with visible bag no",
+  MATERIAL_VISIBLE: "Material in bag",
+  SAMPLING_IN_PROGRESS: "During sampling photo",
+  SEALED_BAG: "Sealed bag photo",
+  SEAL_CLOSEUP: "Seal photo with seal number",
   BAG_CONDITION: "Bag condition",
   DAMAGE_PHOTO: "Damage photo",
-  HOMOGENEOUS: "Homogeneous sample",
-  LOT_OVERVIEW: "Lot overview photo",
-  BAG_CLOSEUP: "Bag / container close-up",
-  LABEL_CLOSEUP: "Label close-up",
-  INSPECTION_IN_PROGRESS: "Inspection in progress",
+  HOMOGENEOUS: "Homogeneous sample making photo",
+  LOT_OVERVIEW: "Whole batch photo",
+  BAG_CLOSEUP: "Sample packet bag photo",
+  LABEL_CLOSEUP: "Sample packet ID photo",
+  INSPECTION_IN_PROGRESS: "Batch inspection in progress",
   CONTAMINATION_PHOTO: "Contamination photo",
 };
 
@@ -48,12 +55,26 @@ const CANONICAL_EVIDENCE_CATEGORY_SET = new Set<string>(CANONICAL_EVIDENCE_CATEG
 export const LEGACY_EVIDENCE_CATEGORY_ALIASES: Record<string, CanonicalEvidenceCategory> = {
   // Legacy policy labels
   "Bag photo with visible LOT no": "BAG_WITH_LOT_NO",
+  "Bag photo with visible bag no": "BAG_WITH_LOT_NO",
+  "Batch before photo": "BEFORE",
+  "Batch during photo": "SAMPLING_IN_PROGRESS",
+  "Batch after photo": "AFTER",
   "Material in bag": "MATERIAL_VISIBLE",
   "During Sampling Photo": "SAMPLING_IN_PROGRESS",
+  "During sampling photo": "SAMPLING_IN_PROGRESS",
   "Sample Completion": "SEALED_BAG",
+  "Sealed bag photo": "SEALED_BAG",
   "Seal on bag": "SEAL_CLOSEUP",
+  "Seal photo": "SEAL_CLOSEUP",
+  "Seal photo with seal number": "SEAL_CLOSEUP",
   "Bag condition": "BAG_CONDITION",
   "Whole Job bag palletized and packed": "LOT_OVERVIEW",
+  "Whole Batch bag palletized and packed": "LOT_OVERVIEW",
+  "Whole batch photo": "LOT_OVERVIEW",
+  "Homogeneous sample making photo": "HOMOGENEOUS",
+  "Sample packet bag photo": "BAG_CLOSEUP",
+  "Sample packet ID photo": "LABEL_CLOSEUP",
+  "Batch inspection in progress": "INSPECTION_IN_PROGRESS",
 
   // Corrupted legacy variants found in settings payloads
   BagphotowithvisibleLOTno: "BAG_WITH_LOT_NO",
@@ -94,6 +115,7 @@ export const LABEL_TO_CATEGORY_KEY_MAP: Record<string, CanonicalEvidenceCategory
   "Bag photo": "BAG_WITH_LOT_NO",
   "Seal photo": "SEALED_BAG",
   "Sampling during photo": "SAMPLING_IN_PROGRESS",
+  "Sealed sample photo": "SEALED_BAG",
 };
 
 export function normalizeEvidenceCategoryKey(value: unknown): CanonicalEvidenceCategory | null {
@@ -158,6 +180,26 @@ export const INSPECTION_REQUIRED_MEDIA_CATEGORIES = [
   "LOT_OVERVIEW",
 ] as const satisfies readonly InspectionMediaCategory[];
 
+export const BATCH_EVIDENCE_CATEGORIES = [
+  "LOT_OVERVIEW",
+] as const satisfies readonly InspectionMediaCategory[];
+
+export const BAG_EVIDENCE_CATEGORIES = [
+  "BAG_WITH_LOT_NO",
+  "MATERIAL_VISIBLE",
+  "SAMPLING_IN_PROGRESS",
+  "SEALED_BAG",
+  "SEAL_CLOSEUP",
+  "BAG_CONDITION",
+  "DAMAGE_PHOTO",
+] as const satisfies readonly InspectionMediaCategory[];
+
+export const SAMPLE_PACKET_EVIDENCE_CATEGORIES = [
+  "HOMOGENEOUS",
+  "BAG_CLOSEUP",
+  "LABEL_CLOSEUP",
+] as const satisfies readonly InspectionMediaCategory[];
+
 export const LOT_SAMPLING_STEP_DEFINITIONS: ReadonlyArray<{
   key: SamplingStepKey;
   category: SamplingStepCategory;
@@ -174,10 +216,10 @@ export const LOT_INTAKE_EVIDENCE_ITEMS: ReadonlyArray<{
   required: boolean;
   hint: string;
 }> = [
-  { category: "BAG_WITH_LOT_NO", required: true, hint: "LOT number must be visible in frame." },
-  { category: "MATERIAL_VISIBLE", required: true, hint: "Show the material clearly." },
-  { category: "SAMPLING_IN_PROGRESS", required: true, hint: "Capture the sampling step in action." },
-  { category: "SEALED_BAG", required: true, hint: "Show the sealed unit after handling." },
+  { category: "BAG_WITH_LOT_NO", required: true, hint: "Bag number must be visible in frame." },
+  { category: "MATERIAL_VISIBLE", required: true, hint: "Show the bag material clearly." },
+  { category: "SAMPLING_IN_PROGRESS", required: true, hint: "Capture the batch sampling step in action." },
+  { category: "SEALED_BAG", required: true, hint: "Show the sealed bag after handling." },
   { category: "BAG_CONDITION", required: true, hint: "Capture the overall bag condition." },
   { category: "SEAL_CLOSEUP", required: false, hint: "Optional zoomed seal proof." },
   { category: "DAMAGE_PHOTO", required: false, hint: "Use when damage or contamination exists." },
@@ -195,29 +237,37 @@ export const SAMPLE_EVIDENCE_ITEMS: ReadonlyArray<{
     mediaType: "HOMOGENIZED_SAMPLE",
     uploadCategory: "HOMOGENEOUS",
     required: true,
-    title: "Homogenized sample",
+    title: "Homogeneous sample making photo",
     note: "Only required sample photo before packet generation.",
-    readinessHint: "Upload homogenized sample photo",
+    readinessHint: "Upload homogeneous sample making photo",
   },
   {
     mediaType: "SAMPLING_IN_PROGRESS",
     uploadCategory: "SAMPLING_IN_PROGRESS",
     required: false,
-    title: "During sampling",
+    title: "During sampling photo",
     note: "Optional process proof if your team wants it.",
+  },
+  {
+    mediaType: "SEALED_SAMPLE",
+    uploadCategory: "SEALED_BAG",
+    required: true,
+    title: "Sealed sample photo",
+    note: "Capture the sealed sample with the seal number visible.",
+    readinessHint: "Upload sealed sample photo",
   },
   {
     mediaType: "SAMPLE_CONTAINER",
     uploadCategory: "BAG_CONDITION",
     required: false,
-    title: "Sample container",
+    title: "Sample packet bag photo",
     note: "Optional evidence photo for the selected container.",
   },
   {
     mediaType: "SAMPLE_LABEL",
     uploadCategory: "LABEL_CLOSEUP",
     required: false,
-    title: "Sample label",
+    title: "Sample packet ID photo",
     note: "Optional visible sample identity and label text.",
   },
   {
@@ -235,9 +285,37 @@ export const REPORT_VISUAL_EVIDENCE_ORDER: ReadonlyArray<{
   category: CanonicalEvidenceCategory;
   fallbackLabel: string;
 }> = [
-  { category: "BAG_WITH_LOT_NO", fallbackLabel: "Bag Photo" },
-  { category: "SAMPLING_IN_PROGRESS", fallbackLabel: "Lot Sampling Photo" },
-  { category: "SEALED_BAG", fallbackLabel: "Seal Photo" },
-  { category: "BEFORE", fallbackLabel: "Sampling Before" },
-  { category: "AFTER", fallbackLabel: "Sampling After" },
+  { category: "BAG_WITH_LOT_NO", fallbackLabel: "Bag photo" },
+  { category: "SAMPLING_IN_PROGRESS", fallbackLabel: "During sampling photo" },
+  { category: "SEALED_BAG", fallbackLabel: "Sealed bag photo" },
+  { category: "BEFORE", fallbackLabel: "Batch before photo" },
+  { category: "AFTER", fallbackLabel: "Batch after photo" },
 ];
+
+export const WORKFLOW_EVIDENCE_GROUPS: ReadonlyArray<WorkflowEvidenceGroup> = [
+  {
+    id: "batch",
+    title: "Batch evidence",
+    description: "Batch-level overview proof that anchors the canonical workflow record.",
+    categories: BATCH_EVIDENCE_CATEGORIES,
+    scope: "batch",
+  },
+  {
+    id: "bag",
+    title: "Bag evidence",
+    description: "Bag-level proof, condition, and capture evidence tied to each operational bag.",
+    categories: BAG_EVIDENCE_CATEGORIES,
+    scope: "bag",
+  },
+  {
+    id: "packet",
+    title: "Sample packet evidence",
+    description: "Homogeneous sample and packet identity proof linked to the batch sample.",
+    categories: SAMPLE_PACKET_EVIDENCE_CATEGORIES,
+    scope: "sample-packet",
+  },
+] as const;
+
+export function getWorkflowEvidenceGroupForCategory(category: InspectionMediaCategory) {
+  return WORKFLOW_EVIDENCE_GROUPS.find((group) => group.categories.includes(category)) ?? null;
+}

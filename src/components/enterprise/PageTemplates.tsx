@@ -159,19 +159,25 @@ export function MobileActionRail({ children }: { children: ReactNode }) {
   return (
     <Box
       display={{ base: "block", lg: "none" }}
-      position="sticky"
-      bottom={MOBILE_ACTION_RAIL_BOTTOM_OFFSET}
-      zIndex={15}
-      mt={4}
+      position={{ base: "fixed", lg: "static" }}
+      left={{ base: 3 }}
+      right={{ base: 3 }}
+      transform={{ base: "none", lg: "none" }}
+      w={{ base: "calc(100% - 24px)", lg: "full" }}
+      bottom={{ base: MOBILE_ACTION_RAIL_BOTTOM_OFFSET, lg: "auto" }}
+      zIndex={{ base: 30, lg: "auto" }}
+      pointerEvents={{ base: "none", lg: "auto" }}
     >
       <Stack
         direction={{ base: "column", sm: "row" }}
         spacing={2}
-        px={2.5}
-        py={2.5}
+        px={2}
+        py={2}
         align="stretch"
         flexWrap="wrap"
+        w="full"
         {...mobileBottomSurfaceStyle}
+        pointerEvents="auto"
         sx={{
           ...mobileBottomInteractiveSx,
           "& .chakra-button, & .chakra-icon-button": {

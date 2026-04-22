@@ -7,33 +7,18 @@ import {
   Button,
   Card,
   CardBody,
-  Divider,
-  Grid,
-  Heading,
   HStack,
-  Icon,
-  Input,
-  Select,
-  SimpleGrid,
   Text,
-  Textarea,
   VStack,
   useToast,
 } from "@chakra-ui/react";
-import {
-  Beaker,
-  Boxes,
-  FlaskConical,
-  Lock,
-  Package,
-  Play,
-  Plus,
-  Timer,
-  Wrench,
-} from "lucide-react";
-import { useSearchParams } from "next/navigation";
-
+import { Lock, Package, Play } from "lucide-react";
+import { PageActionBar, PageIdentityBar } from "@/components/enterprise/EnterprisePatterns";
+import { ProcessFlowLayout } from "@/components/enterprise/PageTemplates";
+import { WorkflowStepTracker, type WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
+import { PlaygroundMissionPanel } from "@/components/playground/PlaygroundMissionPanel";
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type PlaygroundStatus =
   | "BUILDING"
@@ -58,6 +43,16 @@ type StepMaster = {
   allowsChemicals: boolean;
   allowsAssets: boolean;
   requiresAsset: boolean;
+  ownerRole: "TECHNICIAN" | "REVIEWER" | "SUPERVISOR";
+  reminderRule: "NEXT_OWNER" | "OWNER" | "SUPERVISOR" | "NONE";
+};
+
+type ProcessTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  stageIds: string[];
+  reminderMode: string;
 };
 
 type Chemical = {
@@ -107,9 +102,12 @@ type ExperimentStep = {
   allowsChemicals: boolean;
   allowsAssets: boolean;
   requiresAsset: boolean;
+  ownerRole: "TECHNICIAN" | "REVIEWER" | "SUPERVISOR";
+  reminderRule: "NEXT_OWNER" | "OWNER" | "SUPERVISOR" | "NONE";
   status: StepStatus;
   instructions: string;
   notes: string;
+  dueMinutes: number;
   timerStartedAt: number | null;
   resources: StepResource[];
 };
@@ -122,6 +120,29 @@ type Measurement = {
   remarks: string;
 };
 
+type ReminderEvent = {
+  id: string;
+  title: string;
+  subtitle: string;
+  at: string;
+};
+
+type ResultMetric = {
+  code: string;
+  label: string;
+  unit: string;
+};
+
+type ProcessResultSummary = {
+  niRecovery: string;
+  coRecovery: string;
+  liRecovery: string;
+  purity: string;
+  yield: string;
+  massBalance: string;
+  decision: string;
+};
+
 type Trial = {
   id: string;
   packetId: string;
@@ -131,11 +152,32 @@ type Trial = {
   measurements: Measurement[];
 };
 
-type DragPayload =
-  | { kind: "STEP_MASTER"; id: string }
-  | { kind: "CHEMICAL"; id: string }
-  | { kind: "ASSET"; id: string }
-  | { kind: "PACKET"; id: string };
+type AcceptedWorkRow = {
+  id: string;
+  rndJobNumber: string;
+  parentJobNumber: string;
+  sampleId: string;
+  packetId: string;
+  childRole: string;
+  packetWeight: string;
+  packetUse: string;
+  receivedDate: string;
+  assignedUser: string;
+  priority: string;
+  dueStatus: string;
+  currentStep: string;
+  primaryAction: string;
+  bucket: "PENDING_INTAKE" | "READY_FOR_SETUP" | "IN_TESTING" | "AWAITING_REVIEW" | "COMPLETED";
+};
+
+type AcceptedWorkSummary = {
+  total: number;
+  pendingIntake: number;
+  readyForSetup: number;
+  inTesting: number;
+  awaitingReview: number;
+  completed: number;
+};
 
 type Selection =
   | { type: "STEP"; id: string }
@@ -143,52 +185,178 @@ type Selection =
   | { type: "VALIDATION" }
   | null;
 
-const stepMasters: StepMaster[] = [
+type DragPayload =
+  | { kind: "STEP_MASTER"; id: string }
+  | { kind: "CHEMICAL"; id: string }
+  | { kind: "ASSET"; id: string }
+  | { kind: "PACKET"; id: string };
+
+const processStepMasters: StepMaster[] = [
   {
-    id: "sm-1",
-    name: "Heating",
+    id: "sample-intake",
+    name: "Sample Intake & Custody",
+    defaultDurationSeconds: 600,
+    requiresTimer: false,
+    allowsChemicals: false,
+    allowsAssets: false,
+    requiresAsset: false,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "NEXT_OWNER",
+  },
+  {
+    id: "sample-characterization",
+    name: "Sample Characterization",
+    defaultDurationSeconds: 900,
+    requiresTimer: true,
+    allowsChemicals: false,
+    allowsAssets: true,
+    requiresAsset: true,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "NEXT_OWNER",
+  },
+  {
+    id: "pre-treatment",
+    name: "Pre-treatment",
+    defaultDurationSeconds: 600,
+    requiresTimer: false,
+    allowsChemicals: true,
+    allowsAssets: true,
+    requiresAsset: true,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "OWNER",
+  },
+  {
+    id: "leaching",
+    name: "Leaching",
+    defaultDurationSeconds: 1200,
+    requiresTimer: true,
+    allowsChemicals: true,
+    allowsAssets: true,
+    requiresAsset: true,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "NEXT_OWNER",
+  },
+  {
+    id: "solid-liquid-separation",
+    name: "Solid-Liquid Separation",
+    defaultDurationSeconds: 900,
+    requiresTimer: true,
+    allowsChemicals: false,
+    allowsAssets: true,
+    requiresAsset: true,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "NEXT_OWNER",
+  },
+  {
+    id: "impurity-removal",
+    name: "Impurity Removal",
     defaultDurationSeconds: 900,
     requiresTimer: true,
     allowsChemicals: true,
     allowsAssets: true,
     requiresAsset: true,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "NEXT_OWNER",
   },
   {
-    id: "sm-2",
-    name: "Stirring",
-    defaultDurationSeconds: 1200,
-    requiresTimer: true,
-    allowsChemicals: false,
-    allowsAssets: true,
-    requiresAsset: true,
-  },
-  {
-    id: "sm-3",
-    name: "Filtration",
-    defaultDurationSeconds: 600,
-    requiresTimer: false,
-    allowsChemicals: false,
-    allowsAssets: true,
-    requiresAsset: true,
-  },
-  {
-    id: "sm-4",
-    name: "Washing",
-    defaultDurationSeconds: 500,
+    id: "ni-co-separation",
+    name: "Ni / Co Separation",
+    defaultDurationSeconds: 900,
     requiresTimer: true,
     allowsChemicals: true,
     allowsAssets: true,
-    requiresAsset: false,
+    requiresAsset: true,
+    ownerRole: "SUPERVISOR",
+    reminderRule: "NEXT_OWNER",
   },
   {
-    id: "sm-5",
-    name: "Drying",
-    defaultDurationSeconds: 1000,
+    id: "li-recovery",
+    name: "Lithium Recovery",
+    defaultDurationSeconds: 900,
+    requiresTimer: true,
+    allowsChemicals: true,
+    allowsAssets: true,
+    requiresAsset: true,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "NEXT_OWNER",
+  },
+  {
+    id: "purification",
+    name: "Purification & Polishing",
+    defaultDurationSeconds: 900,
+    requiresTimer: true,
+    allowsChemicals: true,
+    allowsAssets: true,
+    requiresAsset: true,
+    ownerRole: "SUPERVISOR",
+    reminderRule: "OWNER",
+  },
+  {
+    id: "concentration",
+    name: "Concentration / Crystallization",
+    defaultDurationSeconds: 900,
     requiresTimer: true,
     allowsChemicals: false,
     allowsAssets: true,
     requiresAsset: true,
+    ownerRole: "TECHNICIAN",
+    reminderRule: "NEXT_OWNER",
   },
+  {
+    id: "quality-check",
+    name: "Product Quality Check",
+    defaultDurationSeconds: 600,
+    requiresTimer: false,
+    allowsChemicals: false,
+    allowsAssets: false,
+    requiresAsset: false,
+    ownerRole: "REVIEWER",
+    reminderRule: "SUPERVISOR",
+  },
+  {
+    id: "release",
+    name: "Release / Archive",
+    defaultDurationSeconds: 300,
+    requiresTimer: false,
+    allowsChemicals: false,
+    allowsAssets: false,
+    requiresAsset: false,
+    ownerRole: "REVIEWER",
+    reminderRule: "NONE",
+  },
+];
+
+const wholeProcessTemplates: ProcessTemplate[] = [
+  {
+    id: "hydromet-ni-co-li",
+    name: "Hydromet Ni / Co / Li Path",
+    description: "Full controlled preparation, extraction, separation, quality, and release sequence.",
+    stageIds: processStepMasters.map((step) => step.id),
+    reminderMode: "Notify the next owner on every step completion.",
+  },
+  {
+    id: "sample-process-control",
+    name: "Sample Process Control",
+    description: "Intake, prep, preflight, processing, review, and release in a compact control path.",
+    stageIds: [
+      "sample-intake",
+      "sample-characterization",
+      "pre-treatment",
+      "quality-check",
+      "release",
+    ],
+    reminderMode: "Notify the owner and supervisor when a step finishes.",
+  },
+];
+
+const hydrometResultMetrics: ResultMetric[] = [
+  { code: "NI_RECOVERY", label: "Ni Recovery", unit: "%" },
+  { code: "CO_RECOVERY", label: "Co Recovery", unit: "%" },
+  { code: "LI_RECOVERY", label: "Li Recovery", unit: "%" },
+  { code: "PURITY", label: "Purity", unit: "%" },
+  { code: "YIELD", label: "Yield", unit: "%" },
+  { code: "MASS_BALANCE", label: "Mass Balance", unit: "%" },
+  { code: "DECISION", label: "Decision", unit: "text" },
 ];
 
 const chemicalsMaster: Chemical[] = [
@@ -260,10 +428,6 @@ const initialPackets: Packet[] = [
   { id: "pk-3", code: "PKT-003", quantity: 1, status: "READY" },
 ];
 
-function encodeDrag(payload: DragPayload) {
-  return JSON.stringify(payload);
-}
-
 function decodeDrag(raw: string): DragPayload | null {
   try {
     const parsed = JSON.parse(raw) as DragPayload;
@@ -310,13 +474,138 @@ function isTrialComplete(measurements: Measurement[]) {
   return measurements.every((m) => m.elementCode.trim() && m.value.trim() && m.unit.trim());
 }
 
+function stepStatusLabel(status: ExperimentStep["status"]) {
+  switch (status) {
+    case "DRAFT":
+      return "Draft";
+    case "READY":
+      return "Ready";
+    case "RUNNING":
+      return "Running";
+    case "DONE":
+      return "Done";
+    default:
+      return status;
+  }
+}
+
+const PLAYGROUND_PHASE_LABELS: Record<PlaygroundStatus, string> = {
+  BUILDING: "Building process",
+  READY_TO_RUN: "Ready to run",
+  RUNNING: "Running",
+  STEPS_COMPLETED: "Steps complete",
+  TRIALS_IN_PROGRESS: "Result capture",
+  RESULT_SELECTED: "Ready to release",
+  LOCKED: "Archived",
+};
+
+const PLAYGROUND_FLOW_STEP_LABELS = [
+  "Build process",
+  "Validate",
+  "Run process",
+  "Capture results",
+  "Review release",
+  "Archive",
+] as const;
+
+const PLAYGROUND_FLOW_STEP_INDEX: Record<PlaygroundStatus, number> = {
+  BUILDING: 0,
+  READY_TO_RUN: 1,
+  RUNNING: 2,
+  STEPS_COMPLETED: 3,
+  TRIALS_IN_PROGRESS: 4,
+  RESULT_SELECTED: 5,
+  LOCKED: 5,
+};
+
+function buildHydrometResultSummary(trial: Trial | null): ProcessResultSummary {
+  const metrics = new Map(
+    (trial?.measurements ?? []).map((measurement) => [measurement.elementCode.trim().toUpperCase(), measurement.value.trim()])
+  );
+
+  return {
+    niRecovery: metrics.get("NI_RECOVERY") ?? "-",
+    coRecovery: metrics.get("CO_RECOVERY") ?? "-",
+    liRecovery: metrics.get("LI_RECOVERY") ?? "-",
+    purity: metrics.get("PURITY") ?? "-",
+    yield: metrics.get("YIELD") ?? "-",
+    massBalance: metrics.get("MASS_BALANCE") ?? "-",
+    decision: metrics.get("DECISION") ?? "-",
+  };
+}
+
+function buildReminderEvent(step: ExperimentStep, nextStep: ExperimentStep | null): ReminderEvent {
+  return {
+    id: `reminder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: `${step.name} completed`,
+    subtitle: nextStep
+      ? `Notify ${nextStep.ownerRole.toLowerCase()} to begin ${nextStep.name}.`
+      : "Notify reviewer to release the completed sample record.",
+    at: new Date().toLocaleString(),
+  };
+}
+
+function normalizeStep(step: Partial<ExperimentStep>, index: number): ExperimentStep {
+  const stepMaster = processStepMasters.find((item) => item.id === step.stepMasterId) ?? null;
+  const durationSeconds = step.durationSeconds ?? stepMaster?.defaultDurationSeconds ?? 600;
+  return {
+    id: step.id ?? `step-${Date.now()}-${index}`,
+    stepMasterId: step.stepMasterId ?? stepMaster?.id ?? "sample-intake",
+    name: step.name ?? stepMaster?.name ?? "Sample Step",
+    orderNo: step.orderNo ?? index + 1,
+    durationSeconds,
+    requiresTimer: step.requiresTimer ?? stepMaster?.requiresTimer ?? false,
+    allowsChemicals: step.allowsChemicals ?? stepMaster?.allowsChemicals ?? false,
+    allowsAssets: step.allowsAssets ?? stepMaster?.allowsAssets ?? false,
+    requiresAsset: step.requiresAsset ?? stepMaster?.requiresAsset ?? false,
+    ownerRole: step.ownerRole ?? stepMaster?.ownerRole ?? "TECHNICIAN",
+    reminderRule: step.reminderRule ?? stepMaster?.reminderRule ?? "NEXT_OWNER",
+    status: step.status ?? "DRAFT",
+    instructions: step.instructions ?? "",
+    notes: step.notes ?? "",
+    dueMinutes: step.dueMinutes ?? Math.max(15, Math.round(durationSeconds / 60)),
+    timerStartedAt: step.timerStartedAt ?? null,
+    resources: Array.isArray(step.resources) ? step.resources : [],
+  };
+}
+
+function normalizeMeasurement(measurement: Partial<Measurement>, index: number): Measurement {
+  return {
+    id: measurement.id ?? `ms-${Date.now()}-${index}`,
+    elementCode: measurement.elementCode ?? hydrometResultMetrics[0].code,
+    value: measurement.value ?? "",
+    unit: measurement.unit ?? hydrometResultMetrics[0].unit,
+    remarks: measurement.remarks ?? "",
+  };
+}
+
+function normalizeTrial(trial: Partial<Trial>, index: number): Trial {
+  const measurements = Array.isArray(trial.measurements)
+    ? trial.measurements.map((measurement, measurementIndex) => normalizeMeasurement(measurement, measurementIndex))
+    : [];
+
+  return {
+    id: trial.id ?? `trial-${Date.now()}-${index}`,
+    packetId: trial.packetId ?? "",
+    packetCode: trial.packetCode ?? "",
+    trialNo: trial.trialNo ?? index + 1,
+    status: trial.status ?? "Draft",
+    measurements,
+  };
+}
+
 function PlaygroundPageContent() {
+  const router = useRouter();
   const toast = useToast();
   const searchParams = useSearchParams();
   const [nowTick, setNowTick] = useState(0);
   const [jobId, setJobId] = useState<string>("");
   const [loadingBoard, setLoadingBoard] = useState(true);
   const [savingBoard, setSavingBoard] = useState(false);
+  const [loadingAcceptedWork, setLoadingAcceptedWork] = useState(true);
+  const [acceptedWork, setAcceptedWork] = useState<AcceptedWorkRow[]>([]);
+  const [acceptedWorkSummary, setAcceptedWorkSummary] = useState<AcceptedWorkSummary | null>(null);
+  const [acceptedWorkError, setAcceptedWorkError] = useState<string | null>(null);
 
   const [playgroundStatus, setPlaygroundStatus] = useState<PlaygroundStatus>("BUILDING");
   const [steps, setSteps] = useState<ExperimentStep[]>([]);
@@ -325,6 +614,8 @@ function PlaygroundPageContent() {
   const [selectedTrialId, setSelectedTrialId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [selectedProcessTemplateId, setSelectedProcessTemplateId] = useState<string | null>(null);
+  const [reminderEvents, setReminderEvents] = useState<ReminderEvent[]>([]);
 
   const selectedStep = useMemo(() => {
     if (!selection || selection.type !== "STEP") return null;
@@ -336,6 +627,13 @@ function PlaygroundPageContent() {
     return trials.find((trial) => trial.id === selection.id) ?? null;
   }, [selection, trials]);
 
+  const processResultSummary = useMemo(() => buildHydrometResultSummary(selectedTrial ?? trials.find((trial) => trial.id === selectedTrialId) ?? trials[0] ?? null), [selectedTrial, selectedTrialId, trials]);
+
+  const selectedAcceptedWork = useMemo(
+    () => acceptedWork.find((row) => row.id === jobId) ?? null,
+    [acceptedWork, jobId],
+  );
+
   const allStepsDone = useMemo(() => steps.length > 0 && steps.every((s) => s.status === "DONE"), [steps]);
 
   const orderedSteps = useMemo(
@@ -345,12 +643,27 @@ function PlaygroundPageContent() {
 
   const isLocked = playgroundStatus === "LOCKED";
   const isBuildMode = playgroundStatus === "BUILDING" || playgroundStatus === "READY_TO_RUN";
+  const playgroundFlowSteps = useMemo<WorkflowStep[]>(() => {
+    const currentIndex = PLAYGROUND_FLOW_STEP_INDEX[playgroundStatus];
+    return PLAYGROUND_FLOW_STEP_LABELS.map((label, index) => ({
+      id: label,
+      label,
+      state: index < currentIndex ? "completed" : index === currentIndex ? "current" : "upcoming",
+    }));
+  }, [playgroundStatus]);
 
   const persistBoard = useCallback(
     async (
       nextStatus: PlaygroundStatus,
       action: string,
-      nextData?: { steps?: ExperimentStep[]; trials?: Trial[]; packets?: Packet[]; selectedTrialId?: string | null }
+      nextData?: {
+        steps?: ExperimentStep[];
+        trials?: Trial[];
+        packets?: Packet[];
+        selectedTrialId?: string | null;
+        selectedProcessTemplateId?: string | null;
+        reminders?: ReminderEvent[];
+      }
     ) => {
       if (!jobId) return;
 
@@ -363,6 +676,8 @@ function PlaygroundPageContent() {
           trials: nextData?.trials ?? trials,
           packets: nextData?.packets ?? packets,
           selectedTrialId: nextData?.selectedTrialId ?? selectedTrialId,
+          selectedProcessTemplateId: nextData?.selectedProcessTemplateId ?? selectedProcessTemplateId,
+          reminders: nextData?.reminders ?? reminderEvents,
         },
       };
 
@@ -377,13 +692,60 @@ function PlaygroundPageContent() {
           throw new Error("Persist failed");
         }
       } catch {
-        toast({ title: "Playground save failed", status: "error" });
+        toast({ title: "Workspace save failed", status: "error" });
       } finally {
         setSavingBoard(false);
       }
     },
-    [jobId, packets, selectedTrialId, steps, toast, trials]
+    [jobId, packets, reminderEvents, selectedProcessTemplateId, selectedTrialId, steps, toast, trials]
   );
+
+  const loadAcceptedWork = useCallback(async () => {
+    setLoadingAcceptedWork(true);
+    setAcceptedWorkError(null);
+    try {
+      const res = await fetch("/api/rnd/jobs");
+      if (!res.ok) {
+        throw new Error("Failed to load accepted work queue");
+      }
+      const payload = (await res.json()) as {
+        rows?: Array<Record<string, unknown>>;
+        summary?: AcceptedWorkSummary;
+      };
+      const mapped: AcceptedWorkRow[] = (payload.rows ?? [])
+        .map((row) => ({
+          id: String(row.id ?? ""),
+          rndJobNumber: String(row.rndJobNumber ?? "-"),
+          parentJobNumber: String((row.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-"),
+          sampleId: String((row.sample as { sampleCode?: string } | null)?.sampleCode ?? "-"),
+          packetId: String((row.packet as { packetCode?: string } | null)?.packetCode ?? "-"),
+          childRole: String(row.previousRndJobId ? "Retest child" : "Initial child from packet"),
+          packetWeight: (() => {
+            const packet = row.packet as { packetWeight?: number | null; packetUnit?: string | null } | null;
+            return packet?.packetWeight ? `${packet.packetWeight} ${packet.packetUnit ?? ""}`.trim() : "-";
+          })(),
+          packetUse: String(row.packetUse ?? "-"),
+          receivedDate: new Date(String(row.receivedAt ?? "")).toLocaleDateString(),
+          assignedUser: String((row.assignedTo as { profile?: { displayName?: string } } | null)?.profile?.displayName ?? "Unassigned"),
+          priority: String(row.priority ?? "MEDIUM"),
+          dueStatus: String(row.dueStatus ?? "ON_TRACK"),
+          currentStep: String(row.currentStep ?? "-"),
+          primaryAction: String(row.primaryAction ?? "Open Work"),
+          bucket: String(row.bucket ?? "PENDING_INTAKE") as AcceptedWorkRow["bucket"],
+        }))
+        .filter((row) => row.bucket !== "COMPLETED");
+      setAcceptedWork(mapped);
+      setAcceptedWorkSummary(payload.summary ?? null);
+    } catch (error) {
+      setAcceptedWorkError(error instanceof Error ? error.message : "Failed to load accepted work queue");
+    } finally {
+      setLoadingAcceptedWork(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAcceptedWork();
+  }, [loadAcceptedWork]);
 
   const logAction = useCallback(
     async (action: string, notes?: string) => {
@@ -424,27 +786,28 @@ function PlaygroundPageContent() {
     const loadPlayground = async () => {
       try {
         setLoadingBoard(true);
-        let resolvedJobId = searchParams.get("jobId") ?? "";
-
-        if (!resolvedJobId) {
-          const jobsRes = await fetch("/api/jobs?view=my");
-          if (jobsRes.ok) {
-            const jobs = (await jobsRes.json()) as Array<{ id: string }>;
-            resolvedJobId = jobs[0]?.id ?? "";
-          }
-        }
+        const resolvedJobId = searchParams.get("jobId") ?? "";
 
         if (!resolvedJobId) {
           if (active) {
+            setJobId("");
+            setPlaygroundStatus("BUILDING");
+            setSteps([]);
+            setTrials([]);
+            setSelectedTrialId(null);
+            setSelectedProcessTemplateId(null);
+            setReminderEvents([]);
+            setSelection(null);
+            setValidationErrors([]);
+            setPackets([]);
             setLoadingBoard(false);
-            toast({ title: "No job found for Playground context", status: "warning" });
           }
           return;
         }
 
         const res = await fetch(`/api/rd/playground?jobId=${encodeURIComponent(resolvedJobId)}`);
         if (!res.ok) {
-          throw new Error("Failed to load playground context");
+        throw new Error("Failed to load sample process context");
         }
 
         const data = (await res.json()) as {
@@ -454,6 +817,8 @@ function PlaygroundPageContent() {
             trials?: Trial[];
             packets?: Packet[];
             selectedTrialId?: string | null;
+            selectedProcessTemplateId?: string | null;
+            reminders?: ReminderEvent[];
           };
           packets?: Packet[];
           jobId?: string;
@@ -463,9 +828,11 @@ function PlaygroundPageContent() {
 
         setJobId(data.jobId ?? resolvedJobId);
         setPlaygroundStatus(data.status ?? "BUILDING");
-        setSteps(Array.isArray(data.board?.steps) ? data.board.steps : []);
-        setTrials(Array.isArray(data.board?.trials) ? data.board.trials : []);
+        setSteps(Array.isArray(data.board?.steps) ? data.board.steps.map((step, index) => normalizeStep(step, index)) : []);
+        setTrials(Array.isArray(data.board?.trials) ? data.board.trials.map((trial, index) => normalizeTrial(trial, index)) : []);
         setSelectedTrialId(typeof data.board?.selectedTrialId === "string" ? data.board.selectedTrialId : null);
+        setSelectedProcessTemplateId(typeof data.board?.selectedProcessTemplateId === "string" ? data.board.selectedProcessTemplateId : null);
+        setReminderEvents(Array.isArray(data.board?.reminders) ? data.board.reminders : []);
         setPackets(
           Array.isArray(data.board?.packets)
             ? data.board.packets
@@ -475,7 +842,7 @@ function PlaygroundPageContent() {
         );
       } catch {
         if (active) {
-          toast({ title: "Failed to load Playground", status: "error" });
+          toast({ title: "Failed to load sample process", status: "error" });
         }
       } finally {
         if (active) {
@@ -489,6 +856,218 @@ function PlaygroundPageContent() {
       active = false;
     };
   }, [searchParams, toast]);
+
+  const addStepFromMaster = (stepMasterId: string) => {
+    if (!isBuildMode || isLocked) return false;
+
+    const stepMaster = processStepMasters.find((item) => item.id === stepMasterId);
+    if (!stepMaster) return false;
+
+    setSteps((prev) => [
+      ...prev,
+      {
+        id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        stepMasterId: stepMaster.id,
+        name: stepMaster.name,
+        orderNo: prev.length + 1,
+        durationSeconds: stepMaster.defaultDurationSeconds,
+        requiresTimer: stepMaster.requiresTimer,
+        allowsChemicals: stepMaster.allowsChemicals,
+        allowsAssets: stepMaster.allowsAssets,
+        requiresAsset: stepMaster.requiresAsset,
+        ownerRole: stepMaster.ownerRole,
+        reminderRule: stepMaster.reminderRule,
+        status: "DRAFT",
+        instructions: "",
+        notes: "",
+        dueMinutes: Math.max(15, Math.round(stepMaster.defaultDurationSeconds / 60)),
+        timerStartedAt: null,
+        resources: [],
+      },
+    ]);
+    void logAction("PLAYGROUND_STEP_ADD", stepMaster.name);
+    return true;
+  };
+
+  const applyWholeProcessTemplate = useCallback(
+    (templateId: string) => {
+      if (!isBuildMode || isLocked) return false;
+
+      const template = wholeProcessTemplates.find((item) => item.id === templateId);
+      if (!template) return false;
+
+      const nextSteps = template.stageIds
+        .map((stageId, index) => {
+          const stepMaster = processStepMasters.find((item) => item.id === stageId);
+          if (!stepMaster) return null;
+
+          return {
+            id: `step-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+            stepMasterId: stepMaster.id,
+            name: stepMaster.name,
+            orderNo: index + 1,
+            durationSeconds: stepMaster.defaultDurationSeconds,
+            requiresTimer: stepMaster.requiresTimer,
+            allowsChemicals: stepMaster.allowsChemicals,
+            allowsAssets: stepMaster.allowsAssets,
+            requiresAsset: stepMaster.requiresAsset,
+            ownerRole: stepMaster.ownerRole,
+            reminderRule: stepMaster.reminderRule,
+            status: "DRAFT" as StepStatus,
+            instructions: "",
+            notes: "",
+            dueMinutes: Math.max(15, Math.round(stepMaster.defaultDurationSeconds / 60)),
+            timerStartedAt: null,
+            resources: [],
+          };
+        })
+        .filter((step): step is ExperimentStep => step !== null);
+
+      setSteps(nextSteps);
+      setSelectedProcessTemplateId(template.id);
+      setReminderEvents([]);
+      setSelection(null);
+      setValidationErrors([]);
+      setPlaygroundStatus("BUILDING");
+      void logAction("PLAYGROUND_PROCESS_TEMPLATE_APPLY", template.name);
+      void persistBoard("BUILDING", "PLAYGROUND_PROCESS_TEMPLATE_APPLY", {
+        steps: nextSteps,
+        selectedProcessTemplateId: template.id,
+        reminders: [],
+      });
+      toast({ title: "Whole process applied", status: "success" });
+      return true;
+    },
+    [isBuildMode, isLocked, logAction, persistBoard, toast]
+  );
+
+  const addChemicalToStep = (stepId: string, chemicalId: string) => {
+    if (!isBuildMode || isLocked) return false;
+
+    const chemical = chemicalsMaster.find((item) => item.id === chemicalId);
+    if (!chemical || !chemical.isActive) {
+      toast({ title: "Chemical is inactive/invalid.", status: "error" });
+      return false;
+    }
+
+    setSteps((prev) =>
+      prev.map((step) => {
+        if (step.id !== stepId) return step;
+        if (!step.allowsChemicals) {
+          toast({ title: `${step.name} does not allow chemicals.`, status: "error" });
+          return step;
+        }
+
+        const existing = step.resources.some(
+          (resource) => resource.resourceType === "CHEMICAL" && resource.resourceId === chemicalId
+        );
+        if (existing) return step;
+
+        void logAction("PLAYGROUND_CHEMICAL_ASSIGN", `${chemical.name} -> ${step.name}`);
+        return {
+          ...step,
+          resources: [
+            ...step.resources,
+            {
+              id: `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              resourceType: "CHEMICAL",
+              resourceId: chemical.id,
+              quantity: 0,
+              unit: chemical.allowedUnits[0],
+              usageNotes: "",
+            },
+          ],
+        };
+      })
+    );
+    return true;
+  };
+
+  const addAssetToStep = (stepId: string, assetId: string) => {
+    if (!isBuildMode || isLocked) return false;
+
+    const asset = assetsMaster.find((item) => item.id === assetId);
+    if (!asset || !asset.isActive) {
+      toast({ title: "Asset is inactive/invalid.", status: "error" });
+      return false;
+    }
+
+    if (asset.availabilityStatus !== "AVAILABLE") {
+      toast({ title: `${asset.name} is not available.`, status: "warning" });
+      return false;
+    }
+
+    setSteps((prev) =>
+      prev.map((step) => {
+        if (step.id !== stepId) return step;
+        if (!step.allowsAssets) {
+          toast({ title: `${step.name} does not allow assets.`, status: "error" });
+          return step;
+        }
+
+        const existing = step.resources.some(
+          (resource) => resource.resourceType === "ASSET" && resource.resourceId === assetId
+        );
+        if (existing) return step;
+
+        void logAction("PLAYGROUND_ASSET_ASSIGN", `${asset.name} -> ${step.name}`);
+        return {
+          ...step,
+          resources: [
+            ...step.resources,
+            {
+              id: `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              resourceType: "ASSET",
+              resourceId: asset.id,
+              usageNotes: "",
+            },
+          ],
+        };
+      })
+    );
+    return true;
+  };
+
+  const createTrialFromPacket = useCallback(
+    (packetId: string) => {
+      if (playgroundStatus !== "STEPS_COMPLETED" && playgroundStatus !== "TRIALS_IN_PROGRESS" && playgroundStatus !== "RESULT_SELECTED") {
+        toast({ title: "Result capture is locked until all steps are complete.", status: "warning" });
+        return false;
+      }
+
+      const packet = packets.find((item) => item.id === packetId);
+      if (!packet || packet.status !== "READY") {
+        toast({ title: "Packet unavailable.", status: "error" });
+        return false;
+      }
+
+      const nextPackets = packets.map((item) => (item.id === packetId ? { ...item, status: "USED" as const } : item));
+      const nextTrial: Trial = {
+        id: `trial-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        packetId: packet.id,
+        packetCode: packet.code,
+        trialNo: trials.length + 1,
+        status: "Draft",
+        measurements: [],
+      };
+      const nextTrials = [...trials, nextTrial];
+
+      setPackets(nextPackets);
+      setTrials(nextTrials);
+
+      setPlaygroundStatus("TRIALS_IN_PROGRESS");
+      void logAction("PLAYGROUND_RESULT_CREATE", packet.code);
+      void persistBoard("TRIALS_IN_PROGRESS", "PLAYGROUND_TRIAL_CREATE", {
+        packets: nextPackets,
+        trials: nextTrials,
+        selectedProcessTemplateId,
+        reminders: reminderEvents,
+      });
+      toast({ title: "Result record created", status: "success" });
+      return true;
+    },
+    [packets, persistBoard, playgroundStatus, reminderEvents, selectedProcessTemplateId, toast, trials, logAction]
+  );
 
   const runBuildValidation = () => {
     const errors: string[] = [];
@@ -510,12 +1089,12 @@ function PlaygroundPageContent() {
         errors.push(`Step ${step.orderNo}: duration must be greater than 0.`);
       }
 
+      if (step.dueMinutes <= 0) {
+        errors.push(`Step ${step.orderNo}: due minutes must be greater than 0.`);
+      }
+
       const chemicalResources = step.resources.filter((r) => r.resourceType === "CHEMICAL");
       const assetResources = step.resources.filter((r) => r.resourceType === "ASSET");
-
-      if (step.allowsChemicals && step.name === "Washing" && chemicalResources.length === 0) {
-        errors.push(`Step ${step.orderNo}: at least one chemical is required for Washing in this MVP policy.`);
-      }
 
       if (step.requiresAsset && assetResources.length === 0) {
         errors.push(`Step ${step.orderNo}: asset assignment is mandatory.`);
@@ -569,7 +1148,10 @@ function PlaygroundPageContent() {
     if (errors.length === 0) {
       setPlaygroundStatus("READY_TO_RUN");
       void logAction("PLAYGROUND_VALIDATE_PASS");
-      void persistBoard("READY_TO_RUN", "PLAYGROUND_VALIDATE_PASS");
+      void persistBoard("READY_TO_RUN", "PLAYGROUND_VALIDATE_PASS", {
+        selectedProcessTemplateId,
+        reminders: reminderEvents,
+      });
       toast({ title: "Build valid", status: "success" });
       return true;
     }
@@ -585,126 +1167,23 @@ function PlaygroundPageContent() {
 
   const onCanvasDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (!isBuildMode || isLocked) return;
-
     const payload = decodeDrag(event.dataTransfer.getData("text/plain"));
     if (!payload || payload.kind !== "STEP_MASTER") return;
-
-    const stepMaster = stepMasters.find((item) => item.id === payload.id);
-    if (!stepMaster) return;
-
-    setSteps((prev) => {
-      const nextOrder = prev.length + 1;
-      return [
-        ...prev,
-        {
-          id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          stepMasterId: stepMaster.id,
-          name: stepMaster.name,
-          orderNo: nextOrder,
-          durationSeconds: stepMaster.defaultDurationSeconds,
-          requiresTimer: stepMaster.requiresTimer,
-          allowsChemicals: stepMaster.allowsChemicals,
-          allowsAssets: stepMaster.allowsAssets,
-          requiresAsset: stepMaster.requiresAsset,
-          status: "DRAFT",
-          instructions: "",
-          notes: "",
-          timerStartedAt: null,
-          resources: [],
-        },
-      ];
-    });
-    void logAction("PLAYGROUND_STEP_ADD", stepMaster.name);
+    void addStepFromMaster(payload.id);
   };
 
   const onStepDrop = (event: React.DragEvent<HTMLDivElement>, stepId: string) => {
     event.preventDefault();
-    if (!isBuildMode || isLocked) return;
-
     const payload = decodeDrag(event.dataTransfer.getData("text/plain"));
     if (!payload) return;
+    if (payload.kind === "CHEMICAL") {
+      void addChemicalToStep(stepId, payload.id);
+      return;
+    }
 
-    if (payload.kind !== "CHEMICAL" && payload.kind !== "ASSET") return;
-
-    setSteps((prev) =>
-      prev.map((step) => {
-        if (step.id !== stepId) return step;
-
-        if (payload.kind === "CHEMICAL") {
-          if (!step.allowsChemicals) {
-            toast({ title: `${step.name} does not allow chemicals.`, status: "error" });
-            return step;
-          }
-
-          const chemical = chemicalsMaster.find((c) => c.id === payload.id);
-          if (!chemical || !chemical.isActive) {
-            toast({ title: "Chemical is inactive/invalid.", status: "error" });
-            return step;
-          }
-
-          const existing = step.resources.some(
-            (resource) => resource.resourceType === "CHEMICAL" && resource.resourceId === payload.id
-          );
-          if (existing) {
-            return step;
-          }
-
-          void logAction("PLAYGROUND_CHEMICAL_ASSIGN", `${chemical.name} -> ${step.name}`);
-          return {
-            ...step,
-            resources: [
-              ...step.resources,
-              {
-                id: `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                resourceType: "CHEMICAL",
-                resourceId: payload.id,
-                quantity: 0,
-                unit: chemical.allowedUnits[0],
-                usageNotes: "",
-              },
-            ],
-          };
-        }
-
-        if (!step.allowsAssets) {
-          toast({ title: `${step.name} does not allow assets.`, status: "error" });
-          return step;
-        }
-
-        const asset = assetsMaster.find((a) => a.id === payload.id);
-        if (!asset || !asset.isActive) {
-          toast({ title: "Asset is inactive/invalid.", status: "error" });
-          return step;
-        }
-
-        if (asset.availabilityStatus !== "AVAILABLE") {
-          toast({ title: `${asset.name} is not available.`, status: "warning" });
-          return step;
-        }
-
-        const existing = step.resources.some(
-          (resource) => resource.resourceType === "ASSET" && resource.resourceId === payload.id
-        );
-        if (existing) {
-          return step;
-        }
-
-        void logAction("PLAYGROUND_ASSET_ASSIGN", `${asset.name} -> ${step.name}`);
-        return {
-          ...step,
-          resources: [
-            ...step.resources,
-            {
-              id: `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              resourceType: "ASSET",
-              resourceId: payload.id,
-              usageNotes: "",
-            },
-          ],
-        };
-      })
-    );
+    if (payload.kind === "ASSET") {
+      void addAssetToStep(stepId, payload.id);
+    }
   };
 
   const moveStep = (stepId: string, direction: "UP" | "DOWN") => {
@@ -757,7 +1236,11 @@ function PlaygroundPageContent() {
     setSteps(nextSteps);
     setPlaygroundStatus("RUNNING");
     void logAction("PLAYGROUND_EXECUTION_START");
-    void persistBoard("RUNNING", "PLAYGROUND_EXECUTION_START", { steps: nextSteps });
+    void persistBoard("RUNNING", "PLAYGROUND_EXECUTION_START", {
+      steps: nextSteps,
+      selectedProcessTemplateId,
+      reminders: reminderEvents,
+    });
     toast({ title: "Execution started", status: "success" });
   };
 
@@ -797,7 +1280,11 @@ function PlaygroundPageContent() {
     if (started) {
       void logAction("PLAYGROUND_STEP_START", startedStepName);
       if (nextStepsRef) {
-        void persistBoard(playgroundStatus, "PLAYGROUND_STEP_START", { steps: nextStepsRef });
+        void persistBoard(playgroundStatus, "PLAYGROUND_STEP_START", {
+          steps: nextStepsRef,
+          selectedProcessTemplateId,
+          reminders: reminderEvents,
+        });
       }
     }
   };
@@ -808,6 +1295,8 @@ function PlaygroundPageContent() {
     let blockedByTimer = false;
     let allDone = false;
     let nextStepsRef: ExperimentStep[] | null = null;
+    let reminderRef: ReminderEvent | null = null;
+    let nextReminderEvents: ReminderEvent[] = reminderEvents;
     setSteps((prev) => {
       const sorted = [...prev].sort((a, b) => a.orderNo - b.orderNo);
       const step = sorted.find((item) => item.id === stepId);
@@ -837,6 +1326,12 @@ function PlaygroundPageContent() {
       if (nowAllDone) {
         allDone = true;
         setPlaygroundStatus("STEPS_COMPLETED");
+        const completedStep = next.find((item) => item.id === stepId) ?? step;
+        reminderRef = buildReminderEvent(completedStep, null);
+      } else {
+        const completedStep = next.find((item) => item.id === stepId) ?? step;
+        const nextStep = next.find((item) => item.orderNo === doneOrder + 1) ?? null;
+        reminderRef = buildReminderEvent(completedStep, nextStep);
       }
 
       nextStepsRef = next;
@@ -849,45 +1344,25 @@ function PlaygroundPageContent() {
     }
 
     void logAction("PLAYGROUND_STEP_COMPLETE");
+    if (reminderRef) {
+      nextReminderEvents = [reminderRef, ...reminderEvents].slice(0, 12);
+      setReminderEvents(nextReminderEvents);
+      toast({ title: reminderRef.title, description: reminderRef.subtitle, status: "info" });
+    }
     if (nextStepsRef) {
-      void persistBoard(allDone ? "STEPS_COMPLETED" : "RUNNING", "PLAYGROUND_STEP_COMPLETE", { steps: nextStepsRef });
+      void persistBoard(allDone ? "STEPS_COMPLETED" : "RUNNING", "PLAYGROUND_STEP_COMPLETE", {
+        steps: nextStepsRef,
+        selectedProcessTemplateId,
+        reminders: nextReminderEvents,
+      });
     }
   };
 
   const onTrialDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (playgroundStatus !== "STEPS_COMPLETED" && playgroundStatus !== "TRIALS_IN_PROGRESS" && playgroundStatus !== "RESULT_SELECTED") {
-      toast({ title: "Trials are locked until all steps are complete.", status: "warning" });
-      return;
-    }
-
     const payload = decodeDrag(event.dataTransfer.getData("text/plain"));
     if (!payload || payload.kind !== "PACKET") return;
-
-    const packet = packets.find((item) => item.id === payload.id);
-    if (!packet || packet.status !== "READY") {
-      toast({ title: "Packet unavailable.", status: "error" });
-      return;
-    }
-
-    const nextPackets = packets.map((item) => (item.id === payload.id ? { ...item, status: "USED" as const } : item));
-    const nextTrial: Trial = {
-      id: `trial-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      packetId: packet.id,
-      packetCode: packet.code,
-      trialNo: trials.length + 1,
-      status: "Draft",
-      measurements: [],
-    };
-    const nextTrials = [...trials, nextTrial];
-
-    setPackets(nextPackets);
-    setTrials(nextTrials);
-
-    setPlaygroundStatus("TRIALS_IN_PROGRESS");
-    void logAction("PLAYGROUND_TRIAL_CREATE", packet.code);
-    void persistBoard("TRIALS_IN_PROGRESS", "PLAYGROUND_TRIAL_CREATE", { packets: nextPackets, trials: nextTrials });
-    toast({ title: "Trial created", status: "success" });
+    void createTrialFromPacket(payload.id);
   };
 
   const updateStepField = (stepId: string, patch: Partial<ExperimentStep>) => {
@@ -924,9 +1399,9 @@ function PlaygroundPageContent() {
           ...trial.measurements,
           {
             id: `ms-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            elementCode: "",
+            elementCode: hydrometResultMetrics[0].code,
             value: "",
-            unit: "%",
+            unit: hydrometResultMetrics[0].unit,
             remarks: "",
           },
         ];
@@ -990,8 +1465,13 @@ function PlaygroundPageContent() {
     setSelectedTrialId(trialId);
     setTrials(nextTrials);
     setPlaygroundStatus("RESULT_SELECTED");
-    void logAction("PLAYGROUND_RESULT_SELECT", trialId);
-    void persistBoard("RESULT_SELECTED", "PLAYGROUND_RESULT_SELECT", { selectedTrialId: trialId, trials: nextTrials });
+      void logAction("PLAYGROUND_RESULT_SELECT", trialId);
+    void persistBoard("RESULT_SELECTED", "PLAYGROUND_RESULT_SELECT", {
+      selectedTrialId: trialId,
+      trials: nextTrials,
+      selectedProcessTemplateId,
+      reminders: reminderEvents,
+    });
   };
 
   const lockExperiment = () => {
@@ -1000,16 +1480,16 @@ function PlaygroundPageContent() {
     const issues: string[] = [];
 
     if (!allStepsDone) issues.push("All steps must be DONE before lock.");
-    if (trials.length === 0) issues.push("At least one trial is required before lock.");
-    if (!selectedTrialId) issues.push("Final trial selection is required before lock.");
+    if (trials.length === 0) issues.push("At least one result record is required before release.");
+    if (!selectedTrialId) issues.push("Final result selection is required before release.");
 
     const selected = trials.find((trial) => trial.id === selectedTrialId);
     if (selected && selected.status !== "Selected") {
-      issues.push("Selected trial state is invalid.");
+      issues.push("Selected result state is invalid.");
     }
 
     if (selected && !isTrialComplete(selected.measurements)) {
-      issues.push("Selected trial must have complete measurements.");
+      issues.push("Selected result must have complete metrics.");
     }
 
     if (issues.length > 0) {
@@ -1021,19 +1501,45 @@ function PlaygroundPageContent() {
 
     setPlaygroundStatus("LOCKED");
     void logAction("PLAYGROUND_LOCK");
-    void persistBoard("LOCKED", "PLAYGROUND_LOCK");
+    void persistBoard("LOCKED", "PLAYGROUND_LOCK", {
+      selectedProcessTemplateId,
+      reminders: reminderEvents,
+    });
     toast({ title: "Experiment locked", status: "success" });
   };
 
-  const headerPhases: PlaygroundStatus[] = [
-    "BUILDING",
-    "READY_TO_RUN",
-    "RUNNING",
-    "STEPS_COMPLETED",
-    "TRIALS_IN_PROGRESS",
-    "RESULT_SELECTED",
-    "LOCKED",
-  ];
+  const openMission = useCallback(
+    (missionId: string) => {
+      router.push(`/playground?jobId=${encodeURIComponent(missionId)}`);
+    },
+    [router]
+  );
+
+  const pagePrimaryAction = !jobId ? (
+    <Button colorScheme="teal" leftIcon={<Package size={16} />} onClick={() => openMission(acceptedWork[0]?.id ?? "")} isDisabled={acceptedWork.length === 0 || loadingAcceptedWork}>
+      Open Work
+    </Button>
+  ) : playgroundStatus === "BUILDING" ? (
+    <Button colorScheme="teal" leftIcon={<Package size={16} />} onClick={runBuildValidation} isDisabled={isLocked || loadingBoard}>
+      Validate Process
+    </Button>
+  ) : playgroundStatus === "READY_TO_RUN" ? (
+    <Button colorScheme="teal" leftIcon={<Play size={16} />} onClick={startExecution} isDisabled={!isBuildMode || isLocked || loadingBoard}>
+      Start Processing
+    </Button>
+  ) : playgroundStatus === "STEPS_COMPLETED" || playgroundStatus === "TRIALS_IN_PROGRESS" ? (
+    <Button colorScheme="purple" leftIcon={<Package size={16} />} onClick={() => selectedTrialId && selectFinalTrial(selectedTrialId)} isDisabled={!selectedTrialId || isLocked || loadingBoard}>
+      Review Results
+    </Button>
+  ) : playgroundStatus === "RESULT_SELECTED" ? (
+    <Button colorScheme="red" leftIcon={<Lock size={16} />} onClick={lockExperiment} isDisabled={isLocked || loadingBoard}>
+      Release Record
+    </Button>
+  ) : (
+    <Button colorScheme="red" leftIcon={<Lock size={16} />} onClick={lockExperiment} isDisabled={isLocked || loadingBoard}>
+      Release Record
+    </Button>
+  );
 
   const selectedStepChemicals = selectedStep
     ? selectedStep.resources.filter((resource) => resource.resourceType === "CHEMICAL")
@@ -1045,614 +1551,182 @@ function PlaygroundPageContent() {
   return (
     <ControlTowerLayout>
       <VStack align="stretch" spacing={6}>
-        <HStack justify="space-between" align="start" flexWrap="wrap" spacing={4}>
-          <VStack align="start" spacing={1}>
-            <HStack spacing={2}>
-              <Badge colorScheme="orange" variant="subtle" borderRadius="full" px={2.5} py={1}>
-                PLAYGROUND
+        <PageIdentityBar
+          title="Sample Process Control"
+          subtitle="Unified control workspace for sample intake, preparation, process execution, result capture, and release."
+          status={
+            <HStack spacing={2} flexWrap="wrap">
+              <Badge variant="subtle" colorScheme="purple" borderRadius="full" px={2.5} py={1}>
+                {PLAYGROUND_PHASE_LABELS[playgroundStatus]}
               </Badge>
-              <Badge colorScheme={isLocked ? "red" : "green"} variant="subtle" borderRadius="full" px={2.5} py={1}>
-                {isLocked ? "LOCKED" : "INDUSTRIAL MODE"}
+              <Badge variant="subtle" colorScheme={isLocked ? "red" : "green"} borderRadius="full" px={2.5} py={1}>
+                {isLocked ? "Read only" : "Editable"}
               </Badge>
               {jobId ? (
-                <Badge colorScheme="blue" variant="subtle" borderRadius="full" px={2.5} py={1}>
-                  JOB {jobId.slice(0, 8)}
+                <Badge variant="subtle" colorScheme="blue" borderRadius="full" px={2.5} py={1}>
+                  Selected work loaded
                 </Badge>
               ) : null}
+              <Badge variant="subtle" colorScheme="gray" borderRadius="full" px={2.5} py={1}>
+                {loadingAcceptedWork ? "Loading queue" : `${acceptedWork.length} accepted work item(s)`}
+              </Badge>
             </HStack>
-            <Heading size="lg" color="gray.900">
-              Industrial R&D Execution Board
-            </Heading>
-          </VStack>
+          }
+        />
 
-          <HStack spacing={2} wrap="wrap">
-            <Button
-              variant="outline"
-              onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL")}
-              isDisabled={isLocked || !jobId || loadingBoard}
-              isLoading={savingBoard}
-            >
-              Save Draft
-            </Button>
-            <Button variant="outline" onClick={runBuildValidation} isDisabled={isLocked}>
-              Validate
-            </Button>
-            <Button colorScheme="teal" leftIcon={<Play size={16} />} onClick={startExecution} isDisabled={!isBuildMode || isLocked}>
-              Start Execution
-            </Button>
-            <Button colorScheme="purple" leftIcon={<Package size={16} />} onClick={() => selectedTrialId && selectFinalTrial(selectedTrialId)} isDisabled={!selectedTrialId || isLocked}>
-              Confirm Final Trial
-            </Button>
-            <Button colorScheme="red" leftIcon={<Lock size={16} />} onClick={lockExperiment} isDisabled={isLocked}>
-              Lock
-            </Button>
-          </HStack>
-        </HStack>
+        <PageActionBar
+          primaryAction={pagePrimaryAction}
+          secondaryActions={
+            <HStack spacing={2} wrap="wrap">
+              <Button
+                variant="outline"
+                onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })}
+                isDisabled={isLocked || !jobId || loadingBoard}
+                isLoading={savingBoard}
+              >
+                Save Process
+              </Button>
+              <Button variant="outline" onClick={() => setSelection({ type: "VALIDATION" })} isDisabled={isLocked || validationErrors.length === 0}>
+                Review Blockers
+              </Button>
+              {jobId ? (
+                <Button variant="ghost" onClick={() => router.push("/playground")}>
+                  Back to Queue
+                </Button>
+              ) : null}
+            </HStack>
+          }
+        />
 
-        {loadingBoard ? (
-          <Card variant="outline" borderRadius="xl" bg="white">
-            <CardBody p={4}>
-              <Text fontSize="sm" color="gray.600">
-                Loading playground context...
-              </Text>
-            </CardBody>
-          </Card>
-        ) : null}
-
-        <SimpleGrid columns={{ base: 2, md: 4, xl: 7 }} spacing={3}>
-          {headerPhases.map((phase) => (
-            <Box
-              key={phase}
-              p={3}
-              borderRadius="xl"
-              borderWidth="1px"
-              borderColor={playgroundStatus === phase ? "teal.400" : "gray.200"}
-              bg={playgroundStatus === phase ? "teal.50" : "white"}
-            >
-              <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">
-                phase
-              </Text>
-              <Text mt={1} fontSize="sm" fontWeight="semibold" color="gray.900">
-                {phase}
-              </Text>
-            </Box>
-          ))}
-        </SimpleGrid>
-
-        <Grid templateColumns={{ base: "1fr", xl: "300px 1fr 360px" }} gap={6}>
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-            <CardBody p={5}>
-              <HStack mb={4}>
-                <Icon as={Boxes} color="teal.600" />
-                <Text fontWeight="bold" color="gray.900">
-                  Left Rail: Resource Library
+        <ProcessFlowLayout
+          header={
+            loadingBoard ? (
+              <Card variant="outline" borderRadius="lg" bg="bg.surface" shadow="none">
+                <CardBody p={4}>
+                  <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary">
+                    Loading sample process context...
+                  </Text>
+                </CardBody>
+              </Card>
+            ) : null
+          }
+          tracker={<WorkflowStepTracker steps={playgroundFlowSteps} title="Sample process flow" compact />}
+          activeStep={
+            <PlaygroundMissionPanel
+              acceptedWorkRows={acceptedWork}
+              selectedAcceptedWork={selectedAcceptedWork}
+              onOpenMission={openMission}
+              loadingAcceptedWork={loadingAcceptedWork}
+              acceptedWorkError={acceptedWorkError}
+              acceptedWorkSummary={acceptedWorkSummary}
+              onRetryAcceptedWork={() => void loadAcceptedWork()}
+              stepMasters={processStepMasters}
+              processTemplates={wholeProcessTemplates}
+              chemicalsMaster={chemicalsMaster}
+              assetsMaster={assetsMaster}
+              packets={packets}
+              results={trials}
+              reminderEvents={reminderEvents}
+              selectedProcessTemplateId={selectedProcessTemplateId}
+              onApplyProcessTemplate={applyWholeProcessTemplate}
+              processResultSummary={processResultSummary}
+              orderedSteps={orderedSteps}
+              selectedStep={selectedStep}
+              selectedResult={selectedTrial}
+              selectedStepChemicals={selectedStepChemicals}
+              selectedStepAssets={selectedStepAssets}
+              selection={selection}
+              selectedResultId={selectedTrialId}
+              validationErrors={validationErrors}
+              isBuildMode={isBuildMode}
+              isLocked={isLocked}
+              allStepsDone={allStepsDone}
+              onCanvasDrop={onCanvasDrop}
+              onStepDrop={onStepDrop}
+              moveStep={moveStep}
+              deleteStep={deleteStep}
+              startStep={startStep}
+              completeStep={completeStep}
+              onResultDrop={onTrialDrop}
+              updateStepField={updateStepField}
+              updateResource={updateResource}
+              addMetric={addMeasurement}
+              updateMetric={updateMeasurement}
+              selectFinalResult={selectFinalTrial}
+              setSelection={setSelection}
+              getChemicalStockState={getChemicalStockState}
+              getStepRemainingSeconds={getStepRemainingSeconds}
+              stepStatusLabel={stepStatusLabel}
+              onAddStep={addStepFromMaster}
+              onAddChemical={addChemicalToStep}
+              onAddAsset={addAssetToStep}
+              onCreateResult={createTrialFromPacket}
+            />
+          }
+          context={
+            <VStack align="stretch" spacing={3}>
+              <Box>
+                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+                  Current phase
                 </Text>
-              </HStack>
-
-              <VStack align="stretch" spacing={4}>
-                <Box>
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold" mb={2}>
-                    Step Types
-                  </Text>
-                  <VStack align="stretch" spacing={2}>
-                    {stepMasters.map((step) => (
-                      <Box
-                        key={step.id}
-                        p={2.5}
-                        borderWidth="1px"
-                        borderColor="gray.200"
-                        borderRadius="lg"
-                        bg="gray.50"
-                        cursor={isBuildMode && !isLocked ? "grab" : "not-allowed"}
-                        draggable={isBuildMode && !isLocked}
-                        onDragStart={(event) => event.dataTransfer.setData("text/plain", encodeDrag({ kind: "STEP_MASTER", id: step.id }))}
-                      >
-                        <Text fontSize="sm" fontWeight="semibold" color="gray.900">
-                          {step.name}
-                        </Text>
-                        <Text fontSize="xs" color="gray.600">
-                          {step.defaultDurationSeconds}s • {step.requiresTimer ? "Timer" : "No timer"}
-                        </Text>
-                      </Box>
-                    ))}
-                  </VStack>
-                </Box>
-
-                <Box>
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold" mb={2}>
-                    Chemicals
-                  </Text>
-                  <VStack align="stretch" spacing={2}>
-                    {chemicalsMaster.map((chemical) => (
-                      <Box
-                        key={chemical.id}
-                        p={2.5}
-                        borderWidth="1px"
-                        borderColor="gray.200"
-                        borderRadius="lg"
-                        bg="gray.50"
-                        cursor={isBuildMode && !isLocked ? "grab" : "not-allowed"}
-                        draggable={isBuildMode && !isLocked}
-                        onDragStart={(event) => event.dataTransfer.setData("text/plain", encodeDrag({ kind: "CHEMICAL", id: chemical.id }))}
-                      >
-                        <HStack justify="space-between">
-                          <Text fontSize="sm" fontWeight="semibold" color="gray.900">
-                            {chemical.name}
-                          </Text>
-                          <Badge colorScheme={getChemicalStockState(chemical) === "Out of Stock" ? "red" : getChemicalStockState(chemical) === "Low Stock" ? "orange" : "green"}>
-                            {getChemicalStockState(chemical)}
-                          </Badge>
-                        </HStack>
-                        <Text fontSize="xs" color="gray.600">
-                          {chemical.stockQuantity} {chemical.baseUnit} • {chemical.category}
-                        </Text>
-                      </Box>
-                    ))}
-                  </VStack>
-                </Box>
-
-                <Box>
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold" mb={2}>
-                    Assets
-                  </Text>
-                  <VStack align="stretch" spacing={2}>
-                    {assetsMaster.map((asset) => (
-                      <Box
-                        key={asset.id}
-                        p={2.5}
-                        borderWidth="1px"
-                        borderColor="gray.200"
-                        borderRadius="lg"
-                        bg="gray.50"
-                        cursor={isBuildMode && !isLocked ? "grab" : "not-allowed"}
-                        draggable={isBuildMode && !isLocked}
-                        onDragStart={(event) => event.dataTransfer.setData("text/plain", encodeDrag({ kind: "ASSET", id: asset.id }))}
-                      >
-                        <HStack justify="space-between">
-                          <Text fontSize="sm" fontWeight="semibold" color="gray.900">
-                            {asset.name}
-                          </Text>
-                          <Badge colorScheme={asset.availabilityStatus === "AVAILABLE" ? "green" : "orange"}>
-                            {asset.availabilityStatus}
-                          </Badge>
-                        </HStack>
-                        <Text fontSize="xs" color="gray.600">
-                          {asset.code} • {asset.category}
-                        </Text>
-                      </Box>
-                    ))}
-                  </VStack>
-                </Box>
-
-                <Box>
-                  <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold" mb={2}>
-                    Packets
-                  </Text>
-                  <VStack align="stretch" spacing={2}>
-                    {packets.map((packet) => (
-                      <Box
-                        key={packet.id}
-                        p={2.5}
-                        borderWidth="1px"
-                        borderColor="gray.200"
-                        borderRadius="lg"
-                        bg="gray.50"
-                        cursor={allStepsDone && !isLocked ? "grab" : "not-allowed"}
-                        draggable={allStepsDone && !isLocked && packet.status === "READY"}
-                        onDragStart={(event) => event.dataTransfer.setData("text/plain", encodeDrag({ kind: "PACKET", id: packet.id }))}
-                      >
-                        <HStack justify="space-between">
-                          <Text fontSize="sm" fontWeight="semibold" color="gray.900">
-                            {packet.code}
-                          </Text>
-                          <Badge colorScheme={packet.status === "READY" ? "blue" : "gray"}>{packet.status}</Badge>
-                        </HStack>
-                      </Box>
-                    ))}
-                  </VStack>
-                </Box>
-              </VStack>
-            </CardBody>
-          </Card>
-
-          <VStack align="stretch" spacing={4}>
-            <Card
-              variant="outline"
-              borderRadius="2xl"
-              bg="white"
-              shadow="sm"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={onCanvasDrop}
-            >
-              <CardBody p={5}>
-                <HStack justify="space-between" mb={4}>
-                  <HStack>
-                    <Icon as={FlaskConical} color="purple.600" />
-                    <Text fontWeight="bold" color="gray.900">
-                      Center: Process Canvas
-                    </Text>
-                  </HStack>
-                  <Badge colorScheme="gray">{orderedSteps.length} step(s)</Badge>
-                </HStack>
-
-                <VStack align="stretch" spacing={3} minH="140px">
-                  {orderedSteps.length === 0 ? (
-                    <Box p={8} borderWidth="1px" borderStyle="dashed" borderColor="gray.300" borderRadius="xl" textAlign="center">
-                      <Text color="gray.600">Drag step types here to build process flow.</Text>
-                    </Box>
-                  ) : (
-                    orderedSteps.map((step) => {
-                      const chemicalCount = step.resources.filter((r) => r.resourceType === "CHEMICAL").length;
-                      const assetCount = step.resources.filter((r) => r.resourceType === "ASSET").length;
-                      const remaining = getStepRemainingSeconds(step);
-
-                      return (
-                        <Card
-                          key={step.id}
-                          variant="outline"
-                          borderRadius="xl"
-                          borderColor={selection?.type === "STEP" && selection.id === step.id ? "teal.400" : "gray.200"}
-                          onClick={() => setSelection({ type: "STEP", id: step.id })}
-                          onDragOver={(event) => event.preventDefault()}
-                          onDrop={(event) => onStepDrop(event, step.id)}
-                          cursor="pointer"
-                        >
-                          <CardBody p={4}>
-                            <HStack justify="space-between" align="start" spacing={4}>
-                              <Box>
-                                <HStack spacing={2}>
-                                  <Badge colorScheme="purple" borderRadius="full">
-                                    #{step.orderNo}
-                                  </Badge>
-                                  <Text fontWeight="bold" color="gray.900">
-                                    {step.name}
-                                  </Text>
-                                  <Badge colorScheme={step.status === "DONE" ? "green" : step.status === "RUNNING" ? "orange" : step.status === "READY" ? "blue" : "gray"}>
-                                    {step.status}
-                                  </Badge>
-                                </HStack>
-                                <HStack mt={2} spacing={2}>
-                                  <Badge colorScheme="blue" variant="subtle">
-                                    {step.durationSeconds}s
-                                  </Badge>
-                                  <Badge colorScheme="cyan" variant="subtle">
-                                    {chemicalCount} chemical(s)
-                                  </Badge>
-                                  <Badge colorScheme="pink" variant="subtle">
-                                    {assetCount} asset(s)
-                                  </Badge>
-                                  {step.requiresTimer ? (
-                                    <Badge colorScheme="orange" variant="subtle">
-                                      Timer
-                                    </Badge>
-                                  ) : null}
-                                </HStack>
-                                {step.status === "RUNNING" && step.requiresTimer ? (
-                                  <Text mt={2} fontSize="xs" color="orange.600" fontWeight="semibold">
-                                    Remaining: {remaining}s
-                                  </Text>
-                                ) : null}
-                              </Box>
-
-                              <VStack align="end" spacing={2}>
-                                <HStack>
-                                  <Button size="xs" onClick={() => moveStep(step.id, "UP")} isDisabled={!isBuildMode || isLocked}>
-                                    Up
-                                  </Button>
-                                  <Button size="xs" onClick={() => moveStep(step.id, "DOWN")} isDisabled={!isBuildMode || isLocked}>
-                                    Down
-                                  </Button>
-                                  <Button size="xs" colorScheme="red" variant="outline" onClick={() => deleteStep(step.id)} isDisabled={!isBuildMode || isLocked}>
-                                    Delete
-                                  </Button>
-                                </HStack>
-
-                                <HStack>
-                                  <Button
-                                    size="xs"
-                                    colorScheme="teal"
-                                    leftIcon={<Play size={14} />}
-                                    onClick={() => startStep(step.id)}
-                                    isDisabled={step.status !== "READY" || isLocked}
-                                  >
-                                    Start
-                                  </Button>
-                                  <Button
-                                    size="xs"
-                                    colorScheme="green"
-                                    leftIcon={<Timer size={14} />}
-                                    onClick={() => completeStep(step.id)}
-                                    isDisabled={step.status !== "RUNNING" || isLocked}
-                                  >
-                                    Complete
-                                  </Button>
-                                </HStack>
-                              </VStack>
-                            </HStack>
-                          </CardBody>
-                        </Card>
-                      );
-                    })
-                  )}
-                </VStack>
-              </CardBody>
-            </Card>
-
-            <Card
-              variant="outline"
-              borderRadius="2xl"
-              bg="white"
-              shadow="sm"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={onTrialDrop}
-            >
-              <CardBody p={5}>
-                <HStack justify="space-between" mb={3}>
-                  <HStack>
-                    <Icon as={Package} color="teal.600" />
-                    <Text fontWeight="bold" color="gray.900">
-                      Trial Lane
-                    </Text>
-                  </HStack>
-                  <Badge colorScheme={allStepsDone ? "green" : "gray"}>{allStepsDone ? "UNLOCKED" : "LOCKED"}</Badge>
-                </HStack>
-                <Text fontSize="sm" color="gray.600" mb={4}>
-                  Drag packets here after all steps are complete to create trials.
+                <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color="text.primary">
+                  {PLAYGROUND_PHASE_LABELS[playgroundStatus]}
                 </Text>
-
-                <VStack align="stretch" spacing={3}>
-                  {trials.length === 0 ? (
-                    <Box p={4} borderWidth="1px" borderStyle="dashed" borderColor="gray.300" borderRadius="xl">
-                      <Text fontSize="sm" color="gray.500">No records.</Text>
-                    </Box>
-                  ) : (
-                    trials.map((trial) => (
-                      <HStack
-                        key={trial.id}
-                        p={3}
-                        borderWidth="1px"
-                        borderColor={selection?.type === "TRIAL" && selection.id === trial.id ? "teal.400" : "gray.200"}
-                        borderRadius="xl"
-                        justify="space-between"
-                        bg={selectedTrialId === trial.id ? "teal.50" : "white"}
-                      >
-                        <Box onClick={() => setSelection({ type: "TRIAL", id: trial.id })} cursor="pointer">
-                          <Text fontWeight="semibold" color="gray.900">
-                            Trial #{trial.trialNo}
-                          </Text>
-                          <Text fontSize="sm" color="gray.600">
-                            {trial.packetCode} • {trial.measurements.length} measurement(s)
-                          </Text>
-                        </Box>
-                        <HStack>
-                          <Badge colorScheme={trial.status === "Selected" ? "purple" : trial.status === "Complete" ? "green" : trial.status === "Incomplete" ? "orange" : "gray"}>
-                            {trial.status}
-                          </Badge>
-                          <Button size="xs" colorScheme="purple" onClick={() => selectFinalTrial(trial.id)} isDisabled={isLocked}>
-                            Select
-                          </Button>
-                        </HStack>
-                      </HStack>
-                    ))
-                  )}
-                </VStack>
-              </CardBody>
-            </Card>
-          </VStack>
-
-          <Card variant="outline" borderRadius="2xl" bg="white" shadow="sm">
-            <CardBody p={5}>
-              <HStack mb={4}>
-                <Icon as={Wrench} color="orange.600" />
-                <Text fontWeight="bold" color="gray.900">
-                  Right Panel: Inspector
+              </Box>
+              <Box>
+                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+                  Primary action
                 </Text>
-              </HStack>
-
-              {!selection ? (
-                <Text fontSize="sm" color="gray.600">Select a step or trial to edit details.</Text>
-              ) : null}
-
-              {selection?.type === "VALIDATION" ? (
-                <VStack align="stretch" spacing={2}>
-                  <Text fontSize="sm" fontWeight="semibold" color="gray.900">
-                    Blocking Validation Issues
-                  </Text>
-                  {validationErrors.length === 0 ? (
-                    <Text fontSize="sm" color="green.600">No issues.</Text>
-                  ) : (
-                    validationErrors.map((error) => (
-                      <Box key={error} p={2.5} bg="red.50" borderWidth="1px" borderColor="red.200" borderRadius="lg">
-                        <Text fontSize="sm" color="red.700">{error}</Text>
-                      </Box>
-                    ))
-                  )}
-                </VStack>
-              ) : null}
-
-              {selectedStep ? (
-                <VStack align="stretch" spacing={4}>
-                  <Box>
-                    <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">Step</Text>
-                    <Heading size="sm" color="gray.900" mt={1}>{selectedStep.name}</Heading>
-                  </Box>
-
-                  <Box>
-                    <Text fontSize="sm" color="gray.700" mb={1}>Duration (seconds)</Text>
-                    <Input
-                      type="number"
-                      value={selectedStep.durationSeconds}
-                      onChange={(event) => updateStepField(selectedStep.id, { durationSeconds: Number(event.target.value) || 0 })}
-                      isDisabled={!isBuildMode || isLocked}
-                    />
-                  </Box>
-
-                  <Box>
-                    <Text fontSize="sm" color="gray.700" mb={1}>Instructions</Text>
-                    <Textarea
-                      value={selectedStep.instructions}
-                      onChange={(event) => updateStepField(selectedStep.id, { instructions: event.target.value })}
-                      isDisabled={!isBuildMode || isLocked}
-                    />
-                  </Box>
-
-                  <Box>
-                    <Text fontSize="sm" color="gray.700" mb={1}>Notes</Text>
-                    <Textarea
-                      value={selectedStep.notes}
-                      onChange={(event) => updateStepField(selectedStep.id, { notes: event.target.value })}
-                      isDisabled={!isBuildMode || isLocked}
-                    />
-                  </Box>
-
-                  <Divider />
-
-                  <Box>
-                    <HStack mb={2}>
-                      <Icon as={Beaker} boxSize={4} color="blue.600" />
-                      <Text fontSize="sm" fontWeight="semibold" color="gray.900">Chemicals</Text>
-                    </HStack>
-                    <VStack align="stretch" spacing={2}>
-                      {selectedStepChemicals.length === 0 ? (
-                        <Text fontSize="sm" color="gray.500">No records.</Text>
-                      ) : (
-                        selectedStepChemicals.map((resource) => {
-                          const chemical = chemicalsMaster.find((item) => item.id === resource.resourceId);
-                          if (!chemical) return null;
-
-                          return (
-                            <Box key={resource.id} p={2.5} borderWidth="1px" borderColor="gray.200" borderRadius="lg">
-                              <Text fontSize="sm" fontWeight="semibold" color="gray.900">{chemical.name}</Text>
-                              <HStack mt={2} spacing={2}>
-                                <Input
-                                  type="number"
-                                  value={resource.quantity ?? 0}
-                                  onChange={(event) =>
-                                    updateResource(selectedStep.id, resource.id, {
-                                      quantity: Number(event.target.value) || 0,
-                                    })
-                                  }
-                                  isDisabled={!isBuildMode || isLocked}
-                                />
-                                <Select
-                                  value={resource.unit ?? chemical.allowedUnits[0]}
-                                  onChange={(event) =>
-                                    updateResource(selectedStep.id, resource.id, {
-                                      unit: event.target.value,
-                                    })
-                                  }
-                                  isDisabled={!isBuildMode || isLocked}
-                                >
-                                  {chemical.allowedUnits.map((unit) => (
-                                    <option key={unit} value={unit}>{unit}</option>
-                                  ))}
-                                </Select>
-                              </HStack>
-                            </Box>
-                          );
-                        })
-                      )}
-                    </VStack>
-                  </Box>
-
-                  <Box>
-                    <HStack mb={2}>
-                      <Icon as={Wrench} boxSize={4} color="pink.600" />
-                      <Text fontSize="sm" fontWeight="semibold" color="gray.900">Assets</Text>
-                    </HStack>
-                    <VStack align="stretch" spacing={2}>
-                      {selectedStepAssets.length === 0 ? (
-                        <Text fontSize="sm" color="gray.500">No records.</Text>
-                      ) : (
-                        selectedStepAssets.map((resource) => {
-                          const asset = assetsMaster.find((item) => item.id === resource.resourceId);
-                          if (!asset) return null;
-                          return (
-                            <Box key={resource.id} p={2.5} borderWidth="1px" borderColor="gray.200" borderRadius="lg">
-                              <HStack justify="space-between">
-                                <Text fontSize="sm" fontWeight="semibold" color="gray.900">{asset.name}</Text>
-                                <Badge colorScheme={asset.availabilityStatus === "AVAILABLE" ? "green" : "orange"}>
-                                  {asset.availabilityStatus}
-                                </Badge>
-                              </HStack>
-                            </Box>
-                          );
-                        })
-                      )}
-                    </VStack>
-                  </Box>
-                </VStack>
-              ) : null}
-
-              {selectedTrial ? (
-                <VStack align="stretch" spacing={3}>
-                  <Box>
-                    <Text fontSize="xs" color="gray.500" textTransform="uppercase" fontWeight="semibold">Trial</Text>
-                    <Heading size="sm" color="gray.900" mt={1}>Trial #{selectedTrial.trialNo}</Heading>
-                    <Text fontSize="sm" color="gray.600">Packet: {selectedTrial.packetCode}</Text>
-                  </Box>
-
-                  <Button leftIcon={<Plus size={14} />} size="sm" onClick={() => addMeasurement(selectedTrial.id)} isDisabled={isLocked}>
-                    Add Measurement
-                  </Button>
-
-                  <VStack align="stretch" spacing={2}>
-                    {selectedTrial.measurements.length === 0 ? (
-                      <Text fontSize="sm" color="gray.500">No records.</Text>
-                    ) : (
-                      selectedTrial.measurements.map((measurement) => (
-                        <Box key={measurement.id} p={2.5} borderWidth="1px" borderColor="gray.200" borderRadius="lg">
-                          <SimpleGrid columns={2} spacing={2}>
-                            <Input
-                              placeholder="Element"
-                              value={measurement.elementCode}
-                              onChange={(event) =>
-                                updateMeasurement(selectedTrial.id, measurement.id, {
-                                  elementCode: event.target.value.toUpperCase(),
-                                })
-                              }
-                              isDisabled={isLocked}
-                            />
-                            <Input
-                              placeholder="Value"
-                              value={measurement.value}
-                              onChange={(event) =>
-                                updateMeasurement(selectedTrial.id, measurement.id, {
-                                  value: event.target.value,
-                                })
-                              }
-                              isDisabled={isLocked}
-                            />
-                            <Input
-                              placeholder="Unit"
-                              value={measurement.unit}
-                              onChange={(event) =>
-                                updateMeasurement(selectedTrial.id, measurement.id, {
-                                  unit: event.target.value,
-                                })
-                              }
-                              isDisabled={isLocked}
-                            />
-                            <Input
-                              placeholder="Remarks"
-                              value={measurement.remarks}
-                              onChange={(event) =>
-                                updateMeasurement(selectedTrial.id, measurement.id, {
-                                  remarks: event.target.value,
-                                })
-                              }
-                              isDisabled={isLocked}
-                            />
-                          </SimpleGrid>
-                        </Box>
-                      ))
-                    )}
-                  </VStack>
-                </VStack>
-              ) : null}
-            </CardBody>
-          </Card>
-        </Grid>
+                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+                  {isBuildMode ? "Validate or start processing" : "Release record"}
+                </Text>
+              </Box>
+              <Box>
+                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+                  Process template
+                </Text>
+                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+                  {selectedProcessTemplateId ? wholeProcessTemplates.find((template) => template.id === selectedProcessTemplateId)?.name ?? "Applied template" : "None applied"}
+                </Text>
+              </Box>
+              <Box>
+                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+                  Completion reminders
+                </Text>
+                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+                  {reminderEvents.length} queued
+                </Text>
+              </Box>
+              <Box>
+                <Text fontSize={{ base: "xs", md: "sm" }} color="text.secondary" textTransform="uppercase" fontWeight="semibold">
+                  Blockers
+                </Text>
+                <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.primary">
+                  Validation issues, incomplete result capture, or locked state will block progression.
+                </Text>
+              </Box>
+            </VStack>
+          }
+          mobileActions={
+            <>
+              <Button variant="outline" onClick={() => persistBoard(playgroundStatus, "PLAYGROUND_SAVE_MANUAL", { selectedProcessTemplateId, reminders: reminderEvents })} isDisabled={isLocked || !jobId || loadingBoard} isLoading={savingBoard}>
+                Save Process
+              </Button>
+              <Button variant="outline" onClick={runBuildValidation} isDisabled={isLocked}>
+                Validate
+              </Button>
+              {isBuildMode ? (
+                <Button colorScheme="teal" leftIcon={<Play size={16} />} onClick={startExecution} isDisabled={!isBuildMode || isLocked}>
+                  Start Processing
+                </Button>
+              ) : (
+                <Button colorScheme="red" leftIcon={<Lock size={16} />} onClick={lockExperiment} isDisabled={isLocked}>
+                  Release Record
+                </Button>
+              )}
+            </>
+          }
+        />
       </VStack>
     </ControlTowerLayout>
   );
@@ -1664,7 +1738,7 @@ export default function PlaygroundPage() {
       fallback={
         <ControlTowerLayout>
           <VStack align="stretch" spacing={6}>
-            <Text color="gray.600">Loading playground...</Text>
+              <Text color="gray.600">Loading sample process...</Text>
           </VStack>
         </ControlTowerLayout>
       }

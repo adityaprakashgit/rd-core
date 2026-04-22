@@ -382,7 +382,7 @@ export function PacketManagementWorkspace() {
       blockers.push({
         id: "missing-coa",
         title: "Missing COA",
-        description: "Certificate of Analysis is not available for this lot yet.",
+                        description: "Certificate of Analysis is not available for this bag yet.",
         actionLabel: "Open Documents",
         actionHref: `/documents?job=${jobId}&lot=${lotNumber}`,
       });
@@ -401,10 +401,12 @@ export function PacketManagementWorkspace() {
     if (selectedPacketReadiness && !selectedPacketReadiness.isReady) {
       blockers.push({
         id: "packet-proof",
-        title: "Incomplete required packet evidence",
-        description: selectedPacketReadiness.missing.length
-          ? selectedPacketReadiness.missing.map((item) => item.replaceAll("_", " ")).join(", ")
-          : "Packet readiness checks are still pending.",
+        title: "Incomplete sample packet evidence",
+        description: selectedPacketReadiness.blockers.length
+          ? selectedPacketReadiness.blockers
+              .map((blocker) => `${blocker.groupTitle} · ${blocker.proofLabel} · Fix here: ${blocker.locationLabel}`)
+              .join(" | ")
+          : "Sample packet readiness checks are still pending.",
         actionLabel: "Open Packet Detail",
         actionHref: pathname,
       });
@@ -719,7 +721,7 @@ export function PacketManagementWorkspace() {
   if (!payload || !lot) {
     return (
       <ControlTowerLayout>
-        <EmptyWorkState title="Lot not found" description="The selected lot could not be loaded." />
+        <EmptyWorkState title="Bag not found" description="The selected bag could not be loaded." />
       </ControlTowerLayout>
     );
   }
@@ -799,6 +801,10 @@ export function PacketManagementWorkspace() {
               label: "Remaining quantity",
               value: totalQuantity > 0 ? `${remainingQuantity} ${sample.sampleUnit ?? ""}`.trim() : "—",
             },
+            {
+              label: "R&D handoff",
+              value: "1 initial child per packet",
+            },
           ]}
         />
 
@@ -820,11 +826,12 @@ export function PacketManagementWorkspace() {
                 rowKey={(row) => row.id}
                 emptyLabel="No packets available."
                 columns={[
-                  { id: "packet-id", header: "Packet ID", render: (row) => row.packetCode },
-                  { id: "linked-lot", header: "Linked lot", render: (row) => row.lot?.lotNumber ?? lot.lotNumber },
-                  { id: "quantity", header: "Quantity", render: (row) => `${row.packetQuantity ?? "—"} ${row.packetUnit ?? ""}` },
-                  { id: "status", header: "Status", render: (row) => <WorkflowStateChip status={row.packetStatus} /> },
-                  { id: "storage-dispatch", header: "Storage / dispatch state", render: (row) => row.allocation?.allocationStatus ?? "BLOCKED" },
+                { id: "packet-id", header: "Packet ID", render: (row) => row.packetCode },
+                { id: "linked-lot", header: "Linked bag", render: (row) => row.lot?.lotNumber ?? lot.lotNumber },
+                { id: "rnd-child", header: "R&D child", render: () => <Badge colorScheme="green" variant="subtle">Initial child</Badge> },
+                { id: "quantity", header: "Quantity", render: (row) => `${row.packetQuantity ?? "—"} ${row.packetUnit ?? ""}` },
+                { id: "status", header: "Status", render: (row) => <WorkflowStateChip status={row.packetStatus} /> },
+                { id: "storage-dispatch", header: "Storage / dispatch state", render: (row) => row.allocation?.allocationStatus ?? "BLOCKED" },
                   {
                     id: "coa",
                     header: "Linked COA",
@@ -882,9 +889,10 @@ export function PacketManagementWorkspace() {
                       <LinkedRecordsPanel
                         items={[
                           { label: "Job Number", value: jobId, href: `/userrd/job/${jobId}` },
-                          { label: "Contributor Lots", value: "All passed job lots" },
+                          { label: "Contributing Bags", value: "All passed job bags" },
                           { label: "Sample", value: sample.sampleCode || "Not Available" },
                           { label: "Packet", value: selectedPacket?.packetCode ?? "Not Available" },
+                          { label: "R&D child", value: "One initial child is created when this packet is submitted." },
                         ]}
                       />
                     ),
@@ -895,12 +903,55 @@ export function PacketManagementWorkspace() {
                     content: (
                       <VStack align="stretch" spacing={3}>
                         <SectionHint label="Required checks" value={selectedPacketReadiness?.isReady ? "Completed" : "Pending"} />
-                        <SectionHint label="Missing checks" value={selectedPacketReadiness ? String(selectedPacketReadiness.missing.length) : "0"} />
+                        <SectionHint
+                          label="Missing evidence"
+                          value={selectedPacketReadiness ? String(selectedPacketReadiness.blockers.length) : "0"}
+                        />
+                        <SectionHint label="R&D child" value="1 initial child per packet" />
                         <SectionHint label="Allocation" value={selectedPacket?.allocation?.allocationStatus ?? "BLOCKED"} />
                         <SectionHint
                           label="Current for Dispatch"
                           value={selectedPacketOutput?.currentForDispatch ? "Current for Dispatch" : "Pending"}
                         />
+                        {selectedPacketReadiness && !selectedPacketReadiness.isReady ? (
+                          <>
+                            <ExceptionBanner
+                              status="warning"
+                              title="Sample packet readiness blocked"
+                              description="Complete the missing evidence in the packet card before marking it available."
+                            />
+                            {selectedPacketReadiness.blockers.map((blocker) => (
+                              <Card key={blocker.key} variant="outline">
+                                <CardBody p={4}>
+                                  <VStack align="stretch" spacing={2}>
+                                    <HStack justify="space-between" align="start" spacing={3}>
+                                      <Box>
+                                        <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                                          {blocker.groupTitle}
+                                        </Text>
+                                        <Text fontWeight="semibold" color="text.primary" mt={1}>
+                                          {blocker.proofLabel}
+                                        </Text>
+                                      </Box>
+                                      <Badge colorScheme="orange" variant="subtle">
+                                        {blocker.level.replaceAll("-", " ")}
+                                      </Badge>
+                                    </HStack>
+                                    <Text fontSize="sm" color="text.secondary">
+                                      {blocker.detail}
+                                    </Text>
+                                    <Text fontSize="xs" color="text.muted">
+                                      Fix here: {blocker.locationLabel}
+                                    </Text>
+                                    <Button size="sm" variant="outline" alignSelf="start" onClick={() => router.push(`/jobs/${jobId}/workflow?section=packets`)}>
+                                      {blocker.actionLabel}
+                                    </Button>
+                                  </VStack>
+                                </CardBody>
+                              </Card>
+                            ))}
+                          </>
+                        ) : null}
                       </VStack>
                     ),
                   },
@@ -977,8 +1028,8 @@ export function PacketManagementWorkspace() {
                     <LinkedRecordsPanel
                       items={[
                         { label: "Job Number", value: jobId, href: `/userrd/job/${jobId}` },
-                        { label: "Contributor Lots", value: "All passed job lots" },
-                        { label: "Current Step", value: lot.job.status.replaceAll("_", " ") },
+                        { label: "Contributing Bags", value: "All passed job bags" },
+                        { label: "Current Stage", value: lot.job.status.replaceAll("_", " ") },
                         { label: "Sample", value: sample.sampleCode || "Not Available" },
                         { label: "Packet", value: selectedPacket?.packetCode ?? "Not Available" },
                         { label: "Job Packets", value: "Open", href: `/jobs/${jobId}/workflow?section=packets` },
@@ -1362,18 +1413,36 @@ export function PacketManagementWorkspace() {
                           {!readiness.isReady ? (
                             <Box p={4} borderRadius="lg" bg="bg.rail" border="1px solid" borderColor="border.default">
                               <Text fontSize="sm" fontWeight="semibold" color="text.primary">
-                                Missing before availability
+                                Sample packet evidence blocked
                               </Text>
                               {packet.id === autoBalancedPacketId && totalQuantity > 0 ? (
                                 <Text fontSize="xs" color="text.secondary" mt={1}>
                                   Last packet quantity is auto-balanced from the remaining sample weight.
                                 </Text>
                               ) : null}
-                              <VStack align="stretch" spacing={1} mt={2}>
-                                {readiness.missing.map((item) => (
-                                  <Text key={item} fontSize="sm" color="text.secondary">
-                                    • {item}
-                                  </Text>
+                              <VStack align="stretch" spacing={2} mt={3}>
+                                {readiness.blockers.map((blocker) => (
+                                  <Box key={blocker.key} p={3} borderRadius="md" bg="bg.surface" border="1px solid" borderColor="border.default">
+                                    <HStack justify="space-between" align="start" spacing={3}>
+                                      <Box>
+                                        <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                                          {blocker.groupTitle}
+                                        </Text>
+                                        <Text fontSize="sm" fontWeight="semibold" color="text.primary" mt={1}>
+                                          {blocker.proofLabel}
+                                        </Text>
+                                      </Box>
+                                      <Badge colorScheme="orange" variant="subtle">
+                                        {blocker.level.replaceAll("-", " ")}
+                                      </Badge>
+                                    </HStack>
+                                    <Text fontSize="sm" color="text.secondary" mt={2}>
+                                      {blocker.detail}
+                                    </Text>
+                                    <Text fontSize="xs" color="text.muted" mt={1}>
+                                      Fix here: {blocker.locationLabel}
+                                    </Text>
+                                  </Box>
                                 ))}
                               </VStack>
                             </Box>

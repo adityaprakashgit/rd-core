@@ -16,6 +16,7 @@ type RndQueueRow = {
   parentJobNumber: string;
   sampleId: string;
   packetId: string;
+  childRole: string;
   packetWeight: string;
   packetUse: string;
   receivedDate: string;
@@ -72,6 +73,7 @@ export default function RndQueuePage() {
         parentJobNumber: String((row.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-"),
         sampleId: String((row.sample as { sampleCode?: string } | null)?.sampleCode ?? "-"),
         packetId: String((row.packet as { packetCode?: string } | null)?.packetCode ?? "-"),
+        childRole: String(row.previousRndJobId ? "Retest child" : "Initial child from packet"),
         packetWeight: (() => {
           const packet = row.packet as { packetWeight?: number | null; packetUnit?: string | null } | null;
           return packet?.packetWeight ? `${packet.packetWeight} ${packet.packetUnit ?? ""}`.trim() : "-";
@@ -82,7 +84,7 @@ export default function RndQueuePage() {
         priority: String(row.priority ?? "MEDIUM"),
         dueStatus: String(row.dueStatus ?? "ON_TRACK"),
         currentStep: String(row.currentStep ?? "-"),
-        primaryAction: String(row.primaryAction ?? "Open Job"),
+        primaryAction: String(row.primaryAction ?? "Open Batch"),
         bucket: String(row.bucket ?? "PENDING_INTAKE") as RndQueueRow["bucket"],
       }));
       setRows(mapped);
@@ -105,6 +107,7 @@ export default function RndQueuePage() {
         row.parentJobNumber,
         row.sampleId,
         row.packetId,
+        row.childRole,
         row.packetUse,
         row.assignedUser,
         row.priority,
@@ -136,7 +139,16 @@ export default function RndQueuePage() {
 
         <PageActionBar
           primaryAction={<Button onClick={() => router.push("/rnd/history")}>View History</Button>}
-          secondaryActions={<Text fontSize="sm" color="text.secondary">Queue → Open Job → Test → Review → Done</Text>}
+          secondaryActions={
+            <HStack spacing={3} flexWrap="wrap">
+              <Text fontSize="sm" color="text.secondary">
+                Queue → Open Batch → Test → Review → Done
+              </Text>
+              <Text fontSize="sm" color="text.secondary">
+                Each packet creates one initial R&amp;D child row; retests are separate child rows.
+              </Text>
+            </HStack>
+          }
         />
 
         <FilterSearchStrip
@@ -183,17 +195,18 @@ export default function RndQueuePage() {
               rows={filtered}
               rowKey={(row) => row.id}
               columns={[
-                { id: "rnd", header: "R&D Job Number", render: (row) => row.rndJobNumber },
-                { id: "parent", header: "Parent Job Number", render: (row) => row.parentJobNumber },
+                { id: "rnd", header: "R&D Batch Number", render: (row) => row.rndJobNumber },
+                { id: "parent", header: "Parent Batch Number", render: (row) => row.parentJobNumber },
                 { id: "sample", header: "Sample ID", render: (row) => row.sampleId },
                 { id: "packet", header: "Packet ID", render: (row) => row.packetId },
+                { id: "lineage", header: "Child Role", render: (row) => <Badge colorScheme={row.childRole.startsWith("Retest") ? "orange" : "green"} variant="subtle">{row.childRole}</Badge> },
                 { id: "weight", header: "Packet Weight", render: (row) => row.packetWeight },
                 { id: "use", header: "Packet Use", render: (row) => row.packetUse },
                 { id: "received", header: "Received Date", render: (row) => row.receivedDate },
                 { id: "assigned", header: "Assigned User", render: (row) => row.assignedUser },
                 { id: "priority", header: "Priority", render: (row) => <WorkflowStateChip status={row.priority} /> },
                 { id: "due", header: "Due Status", render: (row) => <WorkflowStateChip status={row.dueStatus} /> },
-                { id: "step", header: "Current Step", render: (row) => row.currentStep },
+                { id: "step", header: "Current Stage", render: (row) => row.currentStep },
                 {
                   id: "action",
                   header: "Primary Action",

@@ -46,6 +46,8 @@ The enterprise UI is now defined by shared primitives and templates, not page-lo
 - **Error and empty-state behavior**
   - enterprise async states (`InlineErrorState`, `EmptyWorkState`, `TopErrorBanner`, `PageSkeleton`)
 
+Execution shells may use Batch/Bag wording in workflow chrome through shared terminology helpers, while Job Number and Lot Number remain the canonical traceability identifiers.
+
 ## 4) What Enforcement Was Added
 
 - **Lint guardrails (warn-level)** were added in `eslint.config.mjs` for UI drift detection:

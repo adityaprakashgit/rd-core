@@ -34,6 +34,18 @@ type QuaggaLike = {
   ) => void;
 };
 
+const BARCODE_FORMATS = [
+  "code_128",
+  "code_39",
+  "qr_code",
+  "ean_13",
+  "ean_8",
+  "codabar",
+  "itf",
+  "upc_a",
+  "upc_e",
+] as const;
+
 function getBarcodeDetectorCtor(): BarcodeDetectorCtorLike | null {
   if (typeof window === "undefined") {
     return null;
@@ -165,7 +177,7 @@ export function SealScanner({
       }
 
       const detector = new detectorCtor({
-        formats: ["code_128", "qr_code", "ean_13", "code_39"],
+        formats: [...BARCODE_FORMATS],
       });
 
       timerRef.current = window.setInterval(async () => {
@@ -219,6 +231,10 @@ export function SealScanner({
                     "ean_reader",
                     "ean_8_reader",
                     "upc_reader",
+                    "upc_e_reader",
+                    "codabar_reader",
+                    "i2of5_reader",
+                    "code_93_reader",
                   ],
                 },
               },
@@ -232,7 +248,7 @@ export function SealScanner({
 
           const detectorCtor = getBarcodeDetectorCtor();
           if (detectorCtor) {
-            const detector = new detectorCtor({ formats: ["code_128", "qr_code", "ean_13", "code_39"] });
+            const detector = new detectorCtor({ formats: [...BARCODE_FORMATS] });
             const detections = await detector.detect(image);
             const raw = detections[0]?.rawValue?.trim() ?? "";
             if (raw) {
@@ -305,6 +321,9 @@ export function SealScanner({
                   Stop
                 </Button>
               </HStack>
+              <Text fontSize="xs" color="text.secondary">
+                Supports phone camera scan, barcode-reader input, image upload, and manual seal entry.
+              </Text>
               <HStack spacing={3} flexWrap="wrap">
                 <Button
                   variant="outline"

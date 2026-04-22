@@ -17,6 +17,8 @@ Stage order (fixed across product):
 
 Playground is out of scope.
 
+Execution shells may render Batch/Bag terminology in the workflow chrome, but Job Number and Lot Number remain the canonical identifiers for traceability and reporting.
+
 ## 2. Product principles
 - Workflow clarity over decoration.
 - One object, one canonical experience.
@@ -135,19 +137,22 @@ Also keep visible:
 
 ## 12. Image capture behavior
 Required categories (exact names):
-1. Bag photo with visible LOT no
+1. Bag photo with visible bag no
 2. Material in bag
 3. During Sampling Photo
 4. Sample Completion
 5. Seal on bag
 6. Bag condition
-7. Whole Job bag palletized and packed
+7. Whole batch photo
 
 Behavior:
 - Direct camera capture is primary on mobile and tablet.
 - File upload is secondary.
 - Each card shows status: `Missing`, `Uploaded`, `Retake`.
 - Per-card inline validation and retry.
+
+Compatibility note:
+- Legacy evidence-policy aliases remain supported in imported settings/backfill data.
 
 ## 13. Seal scanning behavior
 - `Scan Seal` is primary and always visible.

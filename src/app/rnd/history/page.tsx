@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, HStack, Text, VStack } from "@chakra-ui/react";
+import { Badge, Button, HStack, Text, VStack } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncState";
@@ -23,6 +23,7 @@ type HistoryRow = {
   parentJobNumber: string;
   lotNumber: string;
   packetId: string;
+  childRole: string;
   previousRndJob: string;
   nextRetests: number;
   completedAt: string;
@@ -49,6 +50,7 @@ export default function RndHistoryPage() {
           parentJobNumber: String((entry.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-"),
           lotNumber: String((entry.lot as { lotNumber?: string } | null)?.lotNumber ?? "-"),
           packetId: String((entry.packet as { packetCode?: string } | null)?.packetCode ?? "-"),
+          childRole: String(entry.previousRndJob ? "Retest child" : "Initial child from packet"),
           previousRndJob: String((entry.previousRndJob as { rndJobNumber?: string } | null)?.rndJobNumber ?? "-"),
           nextRetests: (entry.nextRetestJobs as Array<unknown> | undefined)?.length ?? 0,
           completedAt: formatDate(String(entry.completedAt ?? entry.updatedAt ?? "")),
@@ -89,12 +91,13 @@ export default function RndHistoryPage() {
               rows={rows}
               rowKey={(row) => row.id}
               columns={[
-                { id: "rnd", header: "R&D Job", render: (row) => row.rndJobNumber },
+                { id: "rnd", header: "R&D Batch", render: (row) => row.rndJobNumber },
                 { id: "status", header: "Status", render: (row) => <WorkflowStateChip status={row.status} /> },
-                { id: "parent", header: "Parent Job", render: (row) => row.parentJobNumber },
+                { id: "parent", header: "Parent Batch", render: (row) => row.parentJobNumber },
                 { id: "lot", header: "Lot", render: (row) => row.lotNumber },
                 { id: "packet", header: "Packet", render: (row) => row.packetId },
-                { id: "prev", header: "Previous R&D Job", render: (row) => row.previousRndJob },
+                { id: "child-role", header: "Child Role", render: (row) => <Badge colorScheme={row.childRole.startsWith("Retest") ? "orange" : "green"} variant="subtle">{row.childRole}</Badge> },
+                { id: "prev", header: "Previous R&D Batch", render: (row) => row.previousRndJob },
                 { id: "retests", header: "Retests", render: (row) => String(row.nextRetests) },
                 { id: "completed", header: "Completed At", render: (row) => row.completedAt },
                 {

@@ -18,7 +18,8 @@ import { prisma } from "@/lib/prisma";
 import { AuthorizationError, authorize } from "@/lib/rbac";
 import { generateRndJobNumber } from "@/lib/rnd-workflow";
 import { getCurrentUserFromRequest } from "@/lib/session";
-import { deriveSampleStatus, getSampleReadiness } from "@/lib/sample-management";
+import { deriveSampleStatusWithContext, getSampleReadiness } from "@/lib/sample-management";
+import { syncSampleSealTraceability } from "@/lib/sample-seal-traceability";
 import { recomputeJobWorkflowMilestones } from "@/lib/workflow-milestones";
 import type { PacketRecord, SampleRecord } from "@/types/inspection";
 
@@ -165,6 +166,7 @@ async function getSampleScope(tx: PrismaLike, sampleId: string, companyId: strin
         select: {
           id: true,
           lotNumber: true,
+          sealNumber: true,
         },
       },
       job: {
@@ -331,16 +333,50 @@ export async function POST(request: NextRequest) {
 
     const packets = await prisma.$transaction(async (tx) => {
       const sample = await getSampleScope(tx, sampleId, currentUser.companyId);
+      const jobLots = await tx.inspectionLot.findMany({
+        where: { jobId: sample.jobId, companyId: currentUser.companyId },
+        select: {
+          sealNumber: true,
+          sample: {
+            select: {
+              sealLabel: {
+                select: {
+                  sealNo: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      const lotSealNumbers = jobLots.map((lot) => lot.sample?.sealLabel?.sealNo ?? lot.sealNumber ?? null);
+      if (sample.lot?.sealNumber) {
+        await syncSampleSealTraceability(tx, {
+          sampleId: sample.id,
+          sealNumber: sample.lot.sealNumber,
+        });
+      }
+      if (lotSealNumbers.some((sealNumber) => Boolean(sealNumber?.trim()))) {
+        await syncSampleSealTraceability(tx, {
+          sampleId: sample.id,
+          sealNumber: lotSealNumbers.find((sealNumber) => Boolean(sealNumber?.trim())) ?? undefined,
+        });
+      }
+      const refreshedSample = await getSampleScope(tx, sampleId, currentUser.companyId);
       const workflowPolicy = await getWorkflowPolicy(tx, currentUser.companyId);
-      const sampleStatus = deriveSampleStatus(sample as unknown as SampleRecord);
+      const sampleStatus = deriveSampleStatusWithContext(refreshedSample as unknown as SampleRecord, {
+        lotSealNumbers,
+      });
       if (sampleStatus !== "READY_FOR_PACKETING") {
-        const readiness = getSampleReadiness(sample as unknown as SampleRecord);
+        const readiness = getSampleReadiness(refreshedSample as unknown as SampleRecord, {
+          lotSealNumbers,
+        });
+        const readinessDetails = readiness.blockers.map((blocker) => blocker.detail).join(" | ");
         throw new Error(
-          `SAMPLE_NOT_READY:${readiness.missing.length > 0 ? readiness.missing.join(" | ") : "Sample readiness prerequisites are incomplete."}`,
+          `SAMPLE_NOT_READY:${readinessDetails.length > 0 ? readinessDetails : "Sample readiness prerequisites are incomplete."}`,
         );
       }
 
-      const highestPacketNo = sample.packets.reduce((max, packet) => Math.max(max, packet.packetNo), 0);
+      const highestPacketNo = refreshedSample.packets.reduce((max, packet) => Math.max(max, packet.packetNo), 0);
 
       const plannedPackets = Array.from({ length: requestedCount }, (_, index) => {
         const entry = (planEntries[index] ?? {}) as Record<string, unknown>;
@@ -353,9 +389,9 @@ export async function POST(request: NextRequest) {
         };
       });
 
-      const sampleComparable = toComparableQuantity(sample.sampleQuantity, sample.sampleUnit);
+      const sampleComparable = toComparableQuantity(refreshedSample.sampleQuantity, refreshedSample.sampleUnit);
       if (sampleComparable) {
-        const existingComparableTotal = (sample.packets as unknown as PacketRecord[]).reduce((total, packet) => {
+        const existingComparableTotal = (refreshedSample.packets as unknown as PacketRecord[]).reduce((total, packet) => {
           const comparable = toComparableQuantity(packet.packetWeight ?? packet.packetQuantity, packet.packetUnit);
           if (!comparable || comparable.dimension !== sampleComparable.dimension) {
             return total;
@@ -390,8 +426,8 @@ export async function POST(request: NextRequest) {
         }
 
         const packetCode = await buildUniquePacketCode(tx, {
-          inspectionSerialNumber: sample.job.inspectionSerialNumber,
-          lotNumber: sample.sampleCode || "HOMO",
+          inspectionSerialNumber: refreshedSample.job.inspectionSerialNumber,
+          lotNumber: refreshedSample.sampleCode || "HOMO",
           packetNo: plan.packetNo,
           prefix: workflowPolicy.workflow.autoPacketIdGeneration
             ? workflowPolicy.workflow.packetIdPrefix
@@ -417,9 +453,9 @@ export async function POST(request: NextRequest) {
         const created = await tx.packet.create({
           data: {
             companyId: sample.companyId,
-            jobId: sample.jobId,
+            jobId: refreshedSample.jobId,
             lotId: null,
-            sampleId: sample.id,
+            sampleId: refreshedSample.id,
             packetCode,
             packetNo: plan.packetNo,
             packetStatus: status,
@@ -452,19 +488,19 @@ export async function POST(request: NextRequest) {
       }
 
       await recordAuditLog(tx, {
-        jobId: sample.jobId,
+        jobId: refreshedSample.jobId,
         userId: currentUser.id,
         entity: "PACKET",
         action: "PACKETS_GENERATED",
         metadata: {
-          sampleId: sample.id,
+          sampleId: refreshedSample.id,
           lineage: "JOB_LEVEL_HOMOGENEOUS_SAMPLE",
           count: createdPackets.length,
           packetCodes: createdPackets.map((packet) => packet.packetCode),
         },
       });
 
-      return fetchPacketsBySample(tx, sample.id);
+      return fetchPacketsBySample(tx, refreshedSample.id);
     });
 
     return NextResponse.json(packets);
@@ -481,8 +517,7 @@ export async function POST(request: NextRequest) {
       return jsonError("Forbidden", "This job is LOCKED for audit integrity. No packet changes are allowed.", 403);
     }
     if (message.startsWith("SAMPLE_NOT_READY")) {
-      const [, blockerMessage = ""] = message.split(":");
-      const details = blockerMessage.trim();
+      const details = message.replace("SAMPLE_NOT_READY:", "").trim();
       return jsonError(
         "Validation Error",
         details
@@ -520,6 +555,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  let packetId = "";
   try {
     const currentUser = await getCurrentUserFromRequest(request);
     if (!currentUser) {
@@ -529,7 +565,7 @@ export async function PATCH(request: NextRequest) {
     authorize(currentUser, "MANAGE_PACKET_WORKFLOW");
 
     const body = await request.json();
-    const packetId = typeof body?.packetId === "string" ? body.packetId.trim() : "";
+    packetId = typeof body?.packetId === "string" ? body.packetId.trim() : "";
     if (!packetId) {
       return jsonError("Validation Error", "packetId is required.", 400);
     }
@@ -744,7 +780,7 @@ export async function PATCH(request: NextRequest) {
 
       if (markAvailable) {
         if (!readiness.isReady) {
-          throw new Error(`READINESS_BLOCKED:${readiness.missing.join(" | ")}`);
+          throw new Error(`READINESS_BLOCKED:${readiness.blockers.map((blocker) => blocker.detail).join(" | ")}`);
         }
         nextStatus = "AVAILABLE";
         nextAllocationStatus = "AVAILABLE";
@@ -760,7 +796,7 @@ export async function PATCH(request: NextRequest) {
         }
 
         if (allocationStatus !== "BLOCKED" && allocationStatus !== "USED" && !readiness.isReady) {
-          throw new Error(`READINESS_BLOCKED:${readiness.missing.join(" | ")}`);
+          throw new Error(`READINESS_BLOCKED:${readiness.blockers.map((blocker) => blocker.detail).join(" | ")}`);
         }
 
         nextAllocationStatus = allocationStatus;
@@ -827,21 +863,23 @@ export async function PATCH(request: NextRequest) {
       }
 
       if (markSubmittedToRnd) {
-        await createPacketEvent(tx, {
-          packetId: refreshed.id,
-          eventType: "PACKET_SUBMITTED_TO_RND",
-          performedById: currentUser.id,
-        });
-        await recordAuditLog(tx, {
-          jobId: refreshed.jobId ?? currentPacket.jobId,
-          userId: currentUser.id,
-          entity: "PACKET",
-          action: "PACKET_SUBMITTED_TO_RND",
-          metadata: {
+        if (!previous.submittedToRndAt) {
+          await createPacketEvent(tx, {
             packetId: refreshed.id,
-            submittedToRndAt: refreshed.submittedToRndAt,
-          },
-        });
+            eventType: "PACKET_SUBMITTED_TO_RND",
+            performedById: currentUser.id,
+          });
+          await recordAuditLog(tx, {
+            jobId: refreshed.jobId ?? currentPacket.jobId,
+            userId: currentUser.id,
+            entity: "PACKET",
+            action: "PACKET_SUBMITTED_TO_RND",
+            metadata: {
+              packetId: refreshed.id,
+              submittedToRndAt: refreshed.submittedToRndAt,
+            },
+          });
+        }
 
         const existingRndJob = await tx.rndJob.findFirst({
           where: {
@@ -1039,6 +1077,20 @@ export async function PATCH(request: NextRequest) {
   } catch (error: unknown) {
     if (error instanceof AuthorizationError) {
       return jsonError("Forbidden", error.message, 403);
+    }
+
+    if (error && typeof error === "object" && "code" in error && String((error as { code?: unknown }).code) === "P2002") {
+      const currentUser = await getCurrentUserFromRequest(request);
+      if (!currentUser) {
+        return jsonError("Unauthorized", "Current user could not be resolved.", 401);
+      }
+      const refreshed = await prisma.packet.findUnique({
+        where: { id: packetId },
+        include: packetInclude,
+      });
+      if (refreshed && refreshed.companyId === currentUser.companyId) {
+        return NextResponse.json(refreshed);
+      }
     }
 
     const message = error instanceof Error ? error.message : "Failed to update packet.";

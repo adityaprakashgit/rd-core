@@ -14,6 +14,10 @@ Deliver a practical, implementation-ready UI revamp roadmap that improves workfl
 ## Stage Flow (Canonical)
 `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 
+Note:
+- Shared execution shells may surface Batch/Bag wording in navigation or step labels.
+- Keep Job Number/Lot Number visible in traceability, PDFs, and headers so the canonical identifiers stay obvious.
+
 ## Roles (Canonical)
 - Production
 - R&D

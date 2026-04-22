@@ -11,6 +11,8 @@ Revamp the application UI into a clean, structured, enterprise-grade product ins
 ## Stage Flow (Canonical)
 `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 
+Execution shells may use Batch/Bag wording in the workflow chrome when routed through shared terminology helpers, but the canonical traceability labels remain Job Number/Lot Number.
+
 ## Core Object
 `Lot` is the primary traceable object across all modules and screens.
 

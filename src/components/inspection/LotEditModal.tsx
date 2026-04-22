@@ -6,7 +6,6 @@ import {
   FormControl,
   FormLabel,
   Heading,
-  HStack,
   Input,
   Modal,
   ModalBody,
@@ -15,7 +14,6 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
-  Select,
   SimpleGrid,
   Text,
   Textarea,
@@ -96,7 +94,7 @@ export function LotEditModal({
       }
 
       toast({
-        title: "Lot updated",
+        title: "Bag updated",
         status: "success",
       });
 
@@ -124,9 +122,9 @@ export function LotEditModal({
       <ModalOverlay />
       <ModalContent bg="bg.app">
         <ModalHeader>
-          <Heading size="md">Edit lot details</Heading>
+          <Heading size="md">Edit bag details</Heading>
           <Text fontSize="sm" color="text.secondary" mt={1}>
-            Update core lot parameters for {lotNumber}.
+            Update core bag parameters for {lotNumber}.
           </Text>
           <ModalCloseButton />
         </ModalHeader>
@@ -139,9 +137,9 @@ export function LotEditModal({
 
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
               <FormControl isRequired>
-                <FormLabel>Lot number</FormLabel>
+                <FormLabel>Bag number</FormLabel>
                 <Input value={lotNumber} isDisabled />
-                <Text fontSize="xs" color="text.muted" mt={1}>Lot number cannot be changed directly.</Text>
+                <Text fontSize="xs" color="text.muted" mt={1}>Bag number cannot be changed directly.</Text>
               </FormControl>
               <FormControl>
                 <FormLabel>Material category</FormLabel>
@@ -170,7 +168,7 @@ export function LotEditModal({
               </SimpleGrid>
             ) : (
               <Text fontSize="sm" color="text.secondary">
-                For Multi Weight mode, individual weights must be updated via the lot bag level API/workflow.
+                For Multi Weight mode, individual weights must be updated via the bag level API/workflow.
               </Text>
             )}
 

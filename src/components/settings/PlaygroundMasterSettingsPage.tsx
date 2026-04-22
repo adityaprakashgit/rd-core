@@ -87,7 +87,7 @@ const masterTypes: Array<{ type: MasterType; label: string; helper: string }> = 
   { type: "CHEMICAL", label: "Chemical Master", helper: "Chemicals, units, and stock fields" },
   { type: "ASSET", label: "Asset Master", helper: "Equipment and availability records" },
   { type: "UNIT", label: "Unit Master", helper: "Unit categories and conversions" },
-  { type: "TEMPLATE", label: "Template Master", helper: "Reusable experiment flow templates" },
+  { type: "TEMPLATE", label: "Template Master", helper: "Reusable internal flow templates" },
 ];
 
 function csvToArray(raw: string) {
@@ -385,17 +385,17 @@ export default function SettingsPage() {
         <Box>
           <HStack spacing={2}>
             <Badge colorScheme="purple" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              PLAYGROUND SETTINGS
+            INTERNAL SETTINGS
             </Badge>
             <Badge colorScheme="green" variant="subtle" borderRadius="full" px={2.5} py={1}>
-              FORM UX
+            MASTER UX
             </Badge>
           </HStack>
           <Heading size="lg" color="gray.900" mt={2}>
-            Playground Master Management
+            Internal Master Settings
           </Heading>
           <Text color="gray.600" mt={2}>
-            Faster non-JSON setup for Step, Chemical, Asset, Unit, and Template masters.
+            Faster internal setup for Step, Chemical, Asset, Unit, and Template masters.
           </Text>
         </Box>
 

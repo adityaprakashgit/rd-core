@@ -117,10 +117,10 @@ export default function SignupPage() {
             <Badge colorScheme="brand" variant="subtle" w="fit-content">
               Enterprise Onboarding
             </Badge>
-            <Text fontSize="xl" fontWeight="semibold" color="text.primary">
+            <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="semibold" color="text.primary">
               Create Company Account
             </Text>
-            <Text color="text.secondary" fontSize="sm">
+            <Text color="text.secondary" fontSize={{ base: "sm", md: "md" }}>
               Register administrator access for your workspace.
             </Text>
           </VStack>
@@ -167,7 +167,7 @@ export default function SignupPage() {
             Create Workspace
           </Button>
 
-          <Text fontSize="sm" color="text.secondary" textAlign="center">
+          <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary" textAlign="center">
             Already registered?{" "}
             <Link color="brand.600" onClick={() => router.push("/login")}>
               Sign in

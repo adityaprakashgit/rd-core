@@ -177,7 +177,7 @@ describe("/api/settings/module-workflow route", () => {
     const response = await PATCH({
       json: async () => ({
         images: {
-          requiredImageCategories: ["Bag photo with visible LOT no"],
+          requiredImageCategories: ["Bag photo with visible bag no"],
           optionalImageCategories: [],
           hiddenImageCategories: [],
           imageTimestampRequired: false,
@@ -192,7 +192,7 @@ describe("/api/settings/module-workflow route", () => {
 
     expect(response.status).toBe(422);
     expect(payload.code).toBe("POLICY_CATEGORY_INVALID");
-    expect(payload.details).toContain("requiredImageCategories=Bag photo with visible LOT no");
+    expect(payload.details).toContain("requiredImageCategories=Bag photo with visible bag no");
     expect(mocks.upsertMock).not.toHaveBeenCalled();
   });
 });

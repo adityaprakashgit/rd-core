@@ -1,6 +1,7 @@
 import type { InspectionJob, InspectionLot, SampleRecord } from "@/types/inspection";
 import type { WorkflowStep } from "@/components/enterprise/WorkflowStepTracker";
 import { isLotDetailCaptured, isLotReadyForNextStage } from "@/lib/intake-workflow";
+import { EXECUTION_TERMS } from "@/lib/execution-terminology";
 import { deriveSampleStatus } from "@/lib/sample-management";
 import { getStatusPresentation } from "@/lib/status-presentation";
 
@@ -80,21 +81,21 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
       return buildWorkflowPresentation({
         stage: "complete",
         status: "COMPLETED",
-        summary: "Workflow closed and ready for downstream reference.",
+        summary: "Batch workflow closed and ready for downstream reference.",
         nextAction: "View documents",
       });
     case "REPORT_READY":
       return buildWorkflowPresentation({
         stage: "reporting",
         status: "REPORT_READY",
-        summary: "Operational work is finished and reporting is the active step.",
-        nextAction: "Open reports",
+        summary: "Operational work is finished and reporting is the active step for the batch.",
+        nextAction: "Open Reports Workspace",
       });
     case "RND_RUNNING":
       return buildWorkflowPresentation({
         stage: "lab",
         status: "RND_RUNNING",
-        summary: "Sampling is complete and lab analysis is the active stage.",
+        summary: "Sampling is complete and lab analysis is the active stage for the batch.",
         nextAction: "Continue lab review",
       });
     case "QA":
@@ -103,15 +104,15 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
         stage: job.status === "LOCKED" ? "reporting" : "lab",
         status: job.status === "LOCKED" ? "LOCKED" : "QA",
         summary: job.status === "LOCKED"
-          ? "Job is sealed and waiting for reporting or release."
+          ? "Batch is sealed and waiting for reporting or release."
           : "Evidence capture is complete and QA review is active.",
-        nextAction: job.status === "LOCKED" ? "Open reports" : "Review QA",
+        nextAction: job.status === "LOCKED" ? "Open Reports Workspace" : "Review QA",
       });
     case "SAMPLING_PENDING":
       return buildWorkflowPresentation({
         stage: "sampling",
         status: "SAMPLING_PENDING",
-        summary: "A lot is not yet approved for sampling and blocks lab progression.",
+        summary: "A bag is not yet approved for sampling and blocks lab progression.",
         nextAction: "Finish sampling",
       });
     case "IN_PROGRESS":
@@ -119,10 +120,10 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
         stage: completedLots === totalLots && totalLots > 0 ? "lab" : startedLots > 0 ? "sampling" : "lot_capture",
         status: completedLots === totalLots && totalLots > 0 ? "READY_FOR_PACKETING" : startedLots > 0 ? "INSPECTION_IN_PROGRESS" : "LOT_CAPTURE",
         summary: completedLots === totalLots && totalLots > 0
-          ? "Sampling evidence is complete and the job can move into analysis."
+          ? "Sampling evidence is complete and the batch can move into analysis."
           : startedLots > 0
             ? "Inspection, exception capture, or evidence review is underway."
-            : "Job is active but lot intake is still the primary task.",
+            : "Batch is active but bag intake is still the primary task.",
         nextAction: completedLots === totalLots && totalLots > 0 ? "Open lab workspace" : "Continue inspection",
       });
     default:
@@ -130,7 +131,7 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
         return buildWorkflowPresentation({
           stage: "intake",
           status: "INTAKE",
-          summary: "Job exists but no lots have been registered yet.",
+          summary: "Batch exists but no bags have been registered yet.",
           nextAction: "Add first lot",
         });
       }
@@ -139,7 +140,7 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
         return buildWorkflowPresentation({
           stage: "lab",
           status: "READY_FOR_PACKETING",
-          summary: "All lots have complete evidence and can move to lab review.",
+          summary: "All bags have complete evidence and can move to lab review.",
           nextAction: "Open lab workspace",
         });
       }
@@ -148,7 +149,7 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
         return buildWorkflowPresentation({
           stage: "sampling",
           status: "INSPECTION_IN_PROGRESS",
-          summary: "At least one lot has started inspection or evidence capture.",
+          summary: "At least one bag has started inspection or evidence capture.",
           nextAction: "Continue inspection",
         });
       }
@@ -156,7 +157,7 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
       return buildWorkflowPresentation({
         stage: "lot_capture",
         status: "LOT_CAPTURE",
-        summary: "Lots are registered, but inspection work has not started.",
+        summary: "Bags are registered, but inspection work has not started.",
         nextAction: "Open next lot",
       });
   }
@@ -165,8 +166,8 @@ export function getJobWorkflowPresentation(job: InspectionJob): WorkflowPresenta
 export function buildWorkflowSteps(job: InspectionJob): WorkflowStep[] {
   const presentation = getJobWorkflowPresentation(job);
   const ordered: Array<{ id: CanonicalWorkflowStage; label: string }> = [
-    { id: "intake", label: "Job Intake" },
-    { id: "lot_capture", label: "Lot Intake" },
+    { id: "intake", label: EXECUTION_TERMS.batch.basics },
+    { id: "lot_capture", label: EXECUTION_TERMS.bag.intake },
     { id: "sampling", label: "Sampling" },
     { id: "lab", label: "Lab Review" },
     { id: "reporting", label: "Reporting" },

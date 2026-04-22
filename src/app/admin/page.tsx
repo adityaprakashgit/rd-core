@@ -282,17 +282,18 @@ export default function AdminWorkspacePage() {
       .filter((job) => !["COMPLETED", "DISPATCHED"].includes(job.status))
       .map((job) => {
         const currentMilestone = getCurrentMilestoneStage(job);
+        const displayMilestone = currentMilestone.replace(/^Batch /, "Job ");
         const stageAge = getCurrentMilestoneAgeHours(job);
         let nextAction = "Open Job Workflow";
-        if (currentMilestone === "Job Created") nextAction = "Create first lot";
-        if (currentMilestone === "Job Started") nextAction = "Submit for final decision";
+        if (currentMilestone === "Batch Created") nextAction = "Create first bag";
+        if (currentMilestone === "Batch Started") nextAction = "Submit for final decision";
         if (currentMilestone === "Sent to Admin") nextAction = "Manager/Admin decision required";
         if (currentMilestone === "Admin Decision") nextAction = "Complete operations workflow";
         if (currentMilestone === "Operations Completed") nextAction = "Submit to R&D";
         return {
           id: job.id,
           jobNumber: job.inspectionSerialNumber || job.jobReferenceNumber || "—",
-          currentMilestone,
+          currentMilestone: displayMilestone,
           stageAge: stageAge === null ? "Pending" : formatHoursDuration(stageAge),
           owner: job.assignedTo?.profile?.displayName || "Unassigned",
           nextAction,

@@ -1,5 +1,6 @@
 import { canApproveFinalDecision, type ModuleWorkflowPolicy } from "@/lib/module-workflow-policy";
 import { getMissingRequiredImageProofLabels } from "@/lib/image-proof-policy";
+import { getInspectionSamplingDisplayStatus } from "@/lib/sample-management";
 import type { PacketRecord, PublicUser, SampleEventRecord } from "@/types/inspection";
 
 type WorkflowJobLot = {
@@ -11,6 +12,7 @@ type WorkflowJobLot = {
   inspection?: {
     inspectionStatus?: string | null;
     decisionStatus?: string | null;
+    samplingBlockedFlag?: boolean | null;
     overallRemark?: string | null;
   } | null;
   sealNumber?: string | null;
@@ -65,21 +67,17 @@ export function buildWorkflowSummary(
   const sample = jobSample ?? activeLot?.sample ?? null;
   const packets = sample?.packets ?? [];
   const inspection = activeLot?.inspection ?? null;
-  const allLotsReadyForSampling = Boolean(job.lots?.length) && (job.lots ?? []).every(
-    (lot) =>
-      lot.inspection?.inspectionStatus === "COMPLETED" &&
-      lot.inspection?.decisionStatus === "READY_FOR_SAMPLING",
+  const jobSealNumbers = (job.lots ?? []).map((lot) => lot.sample?.sealLabel?.sealNo ?? lot.sealNumber ?? null);
+  const hasAnyJobSeal = jobSealNumbers.some((sealNumber) => Boolean(sealNumber?.trim()));
+  const allLotsReadyForSampling = Boolean(job.lots?.length) && (job.lots ?? []).every((lot) =>
+    getInspectionSamplingDisplayStatus(lot.inspection) === "READY_FOR_SAMPLING",
   );
   const samplingBlockedLots = (job.lots ?? [])
-    .filter(
-      (lot) =>
-        lot.inspection?.inspectionStatus !== "COMPLETED" ||
-        lot.inspection?.decisionStatus !== "READY_FOR_SAMPLING",
-    )
+    .filter((lot) => getInspectionSamplingDisplayStatus(lot.inspection) !== "READY_FOR_SAMPLING")
     .map((lot) => lot.lotNumber);
   const finalDecisionStatus = job.finalDecisionStatus ?? inspection?.decisionStatus ?? null;
   const finalDecisionNote = job.finalDecisionNote ?? inspection?.overallRemark ?? null;
-  const sealAssigned = Boolean(sample?.sealLabel?.sealNo || activeLot?.sealNumber);
+  const sealAssigned = Boolean(sample?.sealLabel?.sealNo || hasAnyJobSeal);
   const missingRequiredImageProof = activeLot
     ? getMissingRequiredImageProofLabels(
         settings.images.requiredImageCategories,
@@ -178,8 +176,8 @@ export function buildWorkflowSummary(
     sealMapping: {
       lotId: activeLot?.id ?? null,
       lotNumber: activeLot?.lotNumber ?? null,
-      sealNumber: sample?.sealLabel?.sealNo ?? activeLot?.sealNumber ?? null,
-      status: sample?.sealLabel?.sealStatus ?? (activeLot?.sealNumber ? "COMPLETED" : "PENDING"),
+      sealNumber: sample?.sealLabel?.sealNo ?? jobSealNumbers.find((sealNumber) => Boolean(sealNumber?.trim())) ?? activeLot?.sealNumber ?? null,
+      status: sample?.sealLabel?.sealStatus ?? (hasAnyJobSeal ? "COMPLETED" : "PENDING"),
     },
     packets,
     assignment: {

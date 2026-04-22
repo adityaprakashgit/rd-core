@@ -117,7 +117,7 @@ export function PageIdentityBar({
     <Stack direction={{ base: "column", xl: "row" }} justify="space-between" spacing={3}>
       <VStack align="stretch" spacing={1.5}>
         {breadcrumbs.length > 0 ? (
-          <Breadcrumb fontSize="xs" color="text.secondary">
+          <Breadcrumb fontSize={{ base: "xs", md: "sm" }} color="text.secondary">
             {breadcrumbs.map((crumb) => (
               <BreadcrumbItem key={`${crumb.label}-${crumb.href ?? "current"}`}>
                 {crumb.href ? <BreadcrumbLink href={crumb.href}>{crumb.label}</BreadcrumbLink> : <Text>{crumb.label}</Text>}
@@ -126,11 +126,11 @@ export function PageIdentityBar({
           </Breadcrumb>
         ) : null}
         <VStack align="stretch" spacing={0.5}>
-          <Heading size="md" color="text.primary">
+          <Heading fontSize={{ base: "lg", md: "xl", xl: "2xl" }} lineHeight="short" color="text.primary">
             {title}
           </Heading>
           {subtitle ? (
-            <Text color="text.secondary" fontSize="xs">
+            <Text color="text.secondary" fontSize={{ base: "xs", md: "sm" }}>
               {subtitle}
             </Text>
           ) : null}
@@ -260,10 +260,10 @@ export function EnterpriseSummaryStrip({
                 : "gray";
         return (
           <Box key={item.label} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" px={3} py={2.5}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+            <Text fontSize={{ base: "2xs", md: "xs" }} textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
               {item.label}
             </Text>
-            <Text mt={1} fontSize="sm" fontWeight="semibold" color={`${toneColor}.700`}>
+            <Text mt={1} fontSize={{ base: "sm", md: "md" }} fontWeight="semibold" color={`${toneColor}.700`}>
               {item.value}
             </Text>
           </Box>
@@ -287,11 +287,11 @@ export function EnterpriseRailPanel({
       <CardBody p={4}>
         <Stack spacing={2.5}>
           <Box>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
+            <Text fontSize={{ base: "2xs", md: "xs" }} textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
               {title}
             </Text>
             {description ? (
-              <Text fontSize="sm" color="text.secondary" mt={1}>
+              <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary" mt={1}>
                 {description}
               </Text>
             ) : null}
@@ -330,7 +330,7 @@ export function DetailTabsLayout({
         >
           <TabList overflowX="auto" overflowY="hidden">
             {tabs.map((tab) => (
-              <Tab key={tab.id} whiteSpace="nowrap">
+              <Tab key={tab.id} whiteSpace="nowrap" fontSize={{ base: "sm", md: "md" }}>
                 {tab.label}
               </Tab>
             ))}
@@ -362,6 +362,7 @@ export function QuickEditDrawer({
   isSaving,
   isSaveDisabled,
   saveLabel = "Save",
+  size = "md",
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -371,9 +372,10 @@ export function QuickEditDrawer({
   isSaving?: boolean;
   isSaveDisabled?: boolean;
   saveLabel?: string;
-  }) {
+  size?: "xs" | "sm" | "md" | "lg" | "xl" | "full";
+}) {
   return (
-    <Drawer isOpen={isOpen} placement="right" onClose={onClose} size="md">
+    <Drawer isOpen={isOpen} placement="right" onClose={onClose} size={size}>
       <DrawerOverlay />
       <DrawerContent {...enterpriseDrawerContentProps}>
         <DrawerCloseButton />
@@ -453,36 +455,46 @@ export function LinkedRecordsPanel({
 
 export function HistoryTimeline({
   events,
+  showPanel = true,
 }: {
   events: Array<{ id: string; title: string; subtitle?: string; at?: string }>;
+  showPanel?: boolean;
 }) {
-  return (
-    <EnterpriseRailPanel title="History">
-      <VStack align="stretch" spacing={2}>
-        {events.length === 0 ? (
-          <EnterpriseEmptyState title="No history yet" description="History entries will appear as actions are completed." />
-        ) : (
-          events.map((event) => (
-            <Box key={event.id} borderLeftWidth="2px" borderColor="border.default" pl={2.5} py={0.5}>
-              <HStack justify="space-between" align="start">
-                <Text fontWeight="semibold" fontSize="sm" color="text.primary">
-                  {event.title}
-                </Text>
-                {event.at ? (
-                  <Text fontSize="xs" color="text.secondary">
-                    {event.at}
-                  </Text>
-                ) : null}
-              </HStack>
-              {event.subtitle ? (
-                <Text fontSize="xs" color="text.secondary">
-                  {event.subtitle}
+  const content = (
+    <VStack align="stretch" spacing={2}>
+      {events.length === 0 ? (
+        <EnterpriseEmptyState title="No history yet" description="History entries will appear as actions are completed." />
+      ) : (
+        events.map((event) => (
+          <Box key={event.id} borderLeftWidth="2px" borderColor="border.default" pl={2.5} py={0.5}>
+            <HStack justify="space-between" align="start">
+              <Text fontWeight="semibold" fontSize={{ base: "sm", md: "md" }} color="text.primary">
+                {event.title}
+              </Text>
+              {event.at ? (
+                <Text fontSize={{ base: "2xs", md: "xs" }} color="text.secondary">
+                  {event.at}
                 </Text>
               ) : null}
-            </Box>
-          ))
-        )}
-      </VStack>
+            </HStack>
+            {event.subtitle ? (
+              <Text fontSize={{ base: "2xs", md: "xs" }} color="text.secondary">
+                {event.subtitle}
+              </Text>
+            ) : null}
+          </Box>
+        ))
+      )}
+    </VStack>
+  );
+
+  if (!showPanel) {
+    return content;
+  }
+
+  return (
+    <EnterpriseRailPanel title="History">
+      {content}
     </EnterpriseRailPanel>
   );
 }
@@ -499,8 +511,10 @@ export function EnterpriseEmptyState({
   return (
     <Box {...enterpriseStateSurfaceProps} p={4}>
       <VStack align="start" spacing={2}>
-        <Heading size="sm">{title}</Heading>
-        <Text color="text.secondary" fontSize="sm">
+        <Heading fontSize={{ base: "md", md: "lg" }} lineHeight="short">
+          {title}
+        </Heading>
+        <Text color="text.secondary" fontSize={{ base: "sm", md: "md" }}>
           {description}
         </Text>
         {action ? <Box pt={2}>{action}</Box> : null}

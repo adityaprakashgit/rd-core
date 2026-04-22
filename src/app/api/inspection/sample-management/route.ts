@@ -4,14 +4,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { recordAuditLog } from "@/lib/audit";
 import {
   buildSampleCode,
-  deriveSampleStatus,
+  deriveSampleStatusWithContext,
   getSampleReadiness,
   hasHomogenizedSample,
   hasSampleDetails,
   hasSealAndLabel,
-  mapSampleMediaByType,
+  isInspectionReadyForSampling,
   normalizeSampleMediaType,
 } from "@/lib/sample-management";
+import { syncSampleSealTraceability } from "@/lib/sample-seal-traceability";
 import {
   buildModuleWorkflowSettingsCreate,
   canEditSealWithRoles,
@@ -213,9 +214,7 @@ async function getSamplingScope(
       },
     });
     const blockingLots = lots.filter(
-      (entry) =>
-        entry.inspection?.inspectionStatus !== "COMPLETED" ||
-        entry.inspection?.decisionStatus !== "READY_FOR_SAMPLING",
+      (entry) => !isInspectionReadyForSampling(entry.inspection),
     );
 
     if (lots.length === 0 || blockingLots.length > 0) {
@@ -233,6 +232,42 @@ async function fetchSample(tx: PrismaLike, jobId: string) {
     where: { jobId },
     orderBy: { createdAt: "desc" },
     include: sampleInclude,
+  });
+}
+
+async function syncSampleSealTraceabilityFromJobLots(
+  tx: PrismaLike,
+  input: {
+    jobId: string;
+    sampleId: string;
+    companyId: string;
+  },
+) {
+  const lotSeals = await tx.inspectionLot.findMany({
+    where: {
+      jobId: input.jobId,
+      companyId: input.companyId,
+    },
+    select: {
+      sealNumber: true,
+      sample: {
+        select: {
+          sealLabel: {
+            select: {
+              sealNo: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  const sealNumber = lotSeals.map((lot) => lot.sample?.sealLabel?.sealNo ?? lot.sealNumber ?? null).find((value) => Boolean(value?.trim()));
+  if (!sealNumber) {
+    return false;
+  }
+  return syncSampleSealTraceability(tx, {
+    sampleId: input.sampleId,
+    sealNumber,
   });
 }
 
@@ -264,7 +299,12 @@ async function ensureSampleStarted(
   const workflowPolicy = await getWorkflowPolicy(tx, input.companyId);
   const existingSample = await fetchSample(tx, lot.jobId);
   if (existingSample) {
-    return existingSample;
+    await syncSampleSealTraceabilityFromJobLots(tx, {
+      jobId: lot.jobId,
+      sampleId: existingSample.id,
+      companyId: input.companyId,
+    });
+    return (await fetchSample(tx, lot.jobId)) ?? existingSample;
   }
 
   const sampleCode = workflowPolicy.workflow.autoSampleIdGeneration
@@ -304,6 +344,12 @@ async function ensureSampleStarted(
     remarks: "Scoops from every lot must be mixed in one homogeneous bag.",
   });
 
+  await syncSampleSealTraceabilityFromJobLots(tx, {
+    jobId: lot.jobId,
+    sampleId: created.id,
+    companyId: input.companyId,
+  });
+
   await recordAuditLog(tx, {
     jobId: lot.jobId,
     userId: input.userId,
@@ -340,7 +386,18 @@ export async function GET(request: NextRequest) {
       companyId: currentUser.companyId,
       requireDecisionApproval: false,
     });
-    const sample = await fetchSample(prisma, scope.jobId);
+    const sample = await prisma.$transaction(async (tx) => {
+      const existing = await fetchSample(tx, scope.jobId);
+      if (!existing) {
+        return existing;
+      }
+      await syncSampleSealTraceabilityFromJobLots(tx, {
+        jobId: scope.jobId,
+        sampleId: existing.id,
+        companyId: currentUser.companyId,
+      });
+      return (await fetchSample(tx, scope.jobId)) ?? existing;
+    });
     return NextResponse.json(sample);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load sample management record.";
@@ -458,7 +515,6 @@ export async function PATCH(request: NextRequest) {
       const samplingDate = body?.samplingDate !== undefined ? normalizeDate(body.samplingDate) : undefined;
       const sealNo = body?.sealNo !== undefined ? normalizeText(body.sealNo) : undefined;
       const labelText = body?.labelText !== undefined ? normalizeText(body.labelText) : undefined;
-      const sealAuto = body?.sealAuto === true;
       const markHomogenized = body?.markHomogenized === true;
       const markReadyForPacketing = body?.markReadyForPacketing === true;
       const markSealed = body?.markSealed === true;
@@ -567,6 +623,22 @@ export async function PATCH(request: NextRequest) {
         });
       }
 
+      const jobLotSeals = await tx.inspectionLot.findMany({
+        where: { jobId: started.jobId, companyId: currentUser.companyId },
+        select: {
+          sealNumber: true,
+          sample: {
+            select: {
+              sealLabel: {
+                select: {
+                  sealNo: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      const lotSealNumbers = jobLotSeals.map((lot) => lot.sample?.sealLabel?.sealNo ?? lot.sealNumber ?? null);
       const refreshed = (await fetchSample(tx, started.jobId)) as unknown as SampleRecord | null;
       if (!refreshed) {
         throw new Error("SAMPLE_NOT_FOUND");
@@ -576,17 +648,17 @@ export async function PATCH(request: NextRequest) {
       const detailsBefore = hasSampleDetails(previous);
       const homogenizedNow = hasHomogenizedSample(refreshed);
       const homogenizedBefore = hasHomogenizedSample(previous);
-      const sealedNow = hasSealAndLabel(refreshed);
-      const sealedBefore = hasSealAndLabel(previous);
-      const readinessBefore = getSampleReadiness(previous).isReady;
-      const readinessNow = getSampleReadiness(refreshed);
+      const sealedNow = hasSealAndLabel(refreshed, { lotSealNumbers });
+      const sealedBefore = hasSealAndLabel(previous, { lotSealNumbers });
+      const readinessBefore = getSampleReadiness(previous, { lotSealNumbers }).isReady;
+      const readinessNow = getSampleReadiness(refreshed, { lotSealNumbers });
 
-      let nextStatus = deriveSampleStatus(refreshed);
+      let nextStatus = deriveSampleStatusWithContext(refreshed, { lotSealNumbers });
       let readyAt = refreshed.readyForPacketingAt ? new Date(refreshed.readyForPacketingAt) : null;
 
       if (markReadyForPacketing) {
         if (!readinessNow.isReady) {
-          throw new Error(`READINESS_BLOCKED:${readinessNow.missing.join(" | ")}`);
+          throw new Error(`READINESS_BLOCKED:${readinessNow.blockers.map((blocker) => blocker.detail).join(" | ")}`);
         }
         nextStatus = "READY_FOR_PACKETING";
         readyAt = readyAt ?? new Date();

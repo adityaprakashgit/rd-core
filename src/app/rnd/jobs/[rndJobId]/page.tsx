@@ -488,6 +488,9 @@ export default function RndJobDetailPage() {
   const coaUrl = payload.reportLinkage?.defaultCoaUrl ?? null;
   const reportSnapshotId =
     payload.reportLinkage?.activeReport?.reportSnapshotId ?? extractSnapshotId(reportUrl) ?? null;
+  const childRole = job.previousRndJobId
+    ? `Retest child of ${String((job.previousRndJob as { rndJobNumber?: string } | null)?.rndJobNumber ?? "previous R&D batch")}`
+    : `Initial child from packet ${String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-")}`;
 
   const primaryStickyAction = (() => {
     if (status === "CREATED") return <Button isLoading={busy} onClick={() => void handleTransition("READY_FOR_TEST_SETUP")}>Accept Job</Button>;
@@ -508,9 +511,10 @@ export default function RndJobDetailPage() {
           <HStack justify="space-between" flexWrap="wrap" align="start">
             <EnterpriseSummaryStrip
               items={[
-                { label: "Parent Job Number", value: String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-") },
+                { label: "Parent Batch Number", value: String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-") },
                 { label: "Sample ID", value: String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-") },
                 { label: "Packet ID", value: String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-") },
+                { label: "Child Role", value: childRole },
                 {
                   label: "Packet Weight",
                   value: (() => {
@@ -522,7 +526,7 @@ export default function RndJobDetailPage() {
             />
             <WorkflowBadge status={status} />
           </HStack>
-          <SimpleInfo label="Job Type" value={String(job.jobType ?? "-")} />
+          <SimpleInfo label="Batch Type" value={String(job.jobType ?? "-")} />
           <SimpleInfo label="Assigned User" value={String((job.assignedTo as { profile?: { displayName?: string } } | null)?.profile?.displayName ?? "Unassigned")} />
           <SimpleInfo label="Deadline" value={formatDate(String(job.deadline ?? ""))} />
           <SimpleInfo label="Remarks" value={String(job.remarks ?? "-")} />
@@ -534,11 +538,12 @@ export default function RndJobDetailPage() {
       label: "Source Packet",
       content: (
         <VStack align="stretch" spacing={3}>
-          <SimpleInfo label="Linked Parent Job" value={String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-")} />
+          <SimpleInfo label="Linked Parent Batch" value={String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-")} />
           <SimpleInfo label="Linked Sample" value={String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-")} />
           <SimpleInfo label="Linked Packet" value={String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-")} />
+          <SimpleInfo label="Child Role" value={childRole} />
           <SimpleInfo label="Packet Purpose" value={String(job.packetUse ?? "-")} />
-          <SimpleInfo label="Previous R&D Job" value={String((job.previousRndJob as { rndJobNumber?: string } | null)?.rndJobNumber ?? "-")} />
+          <SimpleInfo label="Previous R&D Batch" value={String((job.previousRndJob as { rndJobNumber?: string } | null)?.rndJobNumber ?? "-")} />
           <HStack spacing={2}>
             <Button size="sm" variant="outline" onClick={() => router.push(`/jobs/${String(job.parentJobId ?? "")}/workflow`)}>
               Open Parent Workflow
@@ -681,7 +686,31 @@ export default function RndJobDetailPage() {
       label: "Readings / Values",
       content: (
         <VStack align="stretch" spacing={3}>
-          <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" overflowX="auto">
+          <VStack display={{ base: "flex", xl: "none" }} align="stretch" spacing={3}>
+            {((job.readings as Array<Record<string, unknown>> | undefined) ?? []).map((reading) => (
+              <Box key={String(reading.id)} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
+                <VStack align="stretch" spacing={3}>
+                  <HStack justify="space-between" align="start">
+                    <VStack align="start" spacing={0.5}>
+                      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
+                        Parameter
+                      </Text>
+                      <Text fontWeight="semibold" color="text.primary">
+                        {String(reading.parameter ?? "-")}
+                      </Text>
+                    </VStack>
+                    <Text fontSize="sm" color="text.secondary">
+                      {String(reading.unit ?? "-")}
+                    </Text>
+                  </HStack>
+                  <SimpleInfo label="Observed Value" value={String(reading.value ?? "-")} />
+                  <SimpleInfo label="Remarks" value={String(reading.remarks ?? "-")} />
+                </VStack>
+              </Box>
+            ))}
+          </VStack>
+
+          <Box display={{ base: "none", xl: "block" }} borderWidth="1px" borderColor="border.default" borderRadius="lg" overflowX="auto">
             <Table size="sm">
               <Thead>
                 <Tr>
@@ -722,7 +751,30 @@ export default function RndJobDetailPage() {
       label: "Attachments",
       content: (
         <VStack align="stretch" spacing={3}>
-          <Box borderWidth="1px" borderColor="border.default" borderRadius="lg" overflowX="auto">
+          <VStack display={{ base: "flex", xl: "none" }} align="stretch" spacing={3}>
+            {((job.attachments as Array<Record<string, unknown>> | undefined) ?? []).map((file) => (
+              <Box key={String(file.id)} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
+                <VStack align="stretch" spacing={3}>
+                  <HStack justify="space-between" align="start">
+                    <VStack align="start" spacing={0.5}>
+                      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
+                        File
+                      </Text>
+                      <Text fontWeight="semibold" color="text.primary">
+                        {String(file.fileName ?? "-")}
+                      </Text>
+                    </VStack>
+                    <Text fontSize="sm" color="text.secondary">
+                      {formatDate(String(file.createdAt ?? ""))}
+                    </Text>
+                  </HStack>
+                  <SimpleInfo label="Uploader" value={String(((file.uploadedBy as { profile?: { displayName?: string } } | null)?.profile?.displayName) ?? "-")} />
+                </VStack>
+              </Box>
+            ))}
+          </VStack>
+
+          <Box display={{ base: "none", xl: "block" }} borderWidth="1px" borderColor="border.default" borderRadius="lg" overflowX="auto">
             <Table size="sm">
               <Thead>
                 <Tr>
@@ -849,8 +901,8 @@ export default function RndJobDetailPage() {
           <SimpleInfo label="Results Submitted" value={formatDate(String(job.resultsSubmittedAt ?? ""))} />
           <SimpleInfo label="Reviewed" value={formatDate(String(job.reviewedAt ?? ""))} />
           <SimpleInfo label="Completed" value={formatDate(String(job.completedAt ?? ""))} />
-          <SimpleInfo label="Linked Previous R&D Job" value={String((job.previousRndJob as { rndJobNumber?: string } | null)?.rndJobNumber ?? "-")} />
-          <SimpleInfo label="Linked Retests" value={String(((job.nextRetestJobs as Array<unknown> | undefined)?.length ?? 0))} />
+          <SimpleInfo label="Linked Previous R&D Batch" value={String((job.previousRndJob as { rndJobNumber?: string } | null)?.rndJobNumber ?? "-")} />
+          <SimpleInfo label="Retest Children" value={String(((job.nextRetestJobs as Array<unknown> | undefined)?.length ?? 0))} />
           <SimpleInfo label="Ledger Available Qty" value={String(payload.ledger?.balance?.available ?? 0)} />
           <SimpleInfo label="Ledger Reserved Qty" value={String(payload.ledger?.balance?.reserved ?? 0)} />
           <FormControl>
@@ -899,7 +951,7 @@ export default function RndJobDetailPage() {
               !retestForm.reason.trim()
             }
           >
-            Create Retest Job
+            Create Retest Batch
           </Button>
         </VStack>
       ),
@@ -910,11 +962,11 @@ export default function RndJobDetailPage() {
     <ControlTowerLayout>
       <VStack align="stretch" spacing={4}>
         <PageIdentityBar
-          title={String(job.rndJobNumber ?? "R&D Job")}
+          title={String(job.rndJobNumber ?? "R&D Batch")}
           subtitle="One testing cycle with clear current step, next action, and lineage."
           breadcrumbs={[
             { label: "R&D", href: "/rnd" },
-            { label: String(job.rndJobNumber ?? "R&D Job") },
+            { label: String(job.rndJobNumber ?? "R&D Batch") },
           ]}
           status={
             <HStack spacing={2}>
@@ -929,8 +981,11 @@ export default function RndJobDetailPage() {
             primaryAction={primaryStickyAction}
             secondaryActions={
               <HStack spacing={4} flexWrap="wrap">
-                <Text fontSize="sm" color="text.secondary">Current Step: {payload.currentStep}</Text>
+                <Text fontSize="sm" color="text.secondary">Current Stage: {payload.currentStep}</Text>
                 <Text fontSize="sm" color="text.secondary">Next Action: {payload.nextAction || nextActionForStatus(status as never)}</Text>
+                <Text fontSize="sm" color="text.secondary">
+                  One packet creates one initial R&amp;D child; retests are separate child records.
+                </Text>
                 {isRefreshingDetail ? (
                   <HStack spacing={1}>
                     <Spinner size="xs" color="text.secondary" />
@@ -958,7 +1013,7 @@ export default function RndJobDetailPage() {
             <VStack align="stretch" spacing={3}>
               <LinkedRecordsPanel
                 items={[
-                  { label: "Parent Job", value: String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-"), href: `/jobs/${String(job.parentJobId ?? "")}/workflow` },
+                  { label: "Parent Batch", value: String((job.parentJob as { inspectionSerialNumber?: string } | null)?.inspectionSerialNumber ?? "-"), href: `/jobs/${String(job.parentJobId ?? "")}/workflow` },
                   { label: "Sample", value: String((job.sample as { sampleCode?: string } | null)?.sampleCode ?? "-") },
                   { label: "Packet", value: String((job.packet as { packetCode?: string } | null)?.packetCode ?? "-") },
                 ]}

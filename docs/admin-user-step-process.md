@@ -61,6 +61,10 @@ Note: the current product flow creates the initial company admin through `/signu
 11. When the job reaches report-ready or locked status, open `/reports`.
 12. Select the job, review the lots, and generate the required output documents.
 
+Note:
+- Some workflow surfaces now use Batch/Bag wording in navigation or step labels.
+- Job Number and Lot Number remain the canonical identifiers when sharing work or documenting a traceability issue.
+
 ## Admin Monitoring Process
 
 1. Use `/admin` to move between control, execution, lab, reports, reference data, and settings.

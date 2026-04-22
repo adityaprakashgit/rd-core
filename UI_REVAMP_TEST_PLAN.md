@@ -21,6 +21,7 @@ Verify the UI revamp delivers workflow clarity, operational speed, traceability 
 - Exclude Playground
 - No KPI/dashboard clutter on operational screens
 - Device policy: execution/process pages are task-first and stage-oriented across breakpoints; registry/oversight may use dense enterprise list/table layouts.
+- Execution shells may use Batch/Bag wording in workflow chrome; the tested canonical identifiers remain Job Number/Lot Number.
 
 ## Workflow Semantics Contract (Tested)
 - Stage, Status, Next Action, Owner, and Blocker MUST remain distinct.

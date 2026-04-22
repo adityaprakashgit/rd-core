@@ -88,9 +88,9 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json(
                   {
                     error: "Validation Error",
-                    details: `Lot ${lot.lotNumber}: sample is not ready for packeting. ${readiness.missing.join(", ")}`,
+                    details: `Lot ${lot.lotNumber}: sample is not ready for packeting. ${readiness.blockers.map((blocker) => blocker.detail).join(", ")}`,
                   },
-                  { status: 422 }
+                  { status: 422 },
                 );
               }
 

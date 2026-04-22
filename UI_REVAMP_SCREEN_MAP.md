@@ -36,6 +36,10 @@
   - `Share PDF`
   - `Print PDF`
 
+Execution terminology note:
+- Some workflow surfaces render Batch/Bag wording through shared helpers.
+- Keep Job Number/Lot Number visible for canonical traceability and document context.
+
 ## 1. Proposed IA
 - Workflow-first information architecture with lot-centric traceability as the backbone.
 - Enterprise density with predictable patterns (Zoho-style structure, not visual mimicry).

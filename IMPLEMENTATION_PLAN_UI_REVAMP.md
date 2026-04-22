@@ -16,6 +16,7 @@
 - Image capture is not consistently camera-first.
 - Seal scan visibility and fallback handling are inconsistent.
 - PDF actions are ambiguous in naming and placement.
+- Execution shells may render Batch/Bag wording in workflow chrome; keep Job Number and Lot Number visible for canonical traceability.
 
 ## 2. UX simplification goals
 - Make operational workflow understandable in under 10 minutes for new users.
@@ -73,13 +74,16 @@ These terms MUST remain distinct in all planning, implementation, and UI copy fo
 
 ## 7. Image capture implementation plan
 Use exact categories:
-1. Bag photo with visible LOT no
+1. Bag photo with visible bag no
 2. Material in bag
 3. During Sampling Photo
 4. Sample Completion
 5. Seal on bag
 6. Bag condition
-7. Whole Job bag palletized and packed
+7. Whole batch photo
+
+Compatibility note:
+- Legacy aliases remain supported in imported settings/backfill data.
 
 Implementation steps:
 - Build/extend shared evidence card component.

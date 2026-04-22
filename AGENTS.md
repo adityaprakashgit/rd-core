@@ -29,6 +29,8 @@ This repository powers live industrial inspection workflows. Prioritize operatio
 - Remove KPI/dashboard clutter from operational screens.
 - Preserve validations, traceability, permissions, and audit logging.
 - Do not consider Playground unless explicitly requested.
+- Execution shells may render Job/Lot terminology as Batch/Bag through shared helpers.
+- Canonical traceability identifiers and document labels remain Job Number/Lot Number unless a module explicitly states otherwise.
 
 ## Workflow and Gating
 Preserve this workflow order:
@@ -61,13 +63,16 @@ Final Pass rules:
   - Manual seal entry (fallback only)
 
 Required image categories (use exact wording when relevant):
-1. Bag photo with visible LOT no
+1. Bag photo with visible bag no
 2. Material in bag
 3. During Sampling Photo
 4. Sample Completion
 5. Seal on bag
 6. Bag condition
-7. Whole Job bag palletized and packed
+7. Whole batch photo
+
+Compatibility note:
+- Legacy aliases remain supported in imported settings/backfill data.
 
 ## Terminology and PDF Labels
 Prefer user-facing terms:

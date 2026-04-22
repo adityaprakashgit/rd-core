@@ -15,7 +15,7 @@ export type AppInputProps = InputProps & {
 export function Input({ label, error, isRequired, ...props }: AppInputProps) {
   return (
     <FormControl isInvalid={Boolean(error)} isRequired={isRequired}>
-      {label ? <FormLabel fontSize="sm">{label}</FormLabel> : null}
+      {label ? <FormLabel fontSize={{ base: "sm", md: "md" }}>{label}</FormLabel> : null}
       <ChakraInput size="sm" bg="bg.surface" {...props} />
       {error ? <FormErrorMessage>{error}</FormErrorMessage> : null}
     </FormControl>

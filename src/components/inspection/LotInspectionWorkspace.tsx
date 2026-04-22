@@ -35,7 +35,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { EmptyWorkState, InlineErrorState, PageSkeleton, SectionHint, TopErrorBanner } from "@/components/enterprise/AsyncState";
@@ -58,6 +58,7 @@ import {
   type InspectionIssueDraft,
   type InspectionResponseDraftMap,
 } from "@/lib/inspection-workspace";
+import { getInspectionSamplingDisplayStatus } from "@/lib/sample-management";
 import { captureScrollY, logSaveUxEvent, restoreScrollY } from "@/lib/ui-save-debug";
 import type {
   InspectionChecklistItem,
@@ -223,7 +224,7 @@ export function LotInspectionWorkspace({
   const exceptionSummaryRef = useRef<HTMLDivElement | null>(null);
   const previousExceptionCountRef = useRef(0);
 
-  async function loadWorkspace(options?: { preserveIncompleteIssues?: boolean; initial?: boolean; silent?: boolean; keepScrollY?: number | null }) {
+  const loadWorkspace = useCallback(async (options?: { preserveIncompleteIssues?: boolean; initial?: boolean; silent?: boolean; keepScrollY?: number | null }) => {
     const isInitial = options?.initial ?? false;
     const isSilent = options?.silent ?? false;
     const keepScrollY = options?.keepScrollY ?? (!isInitial && isSilent ? captureScrollY() : null);
@@ -248,11 +249,11 @@ export function LotInspectionWorkspace({
 
       setPayload(inspectionPayload);
       setResponseDrafts(buildResponseDrafts(inspectionPayload.checklistItems, inspectionPayload.inspection?.responses));
-      setIssueDrafts(
+      setIssueDrafts((current) => (
         options?.preserveIncompleteIssues
-          ? mergeIncompleteIssueDrafts(nextIssueDrafts, issueDrafts)
-          : nextIssueDrafts,
-      );
+          ? mergeIncompleteIssueDrafts(nextIssueDrafts, current)
+          : nextIssueDrafts
+      ));
       setOverallRemark(inspectionPayload.inspection?.overallRemark ?? "");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load inspection workspace.";
@@ -265,13 +266,13 @@ export function LotInspectionWorkspace({
       }
       restoreScrollY(keepScrollY);
     }
-  }
+  }, [jobId, lotId]);
 
   useEffect(() => {
     void loadWorkspace({ initial: true });
-  }, [lotId]);
+  }, [loadWorkspace]);
 
-  const checklistItems = payload?.checklistItems ?? [];
+  const checklistItems = useMemo(() => payload?.checklistItems ?? [], [payload?.checklistItems]);
   const assessmentResponses = buildAssessmentResponses(checklistItems, responseDrafts, isExceptionResponse);
   const mediaFiles = payload?.inspection?.mediaFiles ?? [];
   const mediaByCategory = new Map(mediaFiles.map((file) => [file.category, file] as const));
@@ -285,10 +286,14 @@ export function LotInspectionWorkspace({
         mediaCategories: mediaFiles.map((file) => file.category),
       })
     : null;
-  const suggestedIssueCategories = payload
-    ? getSuggestedIssueCategoriesFromResponses(checklistItems, assessmentResponses)
-    : [];
+  const suggestedIssueCategories = useMemo(
+    () => (payload ? getSuggestedIssueCategoriesFromResponses(checklistItems, assessmentResponses) : []),
+    [assessmentResponses, checklistItems, payload],
+  );
   const lotStatus = getLotInspectionStatusPresentation(payload?.lot ?? null);
+  const inspectionId = payload?.inspection?.id ?? null;
+  const inspectionDecisionStatus = payload?.inspection?.decisionStatus ?? null;
+  const suggestedIssueCategoriesKey = useMemo(() => JSON.stringify(suggestedIssueCategories), [suggestedIssueCategories]);
   const decisionEnablement = localAssessment
     ? getDecisionEnablement({
         assessment: localAssessment,
@@ -297,7 +302,7 @@ export function LotInspectionWorkspace({
       })
     : { passErrors: [], holdErrors: [], rejectErrors: [] };
   const isReviewStep = currentSectionIndex === REVIEW_STEP_INDEX;
-  const currentStepLabel = isReviewStep ? "Review & Decision" : "Lot Overview Photo";
+  const currentStepLabel = isReviewStep ? "Review & Decision" : "Bag Overview Photo";
 
   function openSampleManagement() {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -306,32 +311,33 @@ export function LotInspectionWorkspace({
   }
 
   useEffect(() => {
-    if (!payload) {
+    if (!inspectionId) {
       return;
     }
 
-    if (payload.inspection?.decisionStatus && payload.inspection.decisionStatus !== "PENDING") {
+    if (inspectionDecisionStatus && inspectionDecisionStatus !== "PENDING") {
       setCurrentSectionIndex(REVIEW_STEP_INDEX);
       return;
     }
 
     setCurrentSectionIndex((current) => Math.min(current, REVIEW_STEP_INDEX));
-  }, [payload?.inspection?.id]);
+  }, [inspectionDecisionStatus, inspectionId]);
 
   useEffect(() => {
-    if (issueDrafts.length > 0 || suggestedIssueCategories.length === 0) {
+    const parsedSuggestedIssueCategories = JSON.parse(suggestedIssueCategoriesKey) as string[];
+    if (issueDrafts.length > 0 || parsedSuggestedIssueCategories.length === 0) {
       return;
     }
 
     setIssueDrafts(
-      suggestedIssueCategories.map((category) => ({
+      parsedSuggestedIssueCategories.map((category) => ({
         issueCategory: category,
         severity: "MODERATE",
         description: "",
         status: "OPEN",
       })),
     );
-  }, [issueDrafts.length, suggestedIssueCategories.join("|")]);
+  }, [issueDrafts.length, suggestedIssueCategoriesKey]);
 
   useEffect(() => {
     const nextExceptionCount = localAssessment?.exceptionItems.length ?? 0;
@@ -521,7 +527,7 @@ export function LotInspectionWorkspace({
   if (!payload) {
     return (
       <ControlTowerLayout>
-        <EmptyWorkState title="Lot inspection not found" description="The requested lot could not be loaded." />
+        <EmptyWorkState title="Bag inspection not found" description="The requested bag could not be loaded." />
       </ControlTowerLayout>
     );
   }
@@ -530,7 +536,7 @@ export function LotInspectionWorkspace({
   const stepTracker: WorkflowStep[] = [
     {
       id: "lot-overview",
-      label: "Lot overview",
+      label: "Bag overview",
       state: inspectionCompleted || hasLotOverviewPhoto ? "completed" : isReviewStep ? "upcoming" : "current",
       timestamp: hasLotOverviewPhoto ? "Photo captured" : "Required",
     },
@@ -542,6 +548,7 @@ export function LotInspectionWorkspace({
     },
   ];
   const recommendationTone = getDecisionTone(localAssessment?.recommendedDecision);
+  const samplingGateOpen = getInspectionSamplingDisplayStatus(payload?.inspection) === "READY_FOR_SAMPLING";
   const reviewErrors = Array.from(
     new Set([
       ...decisionEnablement.passErrors,
@@ -582,7 +589,7 @@ export function LotInspectionWorkspace({
             {issueDrafts.length === 0 ? (
               <Box borderRadius="lg" bg="bg.rail" p={4}>
                 <Text fontSize="sm" color="text.secondary">
-                  No issue records yet. Add one only if the lot should be held or rejected.
+                  No issue records yet. Add one only if the bag should be held or rejected.
                 </Text>
               </Box>
             ) : null}
@@ -675,10 +682,10 @@ export function LotInspectionWorkspace({
               </HStack>
 
               <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
-                <SectionHint label="Lot overview" value={hasLotOverviewPhoto ? "Captured" : "Pending"} />
+                <SectionHint label="Bag overview" value={hasLotOverviewPhoto ? "Captured" : "Pending"} />
                 <SectionHint label="Missing media" value={String(localAssessment?.missingRequiredMedia.length ?? 0)} />
                 <SectionHint label="Issues" value={String(issueDrafts.length)} />
-                <SectionHint label="Sampling" value={payload?.inspection?.decisionStatus === "READY_FOR_SAMPLING" ? "Open" : "Blocked"} />
+                <SectionHint label="Sampling" value={samplingGateOpen ? "Open" : "Blocked"} />
               </SimpleGrid>
 
               <Box borderRadius="lg" bg="bg.rail" borderWidth="1px" borderColor="border.default" p={4}>
@@ -689,13 +696,13 @@ export function LotInspectionWorkspace({
                       System recommendation: {recommendationTone.label}
                     </Text>
                     <Text fontSize="sm" color="text.secondary">
-                      {recommendationTone.label === "Ready for sampling"
-                        ? "The lot overview proof is captured and there are no blocking issues."
+                      {samplingGateOpen
+                        ? "The bag overview proof is captured and there are no blocking issues."
                         : recommendationTone.label === "On hold"
                           ? "A missing photo or non-final issue still needs review."
                           : recommendationTone.label === "Rejected"
-                            ? "A critical issue blocks this lot from sampling."
-                            : "Capture the lot overview photo, then choose pass, hold, or reject."}
+                            ? "A critical issue blocks this bag from sampling."
+                            : "Capture the bag overview photo, then choose pass, hold, or reject."}
                     </Text>
                   </VStack>
                 </HStack>
@@ -742,9 +749,9 @@ export function LotInspectionWorkspace({
                 <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
                   Step 1
                 </Text>
-                <Text fontSize="xl" fontWeight="bold" mt={1}>Capture lot overview</Text>
+                <Text fontSize="xl" fontWeight="bold" mt={1}>Capture bag overview</Text>
                 <Text fontSize="sm" color="text.secondary" mt={1}>
-                  One clear lot overview photo is enough for the guided inspection flow.
+                  One clear bag overview photo is enough for the guided inspection flow.
                 </Text>
               </Box>
               <Badge colorScheme={hasLotOverviewPhoto ? "green" : "orange"} variant="subtle" borderRadius="full" px={3} py={1}>
@@ -799,7 +806,7 @@ export function LotInspectionWorkspace({
               {lotOverviewMedia ? (
                 <Image
                   src={lotOverviewMedia.storageKey}
-                  alt="Lot overview"
+                  alt="Bag overview"
                   h={{ base: "220px", md: "320px" }}
                   w="100%"
                   objectFit="cover"
@@ -807,7 +814,7 @@ export function LotInspectionWorkspace({
               ) : (
                 <VStack spacing={3} py={{ base: 14, md: 20 }} px={6}>
                   <Icon as={Camera} boxSize={10} color="orange.500" />
-                  <Text fontSize="lg" fontWeight="semibold">Tap to add lot overview photo</Text>
+                  <Text fontSize="lg" fontWeight="semibold">Tap to add bag overview photo</Text>
                   <Text fontSize="sm" color="text.secondary" textAlign="center" maxW="md">
                     Keep the full lot or bag stack visible in one frame so the operator can move straight to review.
                   </Text>
@@ -831,7 +838,7 @@ export function LotInspectionWorkspace({
                 onClick={() => fileInputsRef.current[`${LOT_OVERVIEW_CATEGORY}:camera`]?.click()}
                 isLoading={uploadingCategory === LOT_OVERVIEW_CATEGORY}
               >
-                {hasLotOverviewPhoto ? "Retake photo" : "Capture lot overview"}
+                {hasLotOverviewPhoto ? "Retake photo" : "Capture bag overview"}
               </Button>
               <Button
                 size="lg"
@@ -943,7 +950,7 @@ export function LotInspectionWorkspace({
                 ) : null}
               </HStack>
               <Text fontSize="xl" fontWeight="bold" color="text.primary" mt={2}>
-                Guided Lot Inspection
+                Guided Bag Inspection
               </Text>
               <Text fontSize="sm" color="text.secondary">
                 {payload.lot.job.clientName} • {payload.lot.materialName || payload.lot.job.commodity}
@@ -961,9 +968,9 @@ export function LotInspectionWorkspace({
         <EnterpriseSummaryStrip
           items={[
             { label: "Inspection state", value: payload.inspection ? "Active" : "Not started" },
-            { label: "Lot overview photo", value: hasLotOverviewPhoto ? "Done" : "Pending" },
+            { label: "Bag overview photo", value: hasLotOverviewPhoto ? "Done" : "Pending" },
             { label: "Issues captured", value: String(issueDrafts.length) },
-            { label: "Sampling gate", value: payload.inspection?.decisionStatus === "READY_FOR_SAMPLING" ? "Open" : "Blocked" },
+            { label: "Sampling gate", value: getInspectionSamplingDisplayStatus(payload?.inspection) === "READY_FOR_SAMPLING" ? "Open" : "Blocked" },
           ]}
         />
 
@@ -976,9 +983,9 @@ export function LotInspectionWorkspace({
                 <Card variant="outline" borderRadius="lg">
                   <CardBody p={6}>
                     <VStack align="stretch" spacing={4}>
-                      <Text fontSize="lg" fontWeight="bold">Lot ready for inspection</Text>
+                      <Text fontSize="lg" fontWeight="bold">Bag ready for inspection</Text>
                       <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <SectionHint label="Lot" value={payload.lot.lotNumber} />
+                        <SectionHint label="Bag" value={payload.lot.lotNumber} />
                         <SectionHint label="Material" value={payload.lot.materialName || payload.lot.job.commodity} />
                         <SectionHint label="Bags" value={String(payload.lot.totalBags)} />
                         <SectionHint label="Current status" value={lotStatus.label} />
@@ -1002,11 +1009,11 @@ export function LotInspectionWorkspace({
                 <CardBody p={5}>
                   <VStack align="stretch" spacing={3}>
                     <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.secondary" fontWeight="bold">
-                      Lot Snapshot
+                      Bag Snapshot
                     </Text>
                     <SectionHint label="Material" value={payload.lot.materialName || payload.lot.job.commodity} />
                     <SectionHint label="Bag count" value={String(payload.lot.totalBags)} />
-                    <SectionHint label="Lot status" value={lotStatus.label} />
+                    <SectionHint label="Bag status" value={lotStatus.label} />
                     <SectionHint label="Started" value={formatDate(payload.inspection?.startedAt ?? null)} />
                     <SectionHint label="Completed" value={formatDate(payload.inspection?.completedAt ?? null)} />
                   </VStack>
@@ -1020,7 +1027,7 @@ export function LotInspectionWorkspace({
                       Validation Criteria
                     </Text>
                     <SectionHint label="Recommendation" value={recommendationTone.label} />
-                    <SectionHint label="Lot overview photo" value={hasLotOverviewPhoto ? "Captured" : "Required"} />
+                    <SectionHint label="Bag overview photo" value={hasLotOverviewPhoto ? "Captured" : "Required"} />
                     <SectionHint label="Missing media" value={String(localAssessment?.missingRequiredMedia.length ?? 0)} />
                     <SectionHint label="Hold / reject issues" value={issueDrafts.length > 0 ? "Recorded" : "Only if needed"} />
                     <SectionHint label="Pass result" value="Opens sampling" />
@@ -1091,7 +1098,7 @@ export function LotInspectionWorkspace({
                         {currentStepLabel}
                       </Text>
                       <Text fontSize="sm" color="text.secondary">
-                        Capture one lot overview photo, then move to review to pass, hold, or reject the lot.
+                        Capture one bag overview photo, then move to review to pass, hold, or reject the bag.
                       </Text>
                       <HStack spacing={3} align="stretch">
                         <Button flex="1" variant="outline" onClick={() => void saveInspection()} isLoading={saving}>

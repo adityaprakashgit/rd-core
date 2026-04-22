@@ -2,6 +2,10 @@
 
 Objective: close all `Missing` and `Partial` gaps from [flowchart-app-mapping.md](/Users/aditya/rd-core/docs/flowchart-app-mapping.md) with minimal regression risk.
 
+Terminology note:
+- Shared workflow shells may use Batch/Bag wording in navigation or step labels.
+- Keep Job Number/Lot Number visible in traceability, PDFs, and headers so the canonical identifiers stay obvious.
+
 ## Priority Model
 
 - `P0`: data integrity / workflow correctness / compliance-critical.

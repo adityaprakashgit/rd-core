@@ -225,7 +225,7 @@ export default function RdPage() {
       const response = await fetch(`/api/jobs/${jobId}/archive`, { method: "POST" });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { details?: string } | null;
-        throw new Error(payload?.details || "Job could not be deleted.");
+      throw new Error(payload?.details || "Job could not be deleted.");
       }
       toast({ title: "Job deleted", description: "The job has been archived.", status: "success" });
       await fetchJobs();
@@ -446,7 +446,7 @@ export default function RdPage() {
 
           <PageActionBar
             primaryAction={<Button onClick={createDrawer.onOpen}>Create Job</Button>}
-            secondaryActions={<Text fontSize="sm" color="text.secondary">Lot-centric enterprise registry</Text>}
+            secondaryActions={<Text fontSize={{ base: "sm", md: "md" }} color="text.secondary">Bag-centric enterprise registry</Text>}
           />
 
           <FilterSearchStrip
@@ -475,11 +475,11 @@ export default function RdPage() {
                 columns={[
                   {
                     id: "job-id",
-                    header: "Job ID",
+                    header: "Job Number",
                     render: (row) => row.inspectionSerialNumber || row.jobReferenceNumber || "—",
                   },
                   { id: "customer", header: "Customer / Source", render: (row) => row.plantLocation ? `${row.clientName} • ${row.plantLocation}` : row.clientName },
-                  { id: "lots", header: "Number of Lots", render: (row) => String(row.lots?.length ?? 0) },
+                  { id: "lots", header: "Number of Bags", render: (row) => String(row.lots?.length ?? 0) },
                   {
                     id: "stage",
                     header: "Current Stage",
@@ -501,14 +501,14 @@ export default function RdPage() {
                   { id: "open", label: "Open Job Workflow", onClick: (row) => router.push(`/jobs/${row.id}/workflow`) },
                   {
                     id: "open-inspection",
-                    label: "Open Inspection Queue",
+                    label: "Open Bag Inspection Queue",
                     onClick: (row) => router.push(`/jobs/${row.id}/workflow?section=images`),
                   },
                   ...(isAdminUser
                     ? [
                         {
                           id: "delete-job",
-                          label: "Delete Job",
+                    label: "Delete Job",
                           onClick: (row: InspectionJob) => void handleDeleteJob(row.id),
                         },
                       ]
@@ -594,10 +594,10 @@ export default function RdPage() {
           <ModalBody {...enterpriseModalBodyProps}>
             <VStack align="stretch" spacing={3}>
               <Text color="text.secondary">{duplicateWarning?.details}</Text>
-              <Text fontSize="sm" color="text.secondary">Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours.</Text>
+              <Text fontSize={{ base: "sm", md: "md" }} color="text.secondary">Duplicate window: last {duplicateWarning?.duplicateWindowHours ?? 24} hours.</Text>
               <OrderedList spacing={1} ml={4}>
                 {(duplicateWarning?.duplicateCandidates ?? []).map((candidate) => (
-                  <ListItem key={candidate.id} fontSize="sm">
+                  <ListItem key={candidate.id} fontSize={{ base: "sm", md: "md" }}>
                     {candidate.inspectionSerialNumber} ({candidate.status}) <Text as="span" color="text.secondary">{formatDate(candidate.createdAt)}</Text>
                   </ListItem>
                 ))}

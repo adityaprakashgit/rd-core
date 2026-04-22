@@ -7,6 +7,7 @@ import { InlineErrorState, PageSkeleton } from "@/components/enterprise/AsyncSta
 import ControlTowerLayout from "@/components/layout/ControlTowerLayout";
 import { LotInspectionWorkspace } from "@/components/inspection/LotInspectionWorkspace";
 import { SampleManagementWorkspace } from "@/components/inspection/SampleManagementWorkspace";
+import { getInspectionSamplingDisplayStatus } from "@/lib/sample-management";
 
 type InspectionExecutionProbe = {
   inspection: {
@@ -39,10 +40,7 @@ export function StageAwareLotWorkspace({
       }
 
       const payload = (await res.json()) as InspectionExecutionProbe;
-      setIsReadyForSampling(
-        payload.inspection?.inspectionStatus === "COMPLETED" &&
-          payload.inspection?.decisionStatus === "READY_FOR_SAMPLING",
-      );
+      setIsReadyForSampling(getInspectionSamplingDisplayStatus(payload.inspection) === "READY_FOR_SAMPLING");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to resolve lot stage.";
       setLoadError(message);

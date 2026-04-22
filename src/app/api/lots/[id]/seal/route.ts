@@ -16,7 +16,7 @@ function jsonError(error: string, details: string, code: string, status: number)
 async function createAuditSafe(tx: Prisma.TransactionClient, input: {
   jobId: string;
   userId: string;
-  action: "SEAL_GENERATED" | "SEAL_ASSIGNED";
+  action: "SEAL_GENERATED" | "SEAL_ASSIGNED" | "SEAL_UPDATED";
   sealNumber: string;
   sealAuto: boolean;
 }) {
@@ -39,6 +39,10 @@ async function createAuditSafe(tx: Prisma.TransactionClient, input: {
     }
     throw error;
   }
+}
+
+function isSealLockedAfterPass(job: { adminDecisionStatus?: string | null; finalDecisionStatus?: string | null } | null | undefined) {
+  return (job?.adminDecisionStatus ?? job?.finalDecisionStatus) === "PASS";
 }
 
 type LotSealRouteContext = {
@@ -84,6 +88,8 @@ export async function POST(request: NextRequest, context: LotSealRouteContext) {
         job: {
           select: {
             status: true,
+            adminDecisionStatus: true,
+            finalDecisionStatus: true,
           },
         },
         inspection: {
@@ -106,8 +112,8 @@ export async function POST(request: NextRequest, context: LotSealRouteContext) {
 
     assertCompanyScope(currentUser.companyId, lot.companyId);
 
-    if (lot.sealNumber) {
-      return jsonError("Conflict", "This seal number is immutable once assigned.", "SEAL_ALREADY_ASSIGNED", 409);
+    if (lot.sealNumber && isSealLockedAfterPass(lot.job)) {
+      return jsonError("Conflict", "This seal number is locked after admin pass.", "SEAL_ALREADY_LOCKED", 409);
     }
 
     const resolvedCategories = resolveEvidenceCategoriesForLot({
@@ -139,7 +145,10 @@ export async function POST(request: NextRequest, context: LotSealRouteContext) {
     }
 
     const duplicateSeal = await prisma.inspectionLot.findFirst({
-      where: { sealNumber },
+      where: {
+        sealNumber,
+        NOT: { id: lot.id },
+      },
       select: { id: true },
     });
 
@@ -205,7 +214,7 @@ export async function POST(request: NextRequest, context: LotSealRouteContext) {
       await createAuditSafe(tx, {
         jobId: lot.jobId,
         userId: currentUser.id,
-        action: "SEAL_ASSIGNED",
+        action: lot.sealNumber ? "SEAL_UPDATED" : "SEAL_ASSIGNED",
         sealNumber,
         sealAuto: useAuto,
       });

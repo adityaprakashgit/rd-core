@@ -388,7 +388,15 @@ export function buildStickerHtml(input: {
     sealNumber: string;
     barcodeDataUrl: string;
   }>;
+  columns?: number;
+  pageSize?: string;
+  printerType?: "THERMAL" | "INKJET" | "OTHER";
 }) {
+  const columns = Math.max(1, Math.min(4, input.columns ?? 4));
+  const pageSize = input.pageSize?.trim().length ? input.pageSize.trim() : "A4";
+  const printerType = input.printerType ?? "OTHER";
+  const stickerGap = printerType === "THERMAL" ? "4mm" : "8mm";
+  const stickerMinHeight = printerType === "THERMAL" ? "42mm" : "52mm";
   const stickers = input.lots
     .map(
       (lot) => `
@@ -407,7 +415,7 @@ export function buildStickerHtml(input: {
       <head>
         <meta charset="utf-8" />
         <style>
-          @page { size: A4; margin: 10mm; }
+          @page { size: ${pageSize}; margin: ${printerType === "THERMAL" ? "6mm" : "10mm"}; }
           * { box-sizing: border-box; }
           body {
             font-family: Arial, Helvetica, sans-serif;
@@ -416,20 +424,20 @@ export function buildStickerHtml(input: {
           }
           .sheet {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8mm;
+            grid-template-columns: repeat(${columns}, minmax(0, 1fr));
+            gap: ${stickerGap};
           }
           .sticker {
             border: 1px solid #111827;
             border-radius: 8px;
-            padding: 6mm 4mm;
+            padding: ${printerType === "THERMAL" ? "5mm 4mm" : "6mm 4mm"};
             text-align: center;
             break-inside: avoid;
-            min-height: 52mm;
+            min-height: ${stickerMinHeight};
             display: flex;
             flex-direction: column;
             justify-content: center;
-            gap: 4mm;
+            gap: ${printerType === "THERMAL" ? "3mm" : "4mm"};
           }
           .title {
             font-weight: 700;
@@ -443,7 +451,7 @@ export function buildStickerHtml(input: {
           .barcode {
             width: 100%;
             height: auto;
-            max-height: 18mm;
+            max-height: ${printerType === "THERMAL" ? "16mm" : "18mm"};
             object-fit: contain;
           }
         </style>
@@ -468,7 +476,7 @@ export async function renderHtmlToPdf(html: string): Promise<Buffer> {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdf = await page.pdf({ format: "A4", printBackground: true });
+    const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
     return Buffer.from(pdf);
   } finally {
     await browser.close();

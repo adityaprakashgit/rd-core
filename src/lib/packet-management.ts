@@ -4,6 +4,7 @@ import type {
   PacketRecord,
   PacketSealLabelRecord,
 } from "@/types/inspection";
+import { WORKFLOW_EVIDENCE_GROUPS } from "@/lib/evidence-definition";
 
 export const PACKET_STATUSES = [
   "CREATED",
@@ -43,8 +44,38 @@ export type PacketStatus = (typeof PACKET_STATUSES)[number];
 export type PacketType = (typeof PACKET_TYPES)[number];
 export type PacketMediaType = (typeof PACKET_MEDIA_TYPES)[number];
 export type PacketAllocationStatus = (typeof PACKET_ALLOCATION_STATUSES)[number];
+export type PacketReadinessLevel = "sample-packet";
+export type PacketReadinessBlocker = {
+  key: string;
+  level: PacketReadinessLevel;
+  groupTitle: string;
+  proofLabel: string;
+  locationLabel: string;
+  actionLabel: string;
+  detail: string;
+};
 
 const readinessMediaRequirements: PacketMediaType[] = ["PACKET_LABEL", "PACKET_SEALED"];
+const packetEvidenceGroup = WORKFLOW_EVIDENCE_GROUPS.find((group) => group.id === "packet") ?? null;
+const packetEvidenceGroupTitle = packetEvidenceGroup?.title ?? "Sample packet evidence";
+
+function buildPacketReadinessBlocker(
+  key: string,
+  proofLabel: string,
+  locationLabel: string,
+  actionLabel: string,
+  detail: string,
+): PacketReadinessBlocker {
+  return {
+    key,
+    level: "sample-packet",
+    groupTitle: packetEvidenceGroupTitle,
+    proofLabel,
+    locationLabel,
+    actionLabel,
+    detail: `${packetEvidenceGroupTitle}: ${detail}`,
+  };
+}
 
 function sanitizeSegment(value: string | null | undefined) {
   return (value ?? "")
@@ -125,34 +156,82 @@ export function getRequiredMissingPacketMedia(packet: PacketRecord | null | unde
   return readinessMediaRequirements.filter((type) => !mediaMap[type]?.fileUrl);
 }
 
-export function getPacketReadiness(packet: PacketRecord | null | undefined) {
-  const missing: string[] = [];
+export function getPacketReadinessBlockers(packet: PacketRecord | null | undefined): PacketReadinessBlocker[] {
+  const blockers: PacketReadinessBlocker[] = [];
 
   if (!packet) {
-    missing.push("Create packet");
-    return { isReady: false, missing };
+    blockers.push(
+      buildPacketReadinessBlocker(
+        "packet-missing",
+        "Packet record",
+        "Packet Management > Step 1 Create packet plan",
+        "Create packet",
+        "Packet record has not been created yet. Create the packet in Packet Management > Step 1 Create packet plan.",
+      ),
+    );
+    return blockers;
   }
 
   if (!hasPacketDetails(packet)) {
-    missing.push("Capture quantity, unit, and packet type");
+    blockers.push(
+      buildPacketReadinessBlocker(
+        "packet-details",
+        "Packet details",
+        "Packet Management > Packet card > Details",
+        "Save card",
+        "Packet details are incomplete. Capture quantity, unit, and packet type in Packet Management > Packet card > Details.",
+      ),
+    );
   }
 
   for (const mediaType of getRequiredMissingPacketMedia(packet)) {
     if (mediaType === "PACKET_LABEL") {
-      missing.push("Upload packet label photo");
+      blockers.push(
+        buildPacketReadinessBlocker(
+          "packet-label-photo",
+          "Packet label photo",
+          "Packet Management > Packet card > Proof capture",
+          "Capture photo",
+          "Packet label photo is missing. Upload it in Packet Management > Packet card > Proof capture.",
+        ),
+      );
     }
     if (mediaType === "PACKET_SEALED") {
-      missing.push("Upload sealed packet photo");
+      blockers.push(
+        buildPacketReadinessBlocker(
+          "packet-sealed-photo",
+          "Sealed packet photo",
+          "Packet Management > Packet card > Proof capture",
+          "Capture photo",
+          "Sealed packet photo is missing. Upload it in Packet Management > Packet card > Proof capture with the seal number visible.",
+        ),
+      );
     }
   }
 
   if (!hasPacketSealAndLabel(packet.sealLabel)) {
-    missing.push("Add seal no.");
+    blockers.push(
+      buildPacketReadinessBlocker(
+        "packet-seal-number",
+        "Seal number",
+        "Packet Management > Packet card > Seal and label",
+        "Save card",
+        "Seal number is missing. Enter it in Packet Management > Packet card > Seal and label.",
+      ),
+    );
   }
+
+  return blockers;
+}
+
+export function getPacketReadiness(packet: PacketRecord | null | undefined) {
+  const blockers = getPacketReadinessBlockers(packet);
+  const missing = blockers.map((blocker) => blocker.detail);
 
   return {
     isReady: missing.length === 0,
     missing,
+    blockers,
   };
 }
 

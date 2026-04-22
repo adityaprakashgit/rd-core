@@ -193,7 +193,7 @@ export default function ReportsPage() {
       const message = error instanceof Error ? error.message : "Failed to load lot rows.";
       setLots([]);
       setLotsError(message);
-      toast({ title: "Lots unavailable", description: message, status: "error" });
+      toast({ title: "Bags unavailable", description: message, status: "error" });
     } finally {
       setLoadingLots(false);
     }
@@ -344,7 +344,7 @@ export default function ReportsPage() {
       },
       {
         id: "review",
-        label: "Review Lot Weights & Seals",
+        label: "Review Bag Weights & Seals",
         state: activeStep === "review" ? "current" : activeStep === "preview" ? "completed" : "next",
         onClick: () => setActiveStep("review"),
       },
@@ -360,7 +360,7 @@ export default function ReportsPage() {
 
   const lotColumns = useMemo(
     () => [
-      { id: "lotNumber", header: "Lot", render: (lot: LotRow) => <Text fontWeight="semibold">{lot.lotNumber}</Text> },
+      { id: "lotNumber", header: "Bag", render: (lot: LotRow) => <Text fontWeight="semibold">{lot.lotNumber}</Text> },
       {
         id: "sealNumber",
         header: "Seal",
@@ -569,7 +569,7 @@ export default function ReportsPage() {
           <Heading size="lg" color="text.primary">
             Documents & Reports
           </Heading>
-          <Text mt={1} fontSize="sm" color="text.secondary">
+          <Text mt={1} fontSize={{ base: "sm", md: "md" }} color="text.secondary">
             Generated PDFs use saved Company Profile branding by default unless explicit request overrides are provided.
           </Text>
         </Box>
@@ -584,7 +584,7 @@ export default function ReportsPage() {
                 <CardBody p={6}>
                   <HStack justify="space-between" align="start" flexWrap="wrap" spacing={3}>
                     <Box>
-                      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                      <Text fontSize={{ base: "xs", md: "sm" }} textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                         Step 1
                       </Text>
                       <Heading size="md" color="text.primary" mt={1}>
@@ -645,7 +645,7 @@ export default function ReportsPage() {
 
                   {previewError ? (
                     <Box mt={3} borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
-                      <Text fontSize="sm" color="red.700">{previewError}</Text>
+                      <Text fontSize={{ base: "sm", md: "md" }} color="red.700">{previewError}</Text>
                       <HStack spacing={2} mt={2}>
                         {lastPreviewKind ? (
                           <Button size="xs" variant="ghost" onClick={() => void handlePreviewDocument(lastPreviewKind)}>
@@ -661,7 +661,7 @@ export default function ReportsPage() {
 
                   {masterError ? (
                     <Box mt={3} borderRadius="lg" bg="red.50" borderWidth="1px" borderColor="red.200" p={3}>
-                      <Text fontSize="sm" color="red.700">{masterError}</Text>
+                      <Text fontSize={{ base: "sm", md: "md" }} color="red.700">{masterError}</Text>
                       <HStack spacing={2} mt={2}>
                         <Button size="xs" variant="ghost" onClick={() => void loadDispatchMasters()} isLoading={masterBusy === "load"}>
                           Retry master load
@@ -675,7 +675,7 @@ export default function ReportsPage() {
 
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mt={5}>
                     <FormControl>
-                      <FormLabel fontSize="sm">Client</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Client</FormLabel>
                       <Select
                         borderRadius="lg"
                         value={selectedClientName}
@@ -691,7 +691,7 @@ export default function ReportsPage() {
                       </Select>
                     </FormControl>
                     <FormControl>
-                      <FormLabel fontSize="sm">Item</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Item</FormLabel>
                       <Select
                         borderRadius="xl"
                         value={selectedItemName}
@@ -707,15 +707,15 @@ export default function ReportsPage() {
                       </Select>
                     </FormControl>
                     <FormControl>
-                      <FormLabel fontSize="sm">Bill to</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Bill to</FormLabel>
                       <Input borderRadius="lg" value={billToAddress} onChange={(event) => setBillToAddress(event.target.value)} />
                     </FormControl>
                     <FormControl>
-                      <FormLabel fontSize="sm">Ship to</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Ship to</FormLabel>
                       <Input borderRadius="lg" value={shipToAddress} onChange={(event) => setShipToAddress(event.target.value)} />
                     </FormControl>
                     <FormControl>
-                      <FormLabel fontSize="sm">Transporter</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Transporter</FormLabel>
                       <Select
                         borderRadius="lg"
                         value={selectedTransporterName}
@@ -731,7 +731,7 @@ export default function ReportsPage() {
                       </Select>
                     </FormControl>
                     <FormControl isRequired>
-                      <FormLabel fontSize="sm">Invoice no</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Invoice no</FormLabel>
                       <Input
                         borderRadius="lg"
                         value={invoiceNumber}
@@ -740,7 +740,7 @@ export default function ReportsPage() {
                       />
                     </FormControl>
                     <FormControl>
-                      <FormLabel fontSize="sm">LR no</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>LR no</FormLabel>
                       <Input
                         borderRadius="lg"
                         value={lrNumber}
@@ -749,7 +749,7 @@ export default function ReportsPage() {
                       />
                     </FormControl>
                     <FormControl>
-                      <FormLabel fontSize="sm">Transporter ID</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Transporter ID</FormLabel>
                       <Input
                         borderRadius="lg"
                         value={transporterId}
@@ -758,7 +758,7 @@ export default function ReportsPage() {
                       />
                     </FormControl>
                     <FormControl>
-                      <FormLabel fontSize="sm">E-way bill details</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>E-way bill details</FormLabel>
                       <Input
                         borderRadius="lg"
                         value={ewayBillDetails}
@@ -767,7 +767,7 @@ export default function ReportsPage() {
                       />
                     </FormControl>
                     <FormControl isRequired>
-                      <FormLabel fontSize="sm">Vehicle number</FormLabel>
+                      <FormLabel fontSize={{ base: "sm", md: "md" }}>Vehicle number</FormLabel>
                       <Input
                         borderRadius="xl"
                         value={vehicleNo}
@@ -776,7 +776,7 @@ export default function ReportsPage() {
                       />
                     </FormControl>
                   </SimpleGrid>
-                  <Text fontSize="sm" color="text.muted" mt={3}>
+                  <Text fontSize={{ base: "sm", md: "md" }} color="text.muted" mt={3}>
                     Vehicle number is required for packing list preview. Sticker preview can be generated without it.
                   </Text>
                   <HStack mt={5} justify="flex-end">
@@ -786,7 +786,7 @@ export default function ReportsPage() {
                       onClick={() => setActiveStep("review")}
                       isDisabled={loadingLots}
                     >
-                      Continue to lot review
+                      Continue to bag review
                     </Button>
                   </HStack>
                 </CardBody>
@@ -804,11 +804,11 @@ export default function ReportsPage() {
                     mb={5}
                   >
                     <Box>
-                      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                      <Text fontSize={{ base: "xs", md: "sm" }} textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                         Step 2
                       </Text>
                       <Heading size="md" color="text.primary" mt={1}>
-                        Review lot data
+                        Review bag data
                       </Heading>
                     </Box>
                     <Button as="a" href="/master" variant="outline" borderRadius="lg">
@@ -818,7 +818,7 @@ export default function ReportsPage() {
 
                   {lotsError ? (
                     <InlineErrorState
-                      title="Lot review is unavailable"
+                      title="Bag review is unavailable"
                       description={lotsError}
                       onRetry={() => void loadLots()}
                     />
@@ -826,7 +826,7 @@ export default function ReportsPage() {
                     <PageSkeleton cards={3} rows={1} />
                   ) : lots.length === 0 ? (
                     <EmptyWorkState
-                      title="No lot rows available"
+                      title="No bag rows available"
                       description="The selected job does not have completed lot records ready for document generation yet."
                     />
                   ) : (
@@ -836,10 +836,10 @@ export default function ReportsPage() {
                         columns={lotColumns}
                         rowKey={(lot) => lot.id}
                         filters={[
-                          { id: "lots", label: "Lots", value: String(totals.totalLots) },
+                          { id: "lots", label: "Bags", value: String(totals.totalLots) },
                           { id: "sealed", label: "Sealed", value: `${totals.sealedLots}/${totals.totalLots}` },
                         ]}
-                        emptyLabel="No lot records available."
+                        emptyLabel="No bag records available."
                         recordCard={{
                           title: (lot) => lot.lotNumber,
                           subtitle: (lot) => `Seal: ${lot.sealNumber ?? "Not recorded yet"}`,
@@ -858,10 +858,10 @@ export default function ReportsPage() {
                           { label: "Total net", value: formatWeight(totals.totalNet) },
                         ].map((item) => (
                           <Box key={item.label} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.surface" p={3}>
-                              <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
+                              <Text fontSize={{ base: "xs", md: "sm" }} color="text.muted" textTransform="uppercase" letterSpacing="wide">
                                 {item.label}
                               </Text>
-                              <Text fontSize="lg" fontWeight="semibold" mt={1} color="text.primary">
+                              <Text fontSize={{ base: "lg", md: "xl" }} fontWeight="semibold" mt={1} color="text.primary">
                                 {item.value}
                               </Text>
                           </Box>
@@ -884,7 +884,7 @@ export default function ReportsPage() {
               {activeStep === "preview" ? (
                 <Card variant="outline" borderRadius="lg">
                 <CardBody p={6}>
-                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
+                  <Text fontSize={{ base: "xs", md: "sm" }} textTransform="uppercase" letterSpacing="wide" color="text.muted" fontWeight="bold">
                     Step 3
                   </Text>
                   <Heading size="md" color="text.primary" mt={1}>
@@ -914,7 +914,7 @@ export default function ReportsPage() {
                   </HStack>
                   <HStack mt={5}>
                     <Button w={{ base: "full", sm: "auto" }} variant="outline" leftIcon={<ChevronLeft size={16} />} onClick={() => setActiveStep("review")}>
-                      Back to lot review
+                      Back to bag review
                     </Button>
                   </HStack>
                 </CardBody>
@@ -925,7 +925,7 @@ export default function ReportsPage() {
           context={
             <VStack align="stretch" spacing={4}>
               <Box p={3} borderWidth="1px" borderColor="border.default" borderRadius="lg" bg="bg.rail">
-                <Text fontSize="xs" color="text.muted" textTransform="uppercase" letterSpacing="wide">
+                <Text fontSize={{ base: "xs", md: "sm" }} color="text.muted" textTransform="uppercase" letterSpacing="wide">
                   Active job
                 </Text>
                 <Text fontWeight="semibold" color="text.primary" mt={1}>
@@ -950,11 +950,11 @@ export default function ReportsPage() {
               <EnterpriseSummaryStrip
                 items={[
                   { label: "Job selected", value: selectedJobId ? "Complete" : "Missing", tone: selectedJobId ? "success" : "warning" },
-                  { label: "Lot data loaded", value: lots.length > 0 ? "Complete" : "Missing", tone: lots.length > 0 ? "success" : "warning" },
+                  { label: "Bag data loaded", value: lots.length > 0 ? "Complete" : "Missing", tone: lots.length > 0 ? "success" : "warning" },
                   { label: "Invoice entered", value: invoiceNumber.trim() ? "Complete" : "Missing", tone: invoiceNumber.trim() ? "success" : "warning" },
                   { label: "Vehicle entered", value: vehicleNo.trim() ? "Complete" : "Missing", tone: vehicleNo.trim() ? "success" : "warning" },
                   {
-                    label: "Lot seals",
+                    label: "Bag seals",
                     value: totals.sealedLots === totals.totalLots ? "Complete" : "Missing seals",
                     tone: totals.sealedLots === totals.totalLots ? "success" : "warning",
                   },

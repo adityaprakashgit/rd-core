@@ -274,7 +274,7 @@ export default function DocumentRegistryPage() {
       activeFilters.client ? `Client: ${activeFilters.client}` : null,
       activeFilters.status ? `Status: ${activeFilters.status}` : null,
       activeFilters.missingOnly ? "Missing only" : null,
-      activeFilters.lot ? `Lot: ${activeFilters.lot}` : null,
+      activeFilters.lot ? `Bag: ${activeFilters.lot}` : null,
       activeFilters.packet ? `Packet: ${activeFilters.packet}` : null,
       activeFilters.documentType ? `Type: ${activeFilters.documentType}` : null,
       activeFilters.dateFrom ? `From: ${activeFilters.dateFrom}` : null,
@@ -340,7 +340,7 @@ export default function DocumentRegistryPage() {
       <VStack align="stretch" spacing={4}>
         <PageIdentityBar
           title="Document Registry"
-          subtitle="Job-wise document registry with lot inspection context, grouped document actions, and missing-document tracking"
+          subtitle="Job-wise document registry with bag inspection context, grouped document actions, and missing-document tracking"
           breadcrumbs={[{ label: "Documents", href: "/documents" }]}
           status={<Badge colorScheme="blue">{jobs.length} Jobs</Badge>}
         />
@@ -433,11 +433,11 @@ export default function DocumentRegistryPage() {
           {showAdvancedFilters ? (
             <Stack direction={{ base: "column", md: "row" }} spacing={3}>
               <FormControl>
-                <FormLabel>Lot Number</FormLabel>
+                <FormLabel>Bag Number</FormLabel>
                 <Input
                   value={draftFilters.lot}
                   onChange={(event) => setDraftFilters((current) => ({ ...current, lot: event.target.value }))}
-                  placeholder="Lot Number"
+                  placeholder="Bag Number"
                 />
               </FormControl>
               <FormControl>
@@ -487,14 +487,14 @@ export default function DocumentRegistryPage() {
 
         {error ? <EnterpriseEmptyState title="Document registry unavailable" description={error} /> : null}
 
-        <EnterpriseStickyTable display={{ base: "none", md: "block" }}>
+        <EnterpriseStickyTable display={{ base: "none", xl: "block" }}>
           <Table size="sm">
               <Thead>
                 <Tr>
                   <Th w="52px"> </Th>
                   <Th>Job Number</Th>
                   <Th>Client</Th>
-                  <Th isNumeric>Lot Count</Th>
+                  <Th isNumeric>Bag Count</Th>
                   <Th isNumeric>Document Count</Th>
                   <Th isNumeric>Missing Documents</Th>
                   <Th>Test Report</Th>
@@ -580,7 +580,7 @@ export default function DocumentRegistryPage() {
                                   <Table size="sm" variant="simple">
                                     <Thead>
                                       <Tr>
-                                        <Th>Lot Number</Th>
+                                        <Th>Bag Number</Th>
                                         <Th isNumeric>Packet Count</Th>
                                         <Th>Packing List</Th>
                                         <Th>Inspection Uploads</Th>
@@ -610,7 +610,7 @@ export default function DocumentRegistryPage() {
                                           <Td>
                                             <HStack justify="flex-end" spacing={2}>
                                               <Button size="xs" variant="ghost" as="a" href={lot.actions.workflowUrl}>
-                                                Open Lot Workflow
+                                                Open Bag Workflow
                                               </Button>
                                             </HStack>
                                           </Td>
@@ -629,7 +629,7 @@ export default function DocumentRegistryPage() {
               </Tbody>
           </Table>
 
-          <VStack display={{ base: "flex", md: "none" }} align="stretch" spacing={2} p={3}>
+          <VStack display={{ base: "flex", xl: "none" }} align="stretch" spacing={2} p={3}>
             {loading ? (
               <Text color="text.secondary" textAlign="center" py={4}>
                 Loading documents...
@@ -685,7 +685,7 @@ export default function DocumentRegistryPage() {
                         />
                       </HStack>
                       <Button size="sm" onClick={() => setMobileDrawerJobId(job.jobId)}>
-                        Open Lots
+                        Open Bags
                       </Button>
                     </VStack>
                   </VStack>
@@ -706,7 +706,7 @@ export default function DocumentRegistryPage() {
           <DrawerCloseButton />
           <DrawerHeader {...enterpriseDrawerHeaderProps}>
             <VStack align="start" spacing={0.5}>
-              <Text fontSize="sm" color="text.secondary">Lots</Text>
+              <Text fontSize="sm" color="text.secondary">Bags</Text>
               <Text>{mobileDrawerJob?.jobNumber}</Text>
             </VStack>
           </DrawerHeader>
@@ -739,7 +739,7 @@ export default function DocumentRegistryPage() {
                     </HStack>
 
                     <Button size="sm" variant="ghost" as="a" href={lot.actions.workflowUrl}>
-                      Open Lot Workflow
+                      Open Bag Workflow
                     </Button>
                   </VStack>
                 </Box>

@@ -19,6 +19,8 @@ It is implementation-oriented and enforceable for all UI work in this repository
 - UI direction:
   - Zoho-like usability and cleanliness
   - SAP/Fiori-like structure, lineage visibility, and workflow governance
+- Execution shells may render Job/Lot terminology as Batch/Bag through shared helpers.
+- Canonical traceability identifiers and document labels remain Job Number/Lot Number unless a module explicitly states otherwise.
 
 ## 1) Core UI Principles (Enforceable)
 
@@ -38,6 +40,7 @@ It is implementation-oriented and enforceable for all UI work in this repository
    Actions and context MUST reflect role responsibility and least-privilege visibility.
 8. **Human-readable identifiers first**  
    UI MUST prioritize Job Number/Lot Number/etc. and MUST NOT lead with internal IDs.
+   Workflow shells MAY use Batch/Bag wording for navigation or step labels when that wording is routed through shared terminology helpers.
 
 ## 2) Canonical Lineage Model
 

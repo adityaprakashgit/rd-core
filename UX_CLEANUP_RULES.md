@@ -14,6 +14,8 @@ Define strict, non-optional UI rules for operational mobile and tablet screens i
 Stage order used across all screens and documents:
 `Job Creation -> Lot -> Images -> Final Pass -> Lab Testing -> Report -> Packing List`
 
+Execution shells may render Batch/Bag wording in the workflow chrome, but Job Number and Lot Number remain the canonical identifiers for traceability and reporting.
+
 Device policy lock:
 - Registry/oversight screens may use dense enterprise list layouts when actionable.
 - Process-heavy execution stages MUST use mobile/tablet task-first behavior.
@@ -68,13 +70,16 @@ Device policy lock:
 
 ## 8. Rules for image capture cards
 Use these exact categories:
-1. Bag photo with visible LOT no
+1. Bag photo with visible bag no
 2. Material in bag
 3. During Sampling Photo
 4. Sample Completion
 5. Seal on bag
 6. Bag condition
-7. Whole Job bag palletized and packed
+7. Whole batch photo
+
+Compatibility note:
+- Legacy aliases remain supported in imported settings/backfill data.
 
 Card behavior rules:
 - Required cards first, optional cards later.

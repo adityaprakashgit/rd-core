@@ -198,10 +198,10 @@ Register lots under a job with mandatory lot identity, quantity capture mode, an
 - `src/components/inspection/LotIntakeWizard.tsx`
 - `src/lib/intake-workflow.ts`
 
-## Module 3: Sampling & Seal Assignment
+## Module 3: Sampling, Seal Traceability & Packet Readiness
 
 ### Objective
-Capture sample lifecycle evidence for an approved lot, complete seal-label evidence, and transition the lot/sample to packet-ready state.
+Capture sample lifecycle evidence for an approved lot, keep seal traceability synchronized from the lot seal number, and transition the lot/sample to packet-ready state.
 
 ### Entry Points
 - UI: Sample Management workspace (`/operations/job/[jobId]/lot/[lotId]`, `/userinsp/job/[jobId]/lot/[lotId]`)
@@ -252,13 +252,14 @@ Capture sample lifecycle evidence for an approved lot, complete seal-label evide
 9. Seal number can be generated (`/api/seal/generate`) and then persisted either:
    - through sample-management seal label save, or
    - immutable lot-level assignment via `/api/lots/[id]/seal`.
-10. Lot-level seal assignment validates prerequisites and blocks reassignment once seal exists.
+10. When a lot seal already exists, sample seal traceability is backfilled into `SampleSealLabel` so packet readiness and audit views remain aligned.
+11. Lot-level seal assignment validates prerequisites and blocks reassignment once seal exists.
 
 ### System Outputs
 - `Sample` record with progressive status:
   - `SAMPLING_IN_PROGRESS` -> `DETAILS_CAPTURED` -> `HOMOGENIZED` -> `SEALED` -> `READY_FOR_PACKETING`
 - `SampleEvent` history (created, collected, details, homogenized, sealed/labeled, ready).
-- `SampleSealLabel` evidence row.
+- `SampleSealLabel` evidence row, kept synchronized with lot seal traceability.
 - Updated lot evidence fields (sampling/seal photos, seal number, sealAuto, status).
 - Audit logs for sample updates/readiness and seal generation/assignment actions.
 
@@ -306,6 +307,7 @@ Capture sample lifecycle evidence for an approved lot, complete seal-label evide
 7. Mark ready with all prerequisites sets status `READY_FOR_PACKETING`.
 8. Auto/manual seal assignment validates format, uniqueness, and immutability.
 9. Cross-company and locked-job write attempts return `403`.
+10. Existing lot seal numbers are mirrored into sample seal traceability before packet readiness checks run.
 
 ### Source References
 - `src/app/api/inspection/sample-management/route.ts`
@@ -314,3 +316,4 @@ Capture sample lifecycle evidence for an approved lot, complete seal-label evide
 - `src/app/api/seal/generate/route.ts`
 - `src/components/inspection/SampleManagementWorkspace.tsx`
 - `src/lib/sample-management.ts`
+- `src/lib/sample-seal-traceability.ts`

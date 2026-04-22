@@ -58,8 +58,23 @@ export async function POST(request: NextRequest) {
     authorize(currentUser, "READ_ONLY");
 
     const body: unknown = await request.json();
-    const payload = typeof body === "object" && body !== null ? (body as { jobId?: unknown }) : {};
+    const payload =
+      typeof body === "object" && body !== null
+        ? (body as {
+            jobId?: unknown;
+            columns?: unknown;
+            pageSize?: unknown;
+            printerType?: unknown;
+          })
+        : {};
     const jobId = typeof payload.jobId === "string" && payload.jobId.trim().length > 0 ? payload.jobId.trim() : null;
+    const columns = typeof payload.columns === "number" && Number.isFinite(payload.columns) ? Math.max(1, Math.min(4, Math.floor(payload.columns))) : 4;
+    const pageSize =
+      typeof payload.pageSize === "string" && payload.pageSize.trim().length > 0 ? payload.pageSize.trim().toUpperCase() : "A4";
+    const printerType =
+      typeof payload.printerType === "string" && ["THERMAL", "INKJET", "OTHER"].includes(payload.printerType.trim().toUpperCase())
+        ? (payload.printerType.trim().toUpperCase() as "THERMAL" | "INKJET" | "OTHER")
+        : "OTHER";
 
     if (!jobId) {
       return jsonError("Validation Error", "jobId is required.", 400);
@@ -114,6 +129,9 @@ export async function POST(request: NextRequest) {
     const html = buildStickerHtml({
       companyName: currentUser.profile?.companyName ?? "Inspection Control Tower",
       lots: lotsWithBarcode,
+      columns,
+      pageSize: pageSize === "LABEL" ? "A6" : pageSize === "LETTER" ? "letter" : pageSize,
+      printerType,
     });
 
     const pdf = await renderHtmlToPdf(html);

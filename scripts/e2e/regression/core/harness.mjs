@@ -4,13 +4,13 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 const LABEL_TO_CATEGORY_KEY_MAP = {
-  "Bag photo with visible LOT no": "BAG_WITH_LOT_NO",
+  "Bag photo with visible bag no": "BAG_WITH_LOT_NO",
   "Material in bag": "MATERIAL_VISIBLE",
   "During Sampling Photo": "SAMPLING_IN_PROGRESS",
   "Sample Completion": "SEALED_BAG",
   "Seal on bag": "SEAL_CLOSEUP",
   "Bag condition": "BAG_CONDITION",
-  "Whole Job bag palletized and packed": "LOT_OVERVIEW",
+  "Whole batch photo": "LOT_OVERVIEW",
   "Bag with lot number": "BAG_WITH_LOT_NO",
   "Material visible": "MATERIAL_VISIBLE",
   "Sampling in progress": "SAMPLING_IN_PROGRESS",
