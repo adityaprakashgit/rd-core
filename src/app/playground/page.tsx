@@ -1335,13 +1335,6 @@ function PlaygroundPageContent() {
     }
   };
 
-  const onTrialDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const payload = decodeDrag(event.dataTransfer.getData("text/plain"));
-    if (!payload || payload.kind !== "PACKET") return;
-    void createTrialFromPacket(payload.id);
-  };
-
   const updateStepField = (stepId: string, patch: Partial<ExperimentStep>) => {
     if (!isBuildMode || isLocked) return;
     setSteps((prev) => prev.map((step) => (step.id === stepId ? { ...step, ...patch } : step)));
@@ -1922,7 +1915,6 @@ function PlaygroundPageContent() {
               chemicalsMaster={chemicalsMaster}
               assetsMaster={assetsMaster}
               packets={packets}
-              results={trials}
               reminderEvents={reminderEvents}
               selectedProcessTemplateId={selectedProcessTemplateId}
               onApplyProcessTemplate={applyWholeProcessTemplate}
@@ -1942,7 +1934,6 @@ function PlaygroundPageContent() {
               onStepDrop={onStepDrop}
               startStep={startStep}
               completeStep={completeStep}
-              onResultDrop={onTrialDrop}
               updateStepField={updateStepField}
               updateResource={updateResource}
               addMetric={addMeasurement}

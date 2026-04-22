@@ -177,7 +177,6 @@ type PlaygroundMissionPanelProps = {
   chemicalsMaster: Chemical[];
   assetsMaster: Asset[];
   packets: Packet[];
-  results: Trial[];
   reminderEvents: ReminderEvent[];
   selectedProcessTemplateId: string | null;
   onApplyProcessTemplate: (templateId: string) => void;
@@ -197,7 +196,6 @@ type PlaygroundMissionPanelProps = {
   onStepDrop: (event: DragEvent<HTMLDivElement>, stepId: string) => void;
   startStep: (stepId: string) => void;
   completeStep: (stepId: string) => void;
-  onResultDrop: (event: DragEvent<HTMLDivElement>) => void;
   updateStepField: (stepId: string, patch: Partial<PlaygroundStep>) => void;
   updateResource: (stepId: string, resourceId: string, patch: Partial<StepResource>) => void;
   addMetric: (resultId: string) => void;
@@ -227,7 +225,6 @@ export function PlaygroundMissionPanel({
   chemicalsMaster,
   assetsMaster,
   packets,
-  results,
   reminderEvents,
   selectedProcessTemplateId,
   onApplyProcessTemplate,
@@ -247,7 +244,6 @@ export function PlaygroundMissionPanel({
   onStepDrop,
   startStep,
   completeStep,
-  onResultDrop,
   updateStepField,
   updateResource,
   addMetric,
@@ -294,7 +290,6 @@ export function PlaygroundMissionPanel({
     if (!currentMission) return null;
     return packets.find((packet) => packet.code === currentMission.packetId) ?? packets[0] ?? null;
   }, [currentMission, packets]);
-  const resultPackets = activePacket ? [activePacket] : [];
   const acceptedWorkQueue: AcceptedWorkRow[] = acceptedWorkRows;
   const renderAcceptedWorkRow = (row: AcceptedWorkRow) => (
     <Box
